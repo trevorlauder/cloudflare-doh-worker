@@ -1,0 +1,7 @@
+.env
+app
+config.capnp
+node_modules/
+worker/
+src/config.js
+wrangler.toml

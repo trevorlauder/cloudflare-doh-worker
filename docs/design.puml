@@ -1,0 +1,35 @@
+@startuml Cloudflare-DoH-Worker
+
+title Cloudflare DoH Worker Sequence Diagram
+
+activate "DNS Client"
+
+"DNS Client" -> "Cloudflare Worker": GET https://cloudflare-worker-domain/endpoint/path
+
+group Parallel
+  "Cloudflare Worker" -> "Quad9": GET https://dns11.quad9.net/dns-query
+  "Cloudflare Worker" <- "Quad9": Quad9 DNS Response
+  "Cloudflare Worker" -> "Cloudflare": GET https://cloudflare-dns.com/dns-query
+  "Cloudflare Worker" <- "Cloudflare": Cloudflare DNS Response
+  "Cloudflare Worker" -> ...: GET https://some-other-provider/dns-query
+  "Cloudflare Worker" <- ...: Some Other Provider DNS Response
+  "Cloudflare Worker" -> "NextDNS": GET https://dns.nextdns.io/abc123 <- Configuration ID
+  "Cloudflare Worker" <- "NextDNS": NextDNS DNS Response
+end
+
+"Cloudflare Worker" -> "DNS Client": Cloudflare Worker DNS Response
+
+note left
+  If any of the DNS Providers respond back with **0.0.0.0/0** or **::**, they are marked as //blocked//.
+  If any of the DNS Providers respond back with **NXDOMAIN**, they are marked as //possibly blocked//.
+
+  The first condition that matches sends a response:
+    * The response at the start of the //blocked// list
+    * The response at the start of the //possibly blocked// list
+    * An error if multiple providers are marked as //main//
+    * An error if all providers responded with an error
+    * The //successful// response from the provider marked as //main//
+    * The response from any provider that didn't fail
+    * An error because we don't know what happened
+end note
+@enduml
