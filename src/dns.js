@@ -36,7 +36,6 @@ async function sendDohRequest(request, config) {
   url.host = config.host
   url.pathname = config.path
 
-  // This can be removed once the docker compose setup is fronted with SSL
   url.protocol = "https:/"
   url.port = "443"
 

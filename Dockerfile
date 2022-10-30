@@ -14,8 +14,5 @@ COPY . .
 
 ENV NODE_OPTIONS --openssl-legacy-provider
 
-RUN npm run build
-RUN npm run compile
-
 EXPOSE 8080
-CMD [ "npm", "start" ]
+CMD [ "/usr/src/app/entrypoint.sh" ]

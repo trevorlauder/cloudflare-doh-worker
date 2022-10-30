@@ -10,7 +10,6 @@ You can also send request logs to Grafana Loki to perform your own analytics and
 
 ## Todo
 
-- Add NGINX to docker compose to provide SSL
 - Tests need to be written to validate various response scenarios
 - Add support for allowlist and blocklist directly in the worker to override provider responses
 
@@ -131,13 +130,13 @@ const mainWorker :Workerd.Worker = (
 );
 ```
 
-### Install the project requirements.
+### Install the project requirements
 
 ```shell
 npm install -u
 ```
 
-### Deploy the worker to your Cloudflare account.
+### Deploy the worker to your Cloudflare account
 
 The first time you run this, it will need to log into your Cloudflare account and provide permission for Wrangler.
 
@@ -157,3 +156,15 @@ npx wrangler secret put LOKI_PASSWORD
 ## Known Issues
 
 - The script does support `application/dns-json` but not all providers implement that properly. It is recommended you use `application/dns-message` for your DoH queries to the endpoint. This should be the default on many of the clients.
+
+## Docker Compose
+
+A docker compose file is provided to get you started.  You'll need to generate an SSL certificate and save the certificate as `nginx/ssl/doh-worker.crt` and the private key as `nginx/ssl/doh-worker.key`.
+
+You can generate a self-signed certificate using the sample command below.
+
+```shell
+mkdir nginx/ssl
+
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout nginx/ssl/doh-worker.key -out nginx/ssl/doh-worker.crt -days 3650 -subj '/CN=doh-worker'
+```
