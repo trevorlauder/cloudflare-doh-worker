@@ -1,7 +1,9 @@
 .env
 app
 config.capnp
+k3s/
 node_modules/
+nginx/ssl/
 worker/
 src/config.js
 wrangler.toml

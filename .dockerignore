@@ -1,5 +1,6 @@
 *
 !src
-!config.capnp
+src/config.js
+!entrypoint.sh
 !package*.json
 !webpack.config.js
