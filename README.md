@@ -159,12 +159,12 @@ npx wrangler secret put LOKI_PASSWORD
 
 ## Docker Compose
 
-A docker compose file is provided to get you started.  You'll need to generate an SSL certificate and save the certificate as `nginx/ssl/doh-worker.crt` and the private key as `nginx/ssl/doh-worker.key`.
+A docker compose file is provided to get you started.  You'll need to generate an SSL certificate and save the certificate as `nginx/ssl/tls.crt` and the private key as `nginx/ssl/tls.key`.
 
 You can generate a self-signed certificate using the sample command below.
 
 ```shell
 mkdir nginx/ssl
 
-openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout nginx/ssl/doh-worker.key -out nginx/ssl/doh-worker.crt -days 3650 -subj '/CN=doh-worker'
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout nginx/ssl/tls.key -out nginx/ssl/tls.crt -days 3650 -subj '/CN=doh-worker'
 ```
