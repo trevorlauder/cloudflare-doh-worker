@@ -14,7 +14,7 @@
   "devDependencies": {
     "npm-check-updates": "^16.7.5",
     "prettier": "^2.8.4",
-    "webpack": "^4.46.0",
+    "webpack": "^5.75.0",
     "webpack-cli": "^4.10.0",
     "wranglerjs-compat-webpack-plugin": "^0.0.6"
   },
