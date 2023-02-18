@@ -49,10 +49,9 @@ command = "npm run build"
 
 [vars]
 # Secrets managed outside of the file
+# Run `npx wrangler secret put <NAME>` for each of these
 # - LOKI_USERNAME
 # - LOKI_PASSWORD
-
-# Run `npx wrangler secret put <NAME>` for each of these
 ```
 
 ### Create `src/config.js`

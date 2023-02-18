@@ -12,8 +12,8 @@
   "author": "Trevor Lauder <trevor@lauder.family>",
   "license": "MIT",
   "devDependencies": {
-    "npm-check-updates": "^16.3.15",
-    "prettier": "^1.19.1",
+    "npm-check-updates": "^16.7.5",
+    "prettier": "^2.8.4",
     "webpack": "^4.46.0",
     "webpack-cli": "^4.10.0",
     "wranglerjs-compat-webpack-plugin": "^0.0.6"
@@ -21,6 +21,6 @@
   "dependencies": {
     "dns-packet": "^5.4.0",
     "workerd": "^1.20220926.3",
-    "wrangler": "^2.1.13"
+    "wrangler": "^2.10.0"
   }
 }
