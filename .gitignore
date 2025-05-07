@@ -6,3 +6,4 @@ nginx/ssl/
 worker/
 src/config.js
 wrangler.toml
+.wrangler

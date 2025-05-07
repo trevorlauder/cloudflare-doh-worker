@@ -1,4 +1,4 @@
-// Copyright 2022 Trevor Lauder.
+// Copyright 2025 Trevor Lauder.
 // SPDX-License-Identifier: MIT
 
 import { loki } from "./config.js"
@@ -13,10 +13,10 @@ function generateResponseObjects(item) {
   possiblyBlockedBy[`${item.host}${item.path}`] = item.possiblyBlocked
 }
 
-async function sendToLoki(requestTimeStamp, endpoint, question, responseFrom, results) {
+async function sendToLoki(requestTimeStamp, endpoint, question, responseFrom, results, env) {
   const headers = new Headers()
 
-  const base64Credentials = Buffer.from(`${LOKI_USERNAME}:${LOKI_PASSWORD}`).toString("base64")
+  const base64Credentials = btoa(`${env.LOKI_USERNAME}:${env.LOKI_PASSWORD}`)
 
   headers.set("Authorization", `Basic ${base64Credentials}`)
   headers.set("Content-Type", "application/json")

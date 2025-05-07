@@ -3,4 +3,3 @@
 src/config.js
 !entrypoint.sh
 !package*.json
-!webpack.config.js

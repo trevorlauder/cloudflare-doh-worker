@@ -1,4 +1,4 @@
-// Copyright 2022 Trevor Lauder.
+// Copyright 2025 Trevor Lauder.
 // SPDX-License-Identifier: MIT
 
 import { endpoints, loki, debug } from "./config.js"
@@ -6,30 +6,34 @@ import { sendToLoki } from "./loki.js"
 import { sendDohRequest } from "./dns.js"
 import { supportedAcceptHeaders } from "./consts.js"
 
-const dnsPacket = require("dns-packet")
+import * as dnsPacket from "dns-packet"
 
-addEventListener("fetch", (event) => {
-  const url = new URL(event.request.url)
+export default {
+  fetch(request, env, ctx) {
+    const url = new URL(request.url)
 
-  if (url.pathname in endpoints) {
-    const requestEndpoint = endpoints[url.pathname]
+    if (url.pathname in endpoints) {
+      const requestEndpoint = endpoints[url.pathname]
 
-    event.respondWith(handleRequest(event, url.pathname, requestEndpoint["dohProviders"]))
-  } else {
-    return new Response("", { status: 404 })
-  }
-})
+      return handleRequest(request, url.pathname, requestEndpoint["dohProviders"], env, ctx)
+    } else {
+      return new Response("", { status: 404 })
+    }
+  },
+}
 
-async function handleRequest(event, endpoint, dohProviders) {
+async function handleRequest(request, endpoint, dohProviders, env, ctx) {
   const requestTimeStamp = Date.now()
   let question = {}
 
-  if (event.request.clone().method.toUpperCase() === "GET") {
-    if (!supportedAcceptHeaders.includes(event.request.headers.get("Accept"))) {
+  const method = request.clone().method.toUpperCase()
+
+  if (method === "GET") {
+    if (!supportedAcceptHeaders.includes(request.headers.get("Accept"))) {
       return new Response(`Unsupported Accept header\n\nUse one of: ${supportedAcceptHeaders}`, { status: 406 })
     }
 
-    const { searchParams } = new URL(event.request.url)
+    const { searchParams } = new URL(request.url)
 
     if (searchParams.has("dns")) {
       const dns = searchParams.get("dns")
@@ -48,19 +52,24 @@ async function handleRequest(event, endpoint, dohProviders) {
     } else {
       return new Response("GET requests must include one of name or dns as query parameters", { status: 400 })
     }
-  } else if (event.request.clone().method.toUpperCase() === "POST") {
-    const dns = await event.request.clone().arrayBuffer()
-    const packet = dnsPacket.decode(Buffer.from(dns))
+  } else if (method === "POST") {
+    const dns = new Uint8Array(await request.clone().arrayBuffer())
 
-    question = {
-      name: packet["questions"][0]["name"],
-      type: packet["questions"][0]["type"],
+    try {
+      const packet = dnsPacket.decode(dns)
+
+      question = {
+        name: packet["questions"][0]["name"],
+        type: packet["questions"][0]["type"],
+      }
+    } catch (err) {
+      return new Response("Failed to decode DNS packet", { status: 400 })
     }
   }
 
   const results = await Promise.all(
     dohProviders.map((config) => {
-      return sendDohRequest(event.request.clone(), config)
+      return sendDohRequest(request.clone(), config)
     }),
   )
 
@@ -129,7 +138,7 @@ async function handleRequest(event, endpoint, dohProviders) {
   newResponse.headers.append("CLOUDFLARE-DOH-WORKER-BLOCKED-BY", resultsBlocked)
 
   if (loki.enabled) {
-    event.waitUntil(sendToLoki(requestTimeStamp, endpoint, question, responseFrom, results))
+    ctx.waitUntil(sendToLoki(requestTimeStamp, endpoint, question, responseFrom, results, env))
   }
 
   return newResponse
