@@ -6,7 +6,7 @@ import { sendToLoki } from "./loki.js"
 import { sendDohRequest } from "./dns.js"
 import { supportedAcceptHeaders } from "./consts.js"
 
-import * as dnsPacket from 'dns-packet';
+import * as dnsPacket from "dns-packet"
 
 export default {
   fetch(request, env, ctx) {
@@ -20,8 +20,7 @@ export default {
       return new Response("", { status: 404 })
     }
   },
-};
-
+}
 
 async function handleRequest(request, endpoint, dohProviders, env, ctx) {
   const requestTimeStamp = Date.now()

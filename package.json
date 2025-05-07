@@ -11,17 +11,23 @@
     "dev": "wrangler dev",
     "start": "wrangler dev",
     "docker-deploy": "wrangler deploy --dry-run --keep-vars true --outdir dist",
-    "docker-start": "workerd serve config.capnp --verbose "
+    "docker-start": "workerd serve config.capnp --verbose ",
+    "prepare": "husky install"
   },
   "author": "Trevor Lauder <trevor@lauder.family>",
   "license": "MIT",
   "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.2",
     "npm-check-updates": "^18.0.1",
     "prettier": "^3.5.3",
-    "wrangler": "^4.14.1",
-    "workerd": "^1.20250507.0"
+    "workerd": "^1.20250507.0",
+    "wrangler": "^4.14.1"
   },
   "dependencies": {
     "dns-packet": "^5.6.1"
+  },
+  "lint-staged": {
+    "*.{js,css,md}": "prettier --write"
   }
 }
