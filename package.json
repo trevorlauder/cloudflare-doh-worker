@@ -1,26 +1,27 @@
 {
   "private": true,
   "name": "doh",
+  "type": "module",
   "version": "0.0.0",
   "description": "Cloudflare DoH Worker",
   "main": "src/index.js",
   "scripts": {
     "compile": "workerd compile config.capnp > app",
-    "build": "webpack",
-    "start": "workerd serve config.capnp --verbose "
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "start": "wrangler dev",
+    "docker-deploy": "wrangler deploy --dry-run --keep-vars true --outdir dist",
+    "docker-start": "workerd serve config.capnp --verbose "
   },
   "author": "Trevor Lauder <trevor@lauder.family>",
   "license": "MIT",
   "devDependencies": {
-    "npm-check-updates": "^16.7.5",
-    "prettier": "^2.8.4",
-    "webpack": "^4.46.0",
-    "webpack-cli": "^4.10.0",
-    "wranglerjs-compat-webpack-plugin": "^0.0.6"
+    "npm-check-updates": "^18.0.1",
+    "prettier": "^3.5.3",
+    "wrangler": "^4.14.1",
+    "workerd": "^1.20250507.0"
   },
   "dependencies": {
-    "dns-packet": "^5.4.0",
-    "workerd": "^1.20220926.3",
-    "wrangler": "^2.10.0"
+    "dns-packet": "^5.6.1"
   }
 }

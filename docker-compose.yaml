@@ -6,6 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
+      - ./wrangler.toml:/usr/src/app/wrangler.toml:ro
       - ./src/config.js:/usr/src/app/src/config.js:ro
       - ./config.capnp:/usr/src/app/config.capnp
     restart: unless-stopped

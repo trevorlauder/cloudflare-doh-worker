@@ -1,4 +1,4 @@
-// Copyright 2022 Trevor Lauder.
+// Copyright 2025 Trevor Lauder.
 // SPDX-License-Identifier: MIT
 
 const supportedAcceptHeaders = ["application/dns-json", "application/dns-message"]

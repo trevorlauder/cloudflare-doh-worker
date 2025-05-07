@@ -1,4 +1,4 @@
-FROM node:18-slim
+FROM node:22-slim
 
 RUN apt update && \
     apt install -y --no-install-recommends ca-certificates libc++-dev tini && \
@@ -12,7 +12,7 @@ RUN npm ci
 
 COPY . .
 
-ENV NODE_OPTIONS --openssl-legacy-provider
+ENV NODE_OPTIONS=--openssl-legacy-provider
 
 EXPOSE 8080
 

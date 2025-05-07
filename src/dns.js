@@ -1,7 +1,7 @@
-// Copyright 2022 Trevor Lauder.
+// Copyright 2025 Trevor Lauder.
 // SPDX-License-Identifier: MIT
 
-const dnsPacket = require("dns-packet")
+import * as dnsPacket from 'dns-packet';
 
 import { contentTypeDnsJsonRegex, contentTypeDnsMessageRegex } from "./consts.js"
 
