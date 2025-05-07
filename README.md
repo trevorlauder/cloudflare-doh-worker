@@ -23,7 +23,7 @@ You can also send request logs to Grafana Loki to perform your own analytics and
 - Cloudflare Account
   - The _free_ tier is adequate for us but you will need to determine that for youself.
 - Grafana Loki (optional)
-  - Send request logs to a Grafana Loki instance.  The _free_ tier on Grafana Cloud is adequate for us.
+  - Send request logs to a Grafana Loki instance. The _free_ tier on Grafana Cloud is adequate for us.
 - Docker (optional)
   - A docker compose manifest and dockerfile are included if you wish to run the worker locally.
 
@@ -35,17 +35,13 @@ You can also send request logs to Grafana Loki to perform your own analytics and
 name = "doh"
 workers_dev = true
 
-# Using an older version as this is the lastest one supported by workerd used in docker
-# https://github.com/cloudflare/workerd
-compatibility_date = "2022-09-26"
+compatibility_flags = [ "nodejs_compat" ]
+compatibility_date = "2025-05-06"
 
 # Use a custom route if you have your own domain on Cloudflare
 # route = "www.mydomain.com/top/level/path/to/entrypoints/*"
 
-main = "./worker/script.js"
-
-[build]
-command = "npm run build"
+main = "src/index.js"
 
 [vars]
 # Secrets managed outside of the file
@@ -97,7 +93,7 @@ export { debug, loki, endpoints }
 
 ### Create `config.capnp` (optional)
 
-If you plan to run the worker locally in docker, you'll need to perform this step.  Otherwise ignore it.
+If you plan to run the worker locally in docker, you'll need to perform this step. Otherwise ignore it.
 
 If you want logs from the docker instance to be sent to your Grafana Loki instance, set your API username and password in this file.
 
@@ -119,14 +115,19 @@ const config :Workerd.Config = (
 );
 
 const mainWorker :Workerd.Worker = (
-  serviceWorkerScript = embed "worker/script.js",
-  compatibilityDate = "2022-09-26",
-
-  bindings = [
-    ( name = "LOKI_USERNAME", text = "" ),
-    ( name = "LOKI_PASSWORD", text = "" ),
-  ],
-);
+    modules = [
+      (
+        name = "main",
+        esModule = embed "dist/index.js",
+      )
+    ],
+    compatibilityDate = "2025-05-06",
+    compatibilityFlags = ["nodejs_compat"],
+    bindings = [
+      ( name = "LOKI_USERNAME", text = "" ),
+      ( name = "LOKI_PASSWORD", text = "" ),
+    ],
+)
 ```
 
 ### Install the project requirements
@@ -140,12 +141,12 @@ npm install -u
 The first time you run this, it will need to log into your Cloudflare account and provide permission for Wrangler.
 
 ```shell
-npx wrangler publish
+npm run deploy
 ```
 
 That's it, you should be able to use the worker along with your endpoint paths to configure DoH on your devices.
 
-You can send logs for each DNS request to Grafana Loki.  You'll need to add the credentials to your Cloudflare Worker, enable Loki and add the URL to `src/config.js`.
+You can send logs for each DNS request to Grafana Loki. You'll need to add the credentials to your Cloudflare Worker, enable Loki and add the URL to `src/config.js`.
 
 ```shell
 npx wrangler secret put LOKI_USERNAME
@@ -158,7 +159,7 @@ npx wrangler secret put LOKI_PASSWORD
 
 ## Docker Compose
 
-A docker compose file is provided to get you started.  You'll need to generate an SSL certificate and save the certificate as `nginx/ssl/tls.crt` and the private key as `nginx/ssl/tls.key`.
+A docker compose file is provided to get you started. You'll need to generate an SSL certificate and save the certificate as `nginx/ssl/tls.crt` and the private key as `nginx/ssl/tls.key`.
 
 You can generate a self-signed certificate using the sample command below.
 
