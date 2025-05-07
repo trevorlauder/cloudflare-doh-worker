@@ -4,7 +4,7 @@ If you're using DNS to block malicious domains (NextDNS, Cloudflare, Quad9, etc)
 
 I always thought it would be neat to have a way to query multiple DNS providers and block the domain if **any** of them filter it, essentially combining the responses and responding appropriately based on a set of conditions. Now I can! You can see the application flow in the diagram below.
 
-This project builds on [the solution I put in place for our family about a year ago](https://www.lauder.family/blog/2021/09/25/Avoiding-DoH-Detection-and-Blocking/), when our school division started blocking DoH on my kids devices. I launched a Cloudflare Worker and used that to proxy to NextDNS, using a custom domain that they wouldn't easily detect and block. That solution proxied back to a single DNS provider (NextDNS). This project takes that idea and adds support for proxying, in parallel, to any number of DNS providers and leveraging the filtering capability that you want in all of them.
+This project builds on [the solution I put in place for our family](https://www.lauder.family/blog/2021/09/25/Avoiding-DoH-Detection-and-Blocking/), when our school division started blocking DoH on my kids devices. I launched a Cloudflare Worker and used that to proxy to NextDNS, using a custom domain that they wouldn't easily detect and block. That solution proxied back to a single DNS provider (NextDNS). This project takes that idea and adds support for proxying, in parallel, to any number of DNS providers and leveraging the filtering capability that you want in all of them.
 
 You can also send request logs to Grafana Loki to perform your own analytics and monitoring.
 
