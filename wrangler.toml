@@ -1,7 +1,7 @@
 name = "doh"
-workers_dev = false
+workers_dev = true
 upload_source_maps = true
-preview_urls = false
+preview_urls = true
 send_metrics = false
 
 compatibility_flags = [ "nodejs_compat" ]

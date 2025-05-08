@@ -27,7 +27,17 @@ You can also send request logs to Grafana Loki to perform your own analytics and
 - Docker (optional)
   - A docker compose manifest and dockerfile are included if you wish to run the worker locally.
 
-## Quickstart
+## Quickstart Deploy
+
+Use this button to deploy this worker to your Cloudflare account.
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/trevorlauder/cloudflare-doh-worker)
+
+### Update `wrangler.toml` and `src/config.js` **in your new repo** created by Cloudflare, based on your needs. See [this for details](https://github.com/trevorlauder/cloudflare-doh-worker#create-srcconfigjs) on `src/config.js`.
+
+### Add `LOKI_USERNAME` and `LOKI_PASSWORD` secrets for your worker, if you are using Grafana Loki.
+
+## Manual Deploy
 
 ### Update `wrangler.toml` (optional)
 
