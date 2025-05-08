@@ -39,7 +39,7 @@ Use this button to deploy this worker to your Cloudflare account.
 
 ## Manual Deploy
 
-- Update `wrangler.toml` (optional)
+- Update `wrangler.toml` based on your needs.
 
 - Update `src/config.js`
 
