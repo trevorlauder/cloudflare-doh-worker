@@ -33,7 +33,7 @@ Use this button to deploy this worker to your Cloudflare account.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/trevorlauder/cloudflare-doh-worker)
 
-- Update `wrangler.toml` and `src/config.js` **in your new repo** created by Cloudflare, based on your needs. See [this for details](https://github.com/trevorlauder/cloudflare-doh-worker#create-srcconfigjs) on `src/config.js`.
+- Update `wrangler.toml` and `src/config.js` **in your new repo** created by Cloudflare, based on your needs. See additional details on `src/config.js` under [Manual Deploy](https://github.com/trevorlauder/cloudflare-doh-worker/tree/main#manual-deploy).
 
 - Add `LOKI_USERNAME` and `LOKI_PASSWORD` secrets for your worker, if you are using Grafana Loki.
 
