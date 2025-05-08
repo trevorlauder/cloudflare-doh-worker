@@ -4,6 +4,4 @@ config.capnp
 node_modules/
 nginx/ssl/
 worker/
-src/config.js
-wrangler.toml
 .wrangler

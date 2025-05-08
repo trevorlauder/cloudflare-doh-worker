@@ -1,0 +1,19 @@
+name = "doh"
+workers_dev = false
+upload_source_maps = true
+preview_urls = false
+send_metrics = false
+
+compatibility_flags = [ "nodejs_compat" ]
+compatibility_date = "2025-05-06"
+
+# Use a custom route if you have your own domain on Cloudflare
+# route = "www.mydomain.com/top/level/path/to/entrypoints/*"
+
+main = "src/index.js"
+
+[vars]
+# Secrets managed outside of the file
+# Run `npx wrangler secret put <NAME>` for each of these
+# - LOKI_USERNAME
+# - LOKI_PASSWORD

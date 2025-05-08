@@ -29,28 +29,9 @@ You can also send request logs to Grafana Loki to perform your own analytics and
 
 ## Quickstart
 
-### Create `wrangler.toml`
+### Update `wrangler.toml` (optional)
 
-```toml
-name = "doh"
-workers_dev = true
-
-compatibility_flags = [ "nodejs_compat" ]
-compatibility_date = "2025-05-06"
-
-# Use a custom route if you have your own domain on Cloudflare
-# route = "www.mydomain.com/top/level/path/to/entrypoints/*"
-
-main = "src/index.js"
-
-[vars]
-# Secrets managed outside of the file
-# Run `npx wrangler secret put <NAME>` for each of these
-# - LOKI_USERNAME
-# - LOKI_PASSWORD
-```
-
-### Create `src/config.js`
+### Update `src/config.js`
 
 Modify the configuration for your needs. You can create as many endpoints as you need and they can each be configured to proxy to specific DNS providers. If you want to include headers, you can do that like I'm doing in the NextDNS example.
 
