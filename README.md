@@ -33,107 +33,107 @@ Use this button to deploy this worker to your Cloudflare account.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/trevorlauder/cloudflare-doh-worker)
 
-### Update `wrangler.toml` and `src/config.js` **in your new repo** created by Cloudflare, based on your needs. See [this for details](https://github.com/trevorlauder/cloudflare-doh-worker#create-srcconfigjs) on `src/config.js`.
+- Update `wrangler.toml` and `src/config.js` **in your new repo** created by Cloudflare, based on your needs. See [this for details](https://github.com/trevorlauder/cloudflare-doh-worker#create-srcconfigjs) on `src/config.js`.
 
-### Add `LOKI_USERNAME` and `LOKI_PASSWORD` secrets for your worker, if you are using Grafana Loki.
+- Add `LOKI_USERNAME` and `LOKI_PASSWORD` secrets for your worker, if you are using Grafana Loki.
 
 ## Manual Deploy
 
-### Update `wrangler.toml` (optional)
+- Update `wrangler.toml` (optional)
 
-### Update `src/config.js`
+- Update `src/config.js`
 
-Modify the configuration for your needs. You can create as many endpoints as you need and they can each be configured to proxy to specific DNS providers. If you want to include headers, you can do that like I'm doing in the NextDNS example.
+  Modify the configuration for your needs. You can create as many endpoints as you need and they can each be configured to proxy to specific DNS providers. If you want to include headers, you can do that like I'm doing in the NextDNS example.
 
-Only one provider should have `main: true`. If more than one in each path is marked as **main**, you will receive an error on your DNS requests.
+  Only one provider should have `main: true`. If more than one in each path is marked as **main**, you will receive an error on your DNS requests.
 
-```javascript
-const debug = false
+  ```javascript
+  const debug = false
 
-const loki = {
-  enabled: false,
-  url: "",
-}
+  const loki = {
+    enabled: false,
+    url: "",
+  }
 
-const endpoints = {
-  "/my/doh/path": {
-    dohProviders: [
-      {
-        host: "dns11.quad9.net",
-        path: "/dns-query",
-      },
-      {
-        host: "cloudflare-dns.com",
-        path: "/dns-query",
-      },
-      {
-        main: true,
-        host: "dns.nextdns.io",
-        path: "/abc123",
-        headers: {
-          "X-Device-Name": "My Device",
-          "X-Device-Model": "My Device Model",
+  const endpoints = {
+    "/my/doh/path": {
+      dohProviders: [
+        {
+          host: "dns11.quad9.net",
+          path: "/dns-query",
         },
-      },
+        {
+          host: "cloudflare-dns.com",
+          path: "/dns-query",
+        },
+        {
+          main: true,
+          host: "dns.nextdns.io",
+          path: "/abc123",
+          headers: {
+            "X-Device-Name": "My Device",
+            "X-Device-Model": "My Device Model",
+          },
+        },
+      ],
+    },
+  }
+
+  export { debug, loki, endpoints }
+  ```
+
+- Create `config.capnp` (optional)
+
+  If you plan to run the worker locally in docker, you'll need to perform this step. Otherwise ignore it.
+
+  If you want logs from the docker instance to be sent to your Grafana Loki instance, set your API username and password in this file.
+
+  ```capnp
+  using Workerd = import "/workerd/workerd.capnp";
+
+  const config :Workerd.Config = (
+    services = [
+      (name = "main", worker = .mainWorker),
     ],
-  },
-}
 
-export { debug, loki, endpoints }
-```
+    sockets = [
+      ( name = "http",
+        address = "*:8080",
+        http = (),
+        service = "main"
+      ),
+    ]
+  );
 
-### Create `config.capnp` (optional)
+  const mainWorker :Workerd.Worker = (
+      modules = [
+        (
+          name = "main",
+          esModule = embed "dist/index.js",
+        )
+      ],
+      compatibilityDate = "2025-05-06",
+      compatibilityFlags = ["nodejs_compat"],
+      bindings = [
+        ( name = "LOKI_USERNAME", text = "" ),
+        ( name = "LOKI_PASSWORD", text = "" ),
+      ],
+  )
+  ```
 
-If you plan to run the worker locally in docker, you'll need to perform this step. Otherwise ignore it.
+- Install the project requirements
 
-If you want logs from the docker instance to be sent to your Grafana Loki instance, set your API username and password in this file.
+  ```shell
+  npm install -u
+  ```
 
-```capnp
-using Workerd = import "/workerd/workerd.capnp";
+- Deploy the worker to your Cloudflare account
 
-const config :Workerd.Config = (
-  services = [
-    (name = "main", worker = .mainWorker),
-  ],
+  The first time you run this, it will need to log into your Cloudflare account and provide permission for Wrangler.
 
-  sockets = [
-    ( name = "http",
-      address = "*:8080",
-      http = (),
-      service = "main"
-    ),
-  ]
-);
-
-const mainWorker :Workerd.Worker = (
-    modules = [
-      (
-        name = "main",
-        esModule = embed "dist/index.js",
-      )
-    ],
-    compatibilityDate = "2025-05-06",
-    compatibilityFlags = ["nodejs_compat"],
-    bindings = [
-      ( name = "LOKI_USERNAME", text = "" ),
-      ( name = "LOKI_PASSWORD", text = "" ),
-    ],
-)
-```
-
-### Install the project requirements
-
-```shell
-npm install -u
-```
-
-### Deploy the worker to your Cloudflare account
-
-The first time you run this, it will need to log into your Cloudflare account and provide permission for Wrangler.
-
-```shell
-npm run deploy
-```
+  ```shell
+  npm run deploy
+  ```
 
 That's it, you should be able to use the worker along with your endpoint paths to configure DoH on your devices.
 
