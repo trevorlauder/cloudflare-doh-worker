@@ -41,7 +41,7 @@ Use this button to deploy this worker to your Cloudflare account.
 
 - Update `wrangler.toml` based on your needs.
 
-- Update `src/config.js`
+- Update `src/config.js`.
 
   Modify the configuration for your needs. You can create as many endpoints as you need and they can each be configured to proxy to specific DNS providers. If you want to include headers, you can do that like I'm doing in the NextDNS example.
 
@@ -82,7 +82,7 @@ Use this button to deploy this worker to your Cloudflare account.
   export { debug, loki, endpoints }
   ```
 
-- Create `config.capnp` (optional)
+- Create `config.capnp` (optional).
 
   If you plan to run the worker locally in docker, you'll need to perform this step. Otherwise ignore it.
 
@@ -121,13 +121,13 @@ Use this button to deploy this worker to your Cloudflare account.
   )
   ```
 
-- Install the project requirements
+- Install the project requirements.
 
   ```shell
   npm install -u
   ```
 
-- Deploy the worker to your Cloudflare account
+- Deploy the worker to your Cloudflare account.
 
   The first time you run this, it will need to log into your Cloudflare account and provide permission for Wrangler.
 
