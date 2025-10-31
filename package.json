@@ -22,7 +22,7 @@
     "npm-check-updates": "^18.0.1",
     "prettier": "^3.5.3",
     "workerd": "^1.20250507.0",
-    "wrangler": "^4.14.1"
+    "wrangler": "^4.45.3"
   },
   "dependencies": {
     "dns-packet": "^5.6.1"
