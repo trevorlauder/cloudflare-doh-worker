@@ -19,9 +19,9 @@
   "devDependencies": {
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
-    "npm-check-updates": "^19.2.0",
+    "npm-check-updates": "^19.3.0",
     "prettier": "^3.7.4",
-    "workerd": "^1.20251229.0",
+    "workerd": "^1.20260103.0",
     "wrangler": "^4.56.0"
   },
   "dependencies": {
