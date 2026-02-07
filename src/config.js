@@ -1,9 +1,9 @@
-const debug = false
+const debug = false;
 
 const loki = {
   enabled: false,
   url: "",
-}
+};
 
 const endpoints = {
   "/my/doh/path": {
@@ -19,6 +19,6 @@ const endpoints = {
       },
     ],
   },
-}
+};
 
-export { debug, loki, endpoints }
+export { debug, endpoints, loki };

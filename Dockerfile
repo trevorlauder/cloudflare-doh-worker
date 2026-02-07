@@ -17,4 +17,4 @@ ENV NODE_OPTIONS=--openssl-legacy-provider
 EXPOSE 8080
 
 ENTRYPOINT ["tini", "--"]
-CMD [ "/usr/src/app/entrypoint.sh" ]
+CMD ["/usr/src/app/entrypoint.sh"]
