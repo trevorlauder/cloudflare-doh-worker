@@ -1,4 +1,4 @@
 [tools]
 node = "22"
 dprint = "0.51"
-precommit = "4.5"
+pre-commit = "4.5"
