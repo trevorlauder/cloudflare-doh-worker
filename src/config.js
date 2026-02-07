@@ -21,4 +21,4 @@ const endpoints = {
   },
 }
 
-export { debug, loki, endpoints }
+export { debug, endpoints, loki }

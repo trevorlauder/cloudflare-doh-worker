@@ -1,10 +1,10 @@
 // Copyright 2025 Trevor Lauder.
 // SPDX-License-Identifier: MIT
 
-import { endpoints, loki, debug } from "./config.js"
-import { sendToLoki } from "./loki.js"
-import { sendDohRequest } from "./dns.js"
+import { debug, endpoints, loki } from "./config.js"
 import { supportedAcceptHeaders } from "./consts.js"
+import { sendDohRequest } from "./dns.js"
+import { sendToLoki } from "./loki.js"
 
 import * as dnsPacket from "dns-packet"
 

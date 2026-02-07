@@ -4,7 +4,7 @@ upload_source_maps = true
 preview_urls = true
 send_metrics = false
 
-compatibility_flags = [ "nodejs_compat" ]
+compatibility_flags = ["nodejs_compat"]
 compatibility_date = "2025-05-06"
 
 # Use a custom route if you have your own domain on Cloudflare

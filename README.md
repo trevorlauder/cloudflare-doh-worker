@@ -79,7 +79,7 @@ Use this button to deploy this worker to your Cloudflare account.
     },
   }
 
-  export { debug, loki, endpoints }
+  export { debug, endpoints, loki }
   ```
 
 - Create `config.capnp` (optional).

@@ -6,4 +6,4 @@ const supportedAcceptHeaders = ["application/dns-json", "application/dns-message
 const contentTypeDnsJsonRegex = new RegExp("application/dns-json|application/json")
 const contentTypeDnsMessageRegex = new RegExp("application/dns-message")
 
-export { supportedAcceptHeaders, contentTypeDnsJsonRegex, contentTypeDnsMessageRegex }
+export { contentTypeDnsJsonRegex, contentTypeDnsMessageRegex, supportedAcceptHeaders }
