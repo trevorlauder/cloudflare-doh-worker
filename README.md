@@ -48,12 +48,12 @@ Use this button to deploy this worker to your Cloudflare account.
   Only one provider should have `main: true`. If more than one in each path is marked as **main**, you will receive an error on your DNS requests.
 
   ```javascript
-  const debug = false
+  const debug = false;
 
   const loki = {
     enabled: false,
     url: "",
-  }
+  };
 
   const endpoints = {
     "/my/doh/path": {
@@ -77,9 +77,9 @@ Use this button to deploy this worker to your Cloudflare account.
         },
       ],
     },
-  }
+  };
 
-  export { debug, endpoints, loki }
+  export { debug, endpoints, loki };
   ```
 
 - Create `config.capnp` (optional).
