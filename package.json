@@ -17,8 +17,8 @@
   "license": "MIT",
   "devDependencies": {
     "npm-check-updates": "^19.3.2",
-    "workerd": "^1.20260207.0",
-    "wrangler": "^4.63.0"
+    "workerd": "^1.20260210.0",
+    "wrangler": "^4.64.0"
   },
   "dependencies": {
     "dns-packet": "^5.6.1"
