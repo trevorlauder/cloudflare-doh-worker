@@ -16,9 +16,9 @@
   "author": "Trevor Lauder <trevor@lauder.family>",
   "license": "MIT",
   "devDependencies": {
-    "npm-check-updates": "^19.3.2",
-    "workerd": "^1.20260218.0",
-    "wrangler": "^4.66.0"
+    "npm-check-updates": "^19.5.0",
+    "workerd": "^1.20260304.0",
+    "wrangler": "^4.68.1"
   },
   "dependencies": {
     "dns-packet": "^5.6.1"
