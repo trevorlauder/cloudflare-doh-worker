@@ -1,0 +1,30 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: tests
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: tests
+          image: k3d-doh-registry:5001/doh-worker
+          command: ["make", "test-ci"]
+          env:
+            - name: BASE_URL
+              value: https://nginx
+            - name: SKIP_TLS_VERIFY
+              value: "1"
+          envFrom:
+            - configMapRef:
+                name: worker-dev-vars-env
+          volumeMounts:
+            - name: config
+              mountPath: /usr/src/app/worker/config.py
+              subPath: config.py
+      volumes:
+        - name: config
+          configMap:
+            name: worker-config

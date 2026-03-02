@@ -2,5 +2,4 @@
 
 set -e
 
-npm run docker-deploy
-exec npm run docker-start
+exec uv run pywrangler dev --ip 0.0.0.0

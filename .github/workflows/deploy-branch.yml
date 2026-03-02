@@ -1,0 +1,61 @@
+name: deploy-branch
+
+permissions: {}
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+*"
+
+jobs:
+  deploy-branch:
+    name: Publish deploy branch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # required to push the deploy branch and tags
+    concurrency:
+      group: deploy-branch-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Build deploy tree
+        run: |
+          mkdir /tmp/deploy
+
+          cp -r worker/       /tmp/deploy/worker/
+          cp wrangler.toml    /tmp/deploy/
+          cp pyproject.toml   /tmp/deploy/
+          cp package.json     /tmp/deploy/
+          cp uv.lock          /tmp/deploy/
+          cp README.md        /tmp/deploy/
+          cp LICENSE          /tmp/deploy/
+          cp .gitignore       /tmp/deploy/
+          cp mise.deploy.toml /tmp/deploy/mise.toml
+          cp README.md        /tmp/deploy/
+
+      - name: Push deploy branch
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          cd /tmp/deploy
+
+          git init
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPOSITORY}.git"
+
+          git checkout -b deploy
+          git add -A
+          git commit -m "deploy: ${TAG}"
+
+          git push origin deploy --force
+
+          git tag "deploy-${TAG}"
+          git push origin "deploy-${TAG}"

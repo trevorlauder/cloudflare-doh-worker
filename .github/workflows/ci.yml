@@ -11,19 +11,119 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pre-commit:
+    name: Pre-commit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: jdx/mise-action@v3
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
+      - uses: jdx/mise-action@6d1e696aa24c1aa1bcc1adea0212707c71ab78a8 # v3.6.1
+        with:
+          install: true
           cache: true
-          version: 2026.2.5
-      - uses: actions/cache@v5
+      - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
           restore-keys: |
             pre-commit-${{ runner.os }}-
-      - uses: pre-commit/action@v3.0.1
+      - run: pre-commit run --all-files
+
+  build-image:
+    name: Build image
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+    permissions:
+      contents: read
+      packages: write # required to push image to GHCR
+    outputs:
+      image-ref: ${{ steps.meta.outputs.image-ref }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Set image ref
+        id: meta
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: echo "image-ref=ghcr.io/${GITHUB_REPOSITORY}/doh-worker:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+      - name: Login to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+      - name: Build and push image
+        env:
+          STEPS_META_OUTPUTS_IMAGE_REF: ${{ steps.meta.outputs.image-ref }}
+        run: |
+          docker build \
+            -t "${STEPS_META_OUTPUTS_IMAGE_REF}" \
+            .
+          docker push "${STEPS_META_OUTPUTS_IMAGE_REF}"
+
+  test:
+    name: Test (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    needs:
+      - build-image
+    if: always() && (needs.build-image.result == 'success' || needs.build-image.result == 'skipped')
+    permissions:
+      contents: read
+      packages: read # required to pull prebuilt image from GHCR
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            config: tests/configs/default.py
+            dev-vars: tests/configs/dev-vars-with-token
+          - name: no-ecs-no-rebind
+            config: tests/configs/no_ecs_no_rebind.py
+            dev-vars: tests/configs/dev-vars-with-token
+          - name: no-admin-token
+            config: tests/configs/default.py
+            dev-vars: tests/configs/dev-vars-no-token
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@6d1e696aa24c1aa1bcc1adea0212707c71ab78a8 # v3.6.1
+        with:
+          install: true
+          cache: true
+      - name: Create k3d cluster
+        run: make k3d-create
+      - name: Login to GHCR
+        if: needs.build-image.result == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+      - name: Import prebuilt image into k3d registry
+        if: needs.build-image.result == 'success'
+        env:
+          IMAGE_REF: ${{ needs.build-image.outputs.image-ref }}
+        run: |
+          docker pull "$IMAGE_REF"
+          docker tag "$IMAGE_REF" "localhost:5001/doh-worker:${GITHUB_SHA}"
+          docker push "localhost:5001/doh-worker:${GITHUB_SHA}"
+      - name: Run tilt ci (prebuilt image)
+        if: needs.build-image.result == 'success'
+        env:
+          SKIP_DOCKER_BUILD: "1"
+          WORKER_IMAGE: k3d-doh-registry:5001/doh-worker:${{ github.sha }}
+          CONFIG_FILE: ${{ matrix.config }}
+          DEV_VARS_FILE: ${{ matrix.dev-vars }}
+        run: tilt ci -- --config-file="$CONFIG_FILE" --dev-vars="$DEV_VARS_FILE"
+      - name: Run tilt ci (fork PR)
+        if: needs.build-image.result == 'skipped'
+        env:
+          WORKER_IMAGE: k3d-doh-registry:5001/doh-worker:${{ github.sha }}
+          CONFIG_FILE: ${{ matrix.config }}
+          DEV_VARS_FILE: ${{ matrix.dev-vars }}
+        run: tilt ci -- --config-file="$CONFIG_FILE" --dev-vars="$DEV_VARS_FILE"

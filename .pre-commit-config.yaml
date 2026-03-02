@@ -1,12 +1,4 @@
 repos:
-  - repo: local
-    hooks:
-      - id: dprint
-        name: dprint
-        entry: dprint fmt
-        language: system
-        always_run: true
-        pass_filenames: false
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -17,6 +9,8 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        args:
+          - --allow-multiple-documents
       - id: check-xml
       - id: destroyed-symlinks
       - id: detect-private-key
@@ -24,8 +18,45 @@ repos:
         args:
           - --fix=lf
       - id: check-added-large-files
-        exclude: "^package-lock.json$"
-  - repo: https://github.com/awslabs/git-secrets
-    rev: b9e96b3212fa06aea65964ff0d5cda84ce935f38
+
+  - repo: local
     hooks:
-      - id: git-secrets
+      - id: dprint
+        name: dprint
+        language: system
+        entry: dprint fmt
+        pass_filenames: false
+      - id: actionlint
+        name: actionlint
+        language: system
+        entry: actionlint
+        pass_filenames: false
+      - id: zizmor
+        name: zizmor
+        language: system
+        entry: zizmor --persona auditor
+        files: \.github/workflows/
+        types: [yaml]
+      - id: hadolint
+        name: hadolint
+        language: system
+        entry: hadolint
+        files: Dockerfile
+        types: [file]
+      - id: ruff-check
+        name: ruff check
+        language: system
+        entry: ruff check --force-exclude
+        types: [python]
+        pass_filenames: true
+      - id: py-compile
+        name: Compile Python files
+        entry: python -m py_compile
+        language: system
+        types: [python]
+        pass_filenames: true
+      - id: trufflehog
+        name: trufflehog
+        language: system
+        entry: trufflehog git file://. --only-verified --fail
+        pass_filenames: false

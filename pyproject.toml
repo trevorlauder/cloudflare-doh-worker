@@ -1,0 +1,30 @@
+[project]
+name = "doh"
+version = "1.0.0-rc1"
+requires-python = ">=3.13"
+dependencies = [
+  "dnspython ~= 2.8.0",
+]
+
+[dependency-groups]
+dev = [
+  "curl-cffi ~= 0.14.0",
+  "pytest ~= 9.0.2",
+  "pytest-rerunfailures ~= 16.1",
+  "pytest-xdist ~= 3.6",
+  "workers-py ~= 1.7.3",
+  "workers-runtime-sdk ~= 0.3.1",
+]
+
+[tool.pywrangler]
+main = "worker/main.py"
+
+[tool.pytest.ini_options]
+addopts = "--reruns=2 --reruns-delay=2 -vv -ra"
+pythonpath = ["worker"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B", "N", "Q", "I", "UP", "SIM", "C4", "PT", "RUF", "T20", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S104", "S310", "S311"]
