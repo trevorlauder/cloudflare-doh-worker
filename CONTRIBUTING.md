@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- [Python 3.13+](https://python.org)
+- [Python 3.14+](https://python.org)
 - [uv](https://docs.astral.sh/uv/) — Python package manager
 - [mise](https://mise.jdx.dev/) — manages tool versions (Python, Node, uv, ruff, etc.)
 
