@@ -1,14 +1,23 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
-  "schedule": ["every weekend"],
+  "extends": [
+    "config:recommended"
+  ],
+  "schedule": [
+    "every weekend"
+  ],
   "mise": {
-    "fileMatch": ["(^|/)mise\\.toml$", "(^|/)mise\\.dev\\.toml$"]
+    "managerFilePatterns": [
+      "/(^|/)mise\\.toml$/",
+      "/(^|/)mise\\.dev\\.toml$/"
+    ]
   },
   "customManagers": [
     {
       "customType": "regex",
-      "fileMatch": ["^Dockerfile$"],
+      "managerFilePatterns": [
+        "/^Dockerfile$/"
+      ],
       "matchStrings": [
         "ARG MISE_VERSION=(?<currentValue>v[\\d.]+)\\n"
       ],
@@ -18,23 +27,33 @@
   ],
   "packageRules": [
     {
-      "matchManagers": ["github-actions"],
+      "matchManagers": [
+        "github-actions"
+      ],
       "groupName": "github-actions"
     },
     {
-      "matchManagers": ["mise"],
+      "matchManagers": [
+        "mise"
+      ],
       "groupName": "mise"
     },
     {
-      "matchManagers": ["dprint"],
+      "matchManagers": [
+        "dprint"
+      ],
       "groupName": "dprint"
     },
     {
-      "matchManagers": ["pep621"],
+      "matchManagers": [
+        "pep621"
+      ],
       "groupName": "python"
     },
     {
-      "matchManagers": ["dockerfile"],
+      "matchManagers": [
+        "dockerfile"
+      ],
       "groupName": "docker"
     }
   ]
