@@ -63,17 +63,17 @@ def _with_provider_id(provider: dict) -> dict:
   return {**provider, "provider_id": f"{provider['host']}{provider['path']}"}
 
 
-_SECRET_RE = re.compile(r"\{([A-Z][A-Z0-9_]*)\}")
+_SECRET_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
 
 
 def _resolve_secrets(obj, env):
-  """Recursively substitute {SECRET_NAME} placeholders in strings, dicts, and lists."""
+  """Recursively substitute ${SECRET_NAME} placeholders in strings, dicts, and lists."""
 
   missing: list[str] = []
 
   def _resolve(value):
     if isinstance(value, str):
-      if "{" not in value:
+      if "${" not in value:
         return value
 
       def _replacer(m):
@@ -137,7 +137,7 @@ _resolved_config_cache: "_ResolvedConfig | None" = None
 
 
 class _ResolvedConfig(NamedTuple):
-  """Runtime configuration with all {SECRET} placeholders resolved."""
+  """Runtime configuration with all ${SECRET} placeholders resolved."""
 
   health_endpoint: str | None
   config_endpoint: str | None
@@ -147,7 +147,7 @@ class _ResolvedConfig(NamedTuple):
 
 
 def _resolve_config(env) -> _ResolvedConfig:
-  """Resolve all {SECRET} placeholders in the config."""
+  """Resolve all ${SECRET} placeholders in the config."""
 
   global _resolved_config_cache
 

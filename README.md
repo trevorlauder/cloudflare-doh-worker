@@ -16,7 +16,7 @@ This started as [a workaround](https://www.lauder.family/blog/2021/09/25/Avoidin
 - Allowed domains skip fan-out and go straight to a non-filtering bypass provider (default: Cloudflare)
 - EDNS Client Subnet prefix truncation for privacy
 - DNS rebind protection (blocks responses resolving to private IPs)
-- `{SECRET_NAME}` placeholders in config, resolved from Cloudflare Worker secrets at request time
+- `${SECRET_NAME}` placeholders in config, resolved from Cloudflare Worker secrets at request time
 - Health and config endpoints (`CONFIG_ENDPOINT` requires `ADMIN_TOKEN`)
 - Debug mode adds diagnostic response headers
 - Optional Grafana Loki logging
@@ -30,7 +30,7 @@ Use this button to deploy this worker to your Cloudflare account.
 
 - Update `wrangler.toml` and `src/config.py` **in your new repo** created by Cloudflare, based on your needs. See [Configuration](#configuration) for details.
 
-- Add any secrets referenced in your config via `{SECRET_NAME}` placeholders:
+- Add any secrets referenced in your config via `${SECRET_NAME}` placeholders:
 
   ```shell
   # Add each secret referenced in your config, for example:
@@ -104,7 +104,7 @@ All config lives in `src/config.py`. You can define as many endpoint paths as yo
 
 Each endpoint has one `main_provider` (whose answer is used when nothing is blocked) and optional `additional_providers`.
 
-If your repo is public, use `{SECRET_NAME}` placeholders for sensitive values like endpoint paths and provider paths. They're resolved from Cloudflare Worker secrets at runtime. Setting your endpoint paths to include random strings keeps them from being discovered.
+If your repo is public, use `${SECRET_NAME}` placeholders for sensitive values like endpoint paths and provider paths. They're resolved from Cloudflare Worker secrets at runtime. Setting your endpoint paths to include random strings keeps them from being discovered.
 
 ```python
 DEBUG = False
