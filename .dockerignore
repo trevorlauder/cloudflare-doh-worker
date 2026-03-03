@@ -1,5 +1,10 @@
 *
-!src
-src/config.js
+!worker/
+worker/config.py
 !entrypoint.sh
-!package*.json
+!mise.toml
+!pyproject.toml
+!uv.lock
+!wrangler.toml
+!tests/
+!Makefile

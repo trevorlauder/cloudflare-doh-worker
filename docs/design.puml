@@ -4,32 +4,35 @@ title Cloudflare DoH Worker Sequence Diagram
 
 activate "DNS Client"
 
-"DNS Client" -> "Cloudflare Worker": GET https://cloudflare-worker-domain/endpoint/path
+"DNS Client" -> "Cloudflare Worker": GET/POST https://cloudflare-worker-domain/endpoint/path
 
-group Parallel
-  "Cloudflare Worker" -> "Quad9": GET https://dns11.quad9.net/dns-query
-  "Cloudflare Worker" <- "Quad9": Quad9 DNS Response
-  "Cloudflare Worker" -> "Cloudflare": GET https://cloudflare-dns.com/dns-query
-  "Cloudflare Worker" <- "Cloudflare": Cloudflare DNS Response
-  "Cloudflare Worker" -> ...: GET https://some-other-provider/dns-query
-  "Cloudflare Worker" <- ...: Some Other Provider DNS Response
-  "Cloudflare Worker" -> "NextDNS": GET https://dns.nextdns.io/abc123 <- Configuration ID
-  "Cloudflare Worker" <- "NextDNS": NextDNS DNS Response
+note over "Cloudflare Worker": Resolve {SECRET} placeholders\nParse DNS request\nTruncate ECS prefixes (if enabled)
+
+alt Domain in BLOCKED_DOMAINS
+  "Cloudflare Worker" -[#gray]-> "Grafana Loki": POST log entry (async, if configured)
+  "Cloudflare Worker" -> "DNS Client": NXDOMAIN (synthetic)
+else Domain in ALLOWED_DOMAINS
+group Single request (Bypass Provider only)
+  "Cloudflare Worker" -> "Bypass Provider": GET/POST https://bypass-provider/dns-query
+  "Cloudflare Worker" <- "Bypass Provider": Bypass Provider DNS Response
 end
 
+"Cloudflare Worker" -[#gray]-> "Grafana Loki": POST log entry (async, if configured)
 "Cloudflare Worker" -> "DNS Client": Cloudflare Worker DNS Response
+else Domain not in BLOCKED_DOMAINS or ALLOWED_DOMAINS
+group Parallel
+  "Cloudflare Worker" -> "Main Provider": GET/POST https://main-provider/dns-query
+  "Cloudflare Worker" <- "Main Provider": Main Provider DNS Response
+  "Cloudflare Worker" -> "Additional Provider 1": GET/POST https://additional-provider-1/dns-query
+  "Cloudflare Worker" <- "Additional Provider 1": Additional Provider 1 DNS Response
+  "Cloudflare Worker" -> ...: GET/POST https://additional-provider-n/dns-query
+  "Cloudflare Worker" <- ...: Additional Provider N DNS Response
+end
 
-note left
-  If any of the DNS Providers respond back with **0.0.0.0/0** or **::**, they are marked as //blocked//.
-  If any of the DNS Providers respond back with **NXDOMAIN**, they are marked as //possibly blocked//.
+note over "Cloudflare Worker": Select winner: blocked > possibly blocked\n> main provider > any provider\nApply rebind protection (if enabled)
 
-  The first condition that matches sends a response:
-    * The response at the start of the //blocked// list
-    * The response at the start of the //possibly blocked// list
-    * An error if multiple providers are marked as //main//
-    * An error if all providers responded with an error
-    * The //successful// response from the provider marked as //main//
-    * The response from any provider that didn't fail
-    * An error because we don't know what happened
-end note
+"Cloudflare Worker" -[#gray]-> "Grafana Loki": POST log entry (async, if configured)
+"Cloudflare Worker" -> "DNS Client": Cloudflare Worker DNS Response
+end
+
 @enduml

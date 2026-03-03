@@ -1,7 +1,10 @@
 .env
-app
-config.capnp
-node_modules/
-nginx/ssl/
-worker/
+.dev.vars
+python_modules/
+__pycache__/
+.venv/
+.venv-workers/
 .wrangler
+.vscode
+.pytest_cache/
+.ruff_cache/

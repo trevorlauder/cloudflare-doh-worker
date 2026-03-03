@@ -1,0 +1,41 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "schedule": ["every weekend"],
+  "mise": {
+    "fileMatch": ["(^|/)mise\\.toml$", "(^|/)mise\\.dev\\.toml$"]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": ["^Dockerfile$"],
+      "matchStrings": [
+        "ARG MISE_VERSION=(?<currentValue>v[\\d.]+)\\n"
+      ],
+      "depNameTemplate": "jdx/mise",
+      "datasourceTemplate": "github-releases"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions"
+    },
+    {
+      "matchManagers": ["mise"],
+      "groupName": "mise"
+    },
+    {
+      "matchManagers": ["dprint"],
+      "groupName": "dprint"
+    },
+    {
+      "matchManagers": ["pep621"],
+      "groupName": "python"
+    },
+    {
+      "matchManagers": ["dockerfile"],
+      "groupName": "docker"
+    }
+  ]
+}
