@@ -19,7 +19,7 @@ This started as [a workaround](https://www.lauder.family/blog/2021/09/25/Avoidin
 - `{SECRET_NAME}` placeholders in config, resolved from Cloudflare Worker secrets at request time
 - Health and config endpoints (`CONFIG_ENDPOINT` requires `ADMIN_TOKEN`)
 - Debug mode adds diagnostic response headers
-- Optional Grafana Loki logging, with a sample dashboard in [`dashboard/grafana.json`](dashboard/grafana.json)
+- Optional Grafana Loki logging
 - Supports both `dns-message` and `dns-json` content types
 
 ## Quickstart Deploy
@@ -216,6 +216,10 @@ See the full set of options with defaults in `src/config.py`.
   - `CLOUDFLARE-DOH-WORKER-CONFIG-BLOCKED`
 
 - **Loki logging** is async and only active when `LOKI_URL`, `LOKI_USERNAME`, and `LOKI_PASSWORD` are all set.
+
+## Grafana
+
+A sample dashboard is included in [`dashboard/grafana.json`](dashboard/grafana.json). Import it into Grafana, select your Loki datasource, and save.
 
 ## Contributing
 
