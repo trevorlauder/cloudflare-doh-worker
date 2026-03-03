@@ -80,7 +80,7 @@ Use this button to deploy this worker to your Cloudflare account.
 
 ## Updating
 
-Check [CHANGELOG.md](CHANGELOG.md) before updating to see if any config changes are required.
+Check [CHANGELOG.md](CHANGELOG.md) and the [release notes](https://github.com/trevorlauder/cloudflare-doh-worker/releases) before updating to see if any config changes are required.
 
 Add this repo as an upstream remote (only needed once), then merge the new deploy tag:
 
