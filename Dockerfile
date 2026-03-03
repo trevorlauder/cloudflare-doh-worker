@@ -6,12 +6,12 @@ RUN apt-get update && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install mise - pinned version with checksum verification
-ARG MISE_VERSION=v2026.2.18
+ARG MISE_VERSION=v2026.3.0
 ARG TARGETARCH
 SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
 RUN case "${TARGETARCH}" in \
-    arm64) MISE_ARCH="arm64"; MISE_SHA256="8c73a379d49c8919c0d7b8d90adf94aa0a4842a4b070101134239d9db0e45c7f" ;; \
-    *)     MISE_ARCH="x64";   MISE_SHA256="e9f864905baab45916159e017243664f02cd1f5072723013496db568c82062a1" ;; \
+    arm64) MISE_ARCH="arm64"; MISE_SHA256="6a0b75d51f96a3dd6886a87139fca91074920bf27412dd1fe509c3d7e3cde497" ;; \
+    *)     MISE_ARCH="x64";   MISE_SHA256="129b7875dd72a457c93ee5bb571d33efe9304b8f13f1734d205041c3f011fe65" ;; \
     esac; \
     curl -fsSL "https://github.com/jdx/mise/releases/download/${MISE_VERSION}/mise-${MISE_VERSION}-linux-${MISE_ARCH}" \
     -o /usr/local/bin/mise && \
