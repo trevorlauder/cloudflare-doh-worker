@@ -8,10 +8,10 @@ import urllib.request
 
 
 def resolve_env(s: str) -> str:
-  """Substitute {VAR_NAME} placeholders with environment variable values."""
+  """Substitute ${VAR_NAME} placeholders with environment variable values."""
 
   return re.sub(
-    r"\{([A-Z][A-Z0-9_]*)\}", lambda m: os.environ.get(m.group(1), m.group(0)), s
+    r"\$\{([A-Z][A-Z0-9_]*)\}", lambda m: os.environ.get(m.group(1), m.group(0)), s
   )
 
 
