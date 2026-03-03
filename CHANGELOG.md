@@ -1,10 +1,24 @@
 # Changelog
 
+## [1.0.0-rc3] - 2026-03-03
+
+### Changes
+
+- Update jdx/mise-action action to v3.6.2 ([#36](https://github.com/trevorlauder/cloudflare-doh-worker/pull/36))
+- Update mise ([#38](https://github.com/trevorlauder/cloudflare-doh-worker/pull/38))
+- Update dependency jdx/mise to v2026.3.0 ([#37](https://github.com/trevorlauder/cloudflare-doh-worker/pull/37))
+- Migrate Renovate config ([#39](https://github.com/trevorlauder/cloudflare-doh-worker/pull/39))
+- Update python version in CONTRIBUTING.md ([#40](https://github.com/trevorlauder/cloudflare-doh-worker/pull/40))
+- Add release notes link to Updating section in README ([#41](https://github.com/trevorlauder/cloudflare-doh-worker/pull/41))
+- Remove hardcoded grafana datasource ([#42](https://github.com/trevorlauder/cloudflare-doh-worker/pull/42))
+- Rename secret template syntax to avoid confusion with variables ([#43](https://github.com/trevorlauder/cloudflare-doh-worker/pull/43))
+- 1.0.0-rc3 prep
+
 ## [1.0.0-rc2] - 2026-03-03
 
 ### Changes
 
-- Improved exception handling and cache logic
+- Improved exception handling and cache logic ([#34](https://github.com/trevorlauder/cloudflare-doh-worker/pull/34))
 
 ## [1.0.0-rc1] - 2026-03-03
 
