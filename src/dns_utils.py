@@ -14,9 +14,6 @@ import dns.message
 import dns.name
 import dns.rcode
 import dns.rdatatype
-from js import AbortSignal, Object, Promise, Uint8Array
-from js import fetch as js_fetch
-from pyodide.ffi import create_once_callable, to_js
 
 import config
 
@@ -25,6 +22,9 @@ logger = logging.getLogger(__name__)
 
 def _extract_response_cb(resp):
   """Synchronous .then() callback: read body and return metadata promise."""
+
+  from js import Object
+  from pyodide.ffi import create_once_callable, to_js
 
   ct = str(resp.headers.get("content-type") or "application/dns-message")
   is_json = "dns-json" in ct or "application/json" in ct
@@ -325,6 +325,8 @@ def _build_provider_fetch_request(
 
   headers.update(provider.get("headers", {}))
 
+  from js import AbortSignal
+
   fetch_options: dict = {
     "method": method,
     "headers": headers,
@@ -434,6 +436,10 @@ async def send_doh_requests_fanout(
   query: str = "",
 ) -> list:
   """Query providers with JS Promise fan-out to avoid Python task re-entrancy."""
+
+  from js import Object, Promise, Uint8Array
+  from js import fetch as js_fetch
+  from pyodide.ffi import create_once_callable, to_js
 
   if not doh_providers:
     return []

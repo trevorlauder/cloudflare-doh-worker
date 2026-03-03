@@ -5,9 +5,6 @@ import base64
 import json
 import logging
 
-from js import AbortSignal, Object, fetch
-from pyodide.ffi import to_js
-
 from config import LOKI_TIMEOUT_MS
 from dns_utils import Question
 
@@ -30,6 +27,9 @@ def build_loki_fetch_promise(
   """Build a Loki log entry and return a JS fetch Promise, or None on failure."""
 
   try:
+    from js import AbortSignal, Object, fetch
+    from pyodide.ffi import to_js
+
     loki_username = getattr(env, "LOKI_USERNAME", None)
     loki_password = getattr(env, "LOKI_PASSWORD", None)
 
