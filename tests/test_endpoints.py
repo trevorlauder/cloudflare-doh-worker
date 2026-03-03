@@ -18,6 +18,10 @@ import dns.message
 import dns.rcode
 import dns.rdatatype
 import pytest
+from conftest import BASE_URL, IS_HTTPS, IS_LOCAL, SKIP_TLS, resolve_env
+from curl_cffi import requests as cffi_requests
+from curl_cffi.const import CurlHttpVersion
+
 from config import (
   ALLOWED_DOMAINS,
   BLOCKED_DOMAINS,
@@ -29,9 +33,6 @@ from config import (
   HEALTH_ENDPOINT,
   REBIND_PROTECTION,
 )
-from conftest import BASE_URL, IS_HTTPS, IS_LOCAL, SKIP_TLS, resolve_env
-from curl_cffi import requests as cffi_requests
-from curl_cffi.const import CurlHttpVersion
 
 TEST_ENDPOINTS = [resolve_env(e) for e in ENDPOINTS]
 HEALTH_ENDPOINT = resolve_env(HEALTH_ENDPOINT)

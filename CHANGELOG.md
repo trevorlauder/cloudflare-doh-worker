@@ -1,10 +1,16 @@
 # Changelog
 
+## [1.0.0-rc2] - 2026-03-03
+
+### Changes
+
+- Improved exception handling and cache logic
+
 ## [1.0.0-rc1] - 2026-03-03
 
 ### Changes
 
-- Refactor in python
+- Refactor in python ([#33](https://github.com/trevorlauder/cloudflare-doh-worker/pull/33))
 
 ## [0.9.0] - 2026-02-18
 

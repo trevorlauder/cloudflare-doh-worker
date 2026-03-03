@@ -32,7 +32,7 @@ ENV PATH="/home/app/.local/share/mise/shims:/home/app/.local/bin:${PATH}"
 COPY --chown=app:app pyproject.toml uv.lock ./
 RUN uv sync --group dev
 
-COPY --chown=app:app worker/ worker/
+COPY --chown=app:app src/ src/
 COPY --chown=app:app tests/ tests/
 COPY --chown=app:app Makefile ./
 COPY --chown=app:app wrangler.toml .

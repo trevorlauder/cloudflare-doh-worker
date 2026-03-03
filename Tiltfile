@@ -24,7 +24,7 @@ if not (_is_ci and os.getenv('SKIP_DOCKER_BUILD', '') == '1'):
         '.',
         ignore=['k8s/', 'nginx/', 'docs/'],
         live_update=[
-            sync('worker/', '/usr/src/app/worker/'),
+            sync('src/', '/usr/src/app/src/'),
         ],
     )
 
@@ -63,7 +63,7 @@ if not _is_ci:
     local_resource(
         'worker-config-restart',
         cmd='kubectl rollout restart deployment/worker',
-        deps=['worker/config.py'],
+        deps=['src/config.py'],
         resource_deps=['worker'],
         labels=['app'],
     )

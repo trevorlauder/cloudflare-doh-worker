@@ -12,23 +12,23 @@ This started as [a workaround](https://www.lauder.family/blog/2021/09/25/Avoidin
 ## Features
 
 - Fan-out to multiple DoH providers, pick the most restrictive answer
-- Per-domain blocklist and allowlist in `worker/config.py` to ensure specific domains are always blocked or never blocked, regardless of upstream provider responses (not meant for huge community lists due to Worker resource limits)
+- Per-domain blocklist and allowlist in `src/config.py` to ensure specific domains are always blocked or never blocked, regardless of upstream provider responses (not meant for huge community lists due to Worker resource limits)
 - Allowed domains skip fan-out and go straight to a non-filtering bypass provider (default: Cloudflare)
 - EDNS Client Subnet prefix truncation for privacy
 - DNS rebind protection (blocks responses resolving to private IPs)
 - `{SECRET_NAME}` placeholders in config, resolved from Cloudflare Worker secrets at request time
 - Health and config endpoints (`CONFIG_ENDPOINT` requires `ADMIN_TOKEN`)
 - Debug mode adds diagnostic response headers
-- Optional Grafana Loki logging
+- Optional Grafana Loki logging, with a sample dashboard in [`dashboard/grafana.json`](dashboard/grafana.json)
 - Supports both `dns-message` and `dns-json` content types
 
 ## Quickstart Deploy
 
 Use this button to deploy this worker to your Cloudflare account.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/trevorlauder/cloudflare-doh-worker/tree/deploy-1.0.0-rc1)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/trevorlauder/cloudflare-doh-worker/tree/deploy-1.0.0-rc2)
 
-- Update `wrangler.toml` and `worker/config.py` **in your new repo** created by Cloudflare, based on your needs. See [Configuration](#configuration) for details.
+- Update `wrangler.toml` and `src/config.py` **in your new repo** created by Cloudflare, based on your needs. See [Configuration](#configuration) for details.
 
 - Add any secrets referenced in your config via `{SECRET_NAME}` placeholders:
 
@@ -53,13 +53,13 @@ Use this button to deploy this worker to your Cloudflare account.
   ```shell
   git clone https://github.com/your-username/cloudflare-doh-worker.git
   cd cloudflare-doh-worker
-  git checkout -B main deploy-1.0.0-rc1
+  git checkout -B main deploy-1.0.0-rc2
   git push --force-with-lease origin main
   ```
 
 - Update `wrangler.toml` with your routes/domains.
 
-- Update `worker/config.py` with your endpoint paths and provider details. See [Configuration](#configuration).
+- Update `src/config.py` with your endpoint paths and provider details. See [Configuration](#configuration).
 
 - Add your secrets as shown in [Quickstart Deploy](#quickstart-deploy).
 
@@ -82,7 +82,7 @@ Use this button to deploy this worker to your Cloudflare account.
 
 Check [CHANGELOG.md](CHANGELOG.md) before updating to see if any config changes are required.
 
-In both cases, your repo is a fork of a `deploy-x.x.x` tag of [https://github.com/trevorlauder/cloudflare-doh-worker.git](https://github.com/trevorlauder/cloudflare-doh-worker.git). Add this repo as an upstream remote (only needed once), then merge the new deploy tag:
+Add this repo as an upstream remote (only needed once), then merge the new deploy tag:
 
 ```shell
 git remote add upstream https://github.com/trevorlauder/cloudflare-doh-worker.git
@@ -90,7 +90,7 @@ git fetch upstream
 git merge --allow-unrelated-histories deploy-1.0.0  # replace with the new version tag
 ```
 
-Resolve any conflicts in `worker/config.py`, `wrangler.toml`, and `package.json` to preserve your customizations (the `name` field in `wrangler.toml` and `package.json` will always conflict), then redeploy.
+Resolve any conflicts in `src/config.py`, `wrangler.toml`, and `package.json` to preserve your customizations (the `name` field in `wrangler.toml` and `package.json` will always conflict), then redeploy.
 
 ## Requirements
 
@@ -100,7 +100,7 @@ Resolve any conflicts in `worker/config.py`, `wrangler.toml`, and `package.json`
 
 ## Configuration
 
-All config lives in `worker/config.py`. You can define as many endpoint paths as you need. Each one proxies to its own set of upstream DoH providers.
+All config lives in `src/config.py`. You can define as many endpoint paths as you need. Each one proxies to its own set of upstream DoH providers.
 
 Each endpoint has one `main_provider` (whose answer is used when nothing is blocked) and optional `additional_providers`.
 
@@ -158,7 +158,7 @@ ENDPOINTS = {
 }
 ```
 
-See the full set of options with defaults in `worker/config.py`.
+See the full set of options with defaults in `src/config.py`.
 
 <details>
 <summary>All configuration options</summary>

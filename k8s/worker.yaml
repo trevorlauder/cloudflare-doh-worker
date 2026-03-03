@@ -39,7 +39,7 @@ spec:
               memory: 1Gi
           volumeMounts:
             - name: config
-              mountPath: /usr/src/app/worker/config.py
+              mountPath: /usr/src/app/src/config.py
               subPath: config.py
             - name: dev-vars
               mountPath: /usr/src/app/.dev.vars

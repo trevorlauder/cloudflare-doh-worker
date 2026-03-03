@@ -5,10 +5,11 @@ import base64
 import json
 import logging
 
-from config import LOKI_TIMEOUT_MS
-from dns_utils import Question
 from js import AbortSignal, Object, fetch
 from pyodide.ffi import to_js
+
+from config import LOKI_TIMEOUT_MS
+from dns_utils import Question
 
 logger = logging.getLogger(__name__)
 

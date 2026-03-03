@@ -4,14 +4,18 @@ preview_urls = false
 send_metrics = false
 
 compatibility_date = "2026-02-24"
-compatibility_flags = ["python_workers"]
+
+compatibility_flags = [
+  "python_workers",
+  "python_dedicated_snapshot",
+]
 
 # Use a custom route if you have your own domain on Cloudflare
 routes = [
   "www.mydomain.com/top/level/path/to/entrypoints/*",
 ]
 
-main = "worker/main.py"
+main = "src/worker.py"
 
 [observability]
 [observability.logs]

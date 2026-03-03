@@ -23,19 +23,27 @@ jobs:
           persist-credentials: false
 
       - name: Build deploy tree
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_REPOSITORY: ${{ github.repository }}
         run: |
           mkdir /tmp/deploy
 
-          cp -r worker/       /tmp/deploy/worker/
+          cp -r src/          /tmp/deploy/src/
           cp wrangler.toml    /tmp/deploy/
           cp pyproject.toml   /tmp/deploy/
           cp package.json     /tmp/deploy/
           cp uv.lock          /tmp/deploy/
-          cp README.md        /tmp/deploy/
           cp LICENSE          /tmp/deploy/
           cp .gitignore       /tmp/deploy/
           cp mise.deploy.toml /tmp/deploy/mise.toml
-          cp README.md        /tmp/deploy/
+
+          cat > /tmp/deploy/README.md << EOF
+          # cloudflare-doh-worker
+
+          This is a deploy branch. For documentation, see the README for this release:
+          https://github.com/${GH_REPOSITORY}/blob/${TAG}/README.md
+          EOF
 
       - name: Push deploy branch
         env:
