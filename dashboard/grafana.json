@@ -3273,8 +3273,8 @@
       "spec": {
         "allowCustomValue": true,
         "current": {
-          "text": "grafanacloud-tlauder-logs",
-          "value": "grafanacloud-logs"
+          "text": "",
+          "value": ""
         },
         "hide": "dontHide",
         "includeAll": false,
