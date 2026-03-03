@@ -20,7 +20,7 @@ Start the worker locally with `pywrangler`:
 make dev
 ```
 
-This runs the Python worker at `http://localhost:8787`. Secrets referenced in `worker/config.py` need to be present in a `.dev.vars` file at the project root (key=value format, one per line).
+This runs the Python worker at `http://localhost:8787`. Secrets referenced in `src/config.py` need to be present in a `.dev.vars` file at the project root (key=value format, one per line).
 
 ## Testing
 

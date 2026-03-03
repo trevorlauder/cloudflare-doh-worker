@@ -1,6 +1,6 @@
 *
-!worker/
-worker/config.py
+!src/
+src/config.py
 !entrypoint.sh
 !mise.toml
 !pyproject.toml

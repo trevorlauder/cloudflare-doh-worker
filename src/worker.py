@@ -9,6 +9,10 @@ import re
 import time
 from typing import NamedTuple
 
+from js import URL
+from pyodide.ffi import to_js
+from workers import Response, WorkerEntrypoint
+
 import config
 from dns_utils import (
   SUPPORTED_ACCEPT_HEADERS,
@@ -22,10 +26,7 @@ from dns_utils import (
   parse_dns_wire_request,
   send_doh_requests_fanout,
 )
-from js import URL
 from loki_utils import build_loki_fetch_promise
-from pyodide.ffi import to_js
-from workers import Response, WorkerEntrypoint
 
 logging.basicConfig(
   level=logging.DEBUG if config.DEBUG else logging.WARNING,
@@ -76,7 +77,10 @@ def _resolve_secrets(obj, env):
         return value
 
       def _replacer(m):
-        secret = getattr(env, m.group(1), None)
+        try:
+          secret = getattr(env, m.group(1), None)
+        except Exception:
+          secret = None
         if not secret:
           missing.append(m.group(1))
           return m.group(0)
@@ -129,7 +133,7 @@ _BYPASS_PROVIDER_LIST = (
   else []
 )
 
-_resolved_config_cache: tuple[int, "_ResolvedConfig"] | None = None
+_resolved_config_cache: "_ResolvedConfig | None" = None
 
 
 class _ResolvedConfig(NamedTuple):
@@ -147,9 +151,8 @@ def _resolve_config(env) -> _ResolvedConfig:
 
   global _resolved_config_cache
 
-  env_id = id(env)
-  if _resolved_config_cache is not None and _resolved_config_cache[0] == env_id:
-    return _resolved_config_cache[1]
+  if _resolved_config_cache is not None:
+    return _resolved_config_cache
 
   health = (
     _resolve_secrets(config.HEALTH_ENDPOINT, env) if config.HEALTH_ENDPOINT else None
@@ -175,7 +178,7 @@ def _resolve_config(env) -> _ResolvedConfig:
     bypass_provider_list=_resolve_providers(_BYPASS_PROVIDER_LIST, env),
   )
 
-  _resolved_config_cache = (env_id, resolved)
+  _resolved_config_cache = resolved
 
   return resolved
 

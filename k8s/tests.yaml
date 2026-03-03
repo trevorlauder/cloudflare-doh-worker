@@ -22,7 +22,7 @@ spec:
                 name: worker-dev-vars-env
           volumeMounts:
             - name: config
-              mountPath: /usr/src/app/worker/config.py
+              mountPath: /usr/src/app/src/config.py
               subPath: config.py
       volumes:
         - name: config

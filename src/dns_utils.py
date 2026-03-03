@@ -8,7 +8,6 @@ import logging
 from dataclasses import dataclass
 from typing import NamedTuple
 
-import config
 import dns.edns
 import dns.exception
 import dns.message
@@ -18,6 +17,8 @@ import dns.rdatatype
 from js import AbortSignal, Object, Promise, Uint8Array
 from js import fetch as js_fetch
 from pyodide.ffi import create_once_callable, to_js
+
+import config
 
 logger = logging.getLogger(__name__)
 
