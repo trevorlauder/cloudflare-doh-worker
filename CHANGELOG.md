@@ -13,6 +13,7 @@
 ### Performance
 
 - Improvements to reduce cpu time ([#50](https://github.com/trevorlauder/cloudflare-doh-worker/pull/50))
+- Reduce Python/JS FFI boundary crossings ([#52](https://github.com/trevorlauder/cloudflare-doh-worker/pull/52))
 
 ## [1.0.0-rc4] - 2026-03-04
 
