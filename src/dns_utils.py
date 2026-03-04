@@ -20,31 +20,6 @@ import config
 logger = logging.getLogger(__name__)
 
 
-def _extract_response_cb(resp):
-  """Synchronous .then() callback: read body and return metadata promise."""
-
-  from js import Object
-  from pyodide.ffi import create_once_callable, to_js
-
-  ct = str(resp.headers.get("content-type") or "application/dns-message")
-  is_json = "dns-json" in ct or "application/json" in ct
-  body_promise = resp.text() if is_json else resp.arrayBuffer()
-
-  def _package(body):
-    return to_js(
-      {
-        "body": body,
-        "ct": ct,
-        "ok": bool(resp.ok),
-        "status": int(resp.status),
-        "isJson": is_json,
-      },
-      dict_converter=Object.fromEntries,
-    )
-
-  return body_promise.then(create_once_callable(_package))
-
-
 SUPPORTED_ACCEPT_HEADERS = frozenset(
   {"application/dns-json", "application/dns-message"}
 )
@@ -444,6 +419,27 @@ async def send_doh_requests_fanout(
   if not doh_providers:
     return []
 
+  def _extract_response_cb(resp):
+    """Synchronous .then() callback — captures imports via closure."""
+
+    ct = str(resp.headers.get("content-type") or "application/dns-message")
+    is_json = "dns-json" in ct or "application/json" in ct
+    body_promise = resp.text() if is_json else resp.arrayBuffer()
+
+    def _package(body):
+      return to_js(
+        {
+          "body": body,
+          "ct": ct,
+          "ok": bool(resp.ok),
+          "status": int(resp.status),
+          "isJson": is_json,
+        },
+        dict_converter=Object.fromEntries,
+      )
+
+    return body_promise.then(create_once_callable(_package))
+
   promises = []
   provider_meta = []
 
@@ -477,7 +473,7 @@ async def send_doh_requests_fanout(
           )
         )
       except Exception as e:
-        logger.debug(
+        logger.error(
           "send_doh_requests failed for %s: %s: %s",
           provider.get("host", ""),
           type(e).__name__,
@@ -486,7 +482,7 @@ async def send_doh_requests_fanout(
         results.append(_failed_result(provider, main, e))
     else:
       reason = getattr(item, "reason", "rejected")
-      logger.debug(
+      logger.error(
         "send_doh_requests rejected for %s: %s",
         provider.get("host", ""),
         reason,

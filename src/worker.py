@@ -183,6 +183,13 @@ def _resolve_config(env) -> _ResolvedConfig:
 
 class Default(WorkerEntrypoint):
   async def fetch(self, request):
+    try:
+      return await self._handle(request)
+    except Exception:
+      logger.exception("Unhandled exception in fetch")
+      return Response("Internal server error", status=500)
+
+  async def _handle(self, request):
     from js import URL
 
     url = URL.new(request.url)
