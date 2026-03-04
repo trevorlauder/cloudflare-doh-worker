@@ -486,6 +486,7 @@ def _make_rebind_blocked_response(
   accept: str,
   request_wire: bytes | None,
   ecs_truncated: str,
+  parsed_request=None,
 ) -> Response | None:
   """Build a synthetic NXDOMAIN when all successful responses have private IPs."""
 
@@ -496,7 +497,9 @@ def _make_rebind_blocked_response(
   ):
     return None
 
-  body, content_type = make_blocked_response(question, accept, request_wire)
+  body, content_type = make_blocked_response(
+    question, accept, request_wire, parsed_request
+  )
 
   return Response(
     _to_js_body(body),
@@ -597,6 +600,7 @@ async def _handle_request(
   body_bytes = parsed.body_bytes
   ecs_truncated = parsed.ecs_description
   request_wire = parsed.request_wire
+  parsed_request = parsed.parsed_request
 
   name = question.name
   config_allowed = bool(name and domain_matches(name, _ALLOWED_COMPILED))
@@ -610,7 +614,9 @@ async def _handle_request(
     doh_providers = cfg.bypass_provider_list
 
   if name and domain_matches(name, _BLOCKED_COMPILED):
-    body, content_type = make_blocked_response(question, accept, request_wire)
+    body, content_type = make_blocked_response(
+      question, accept, request_wire, parsed_request
+    )
 
     final_response = Response(
       _to_js_body(body),
@@ -629,7 +635,7 @@ async def _handle_request(
 
     try:
       rebind_response = _make_rebind_blocked_response(
-        results, question, accept, request_wire, ecs_truncated
+        results, question, accept, request_wire, ecs_truncated, parsed_request
       )
 
       if rebind_response is not None:

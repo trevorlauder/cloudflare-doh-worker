@@ -136,6 +136,7 @@ class DnsParseResult(NamedTuple):
   body_bytes: bytes | None
   ecs_description: str
   request_wire: bytes | None
+  parsed_request: dns.message.Message | None = None
 
 
 @dataclass
@@ -154,6 +155,7 @@ class ProviderResult:
   possibly_blocked: bool = False
   rebind: bool = False
   timed_out: bool = False
+  min_ttl: int | None = None
 
 
 class _ProviderFetchRequest(NamedTuple):
@@ -184,7 +186,7 @@ def parse_dns_wire_request(data: bytes) -> DnsParseResult:
   packet = dns.message.from_wire(data)
   question = _extract_question(packet)
   truncated, ecs_desc = truncate_ecs(data, msg=packet)
-  return DnsParseResult(question, truncated, ecs_desc, data)
+  return DnsParseResult(question, truncated, ecs_desc, data, packet)
 
 
 def compile_domain_set(domains: list) -> tuple[frozenset, tuple]:
@@ -212,7 +214,10 @@ def domain_matches(name: str, compiled: tuple[frozenset, tuple]) -> bool:
 
 
 def make_blocked_response(
-  question: Question, accept: str, request_wire: bytes | None = None
+  question: Question,
+  accept: str,
+  request_wire: bytes | None = None,
+  parsed_request: dns.message.Message | None = None,
 ) -> tuple:
   """Build a synthetic NXDOMAIN DNS response for a blocked domain."""
 
@@ -242,7 +247,9 @@ def make_blocked_response(
 
     return body, "application/dns-json"
 
-  if request_wire is not None:
+  if parsed_request is not None:
+    req = parsed_request
+  elif request_wire is not None:
     try:
       req = dns.message.from_wire(request_wire)
     except Exception:
@@ -274,20 +281,6 @@ def _classify_answers(
   result.possibly_blocked = status == dns.rcode.NXDOMAIN
   if config.REBIND_PROTECTION and not blocked:
     result.rebind = has_private_answers(addresses)
-
-
-def _parse_binary_dns_answers(data: bytes) -> tuple[int, list[str]]:
-  """Parse a binary DNS response into (rcode_int, address_strings)."""
-
-  packet = dns.message.from_wire(data)
-  addresses = [
-    str(rr)
-    for rrset in packet.answer
-    for rr in rrset
-    if rr.rdtype in (dns.rdatatype.A, dns.rdatatype.AAAA)
-  ]
-
-  return int(packet.rcode()), addresses
 
 
 _MAX_DNS_BODY_SIZE = 65535
@@ -385,17 +378,31 @@ def _build_provider_result(
   if is_json:
     try:
       resp_json = json.loads(resp_body)
-      addresses = [
-        a.get("data", "") for a in resp_json.get("Answer", []) if a.get("data")
-      ]
+      answers = resp_json.get("Answer", [])
+      addresses = [a.get("data", "") for a in answers if a.get("data")]
       _classify_answers(result, resp_json.get("Status", 0), addresses)
+      ttls = [a["TTL"] for a in answers if "TTL" in a]
+      result.min_ttl = min(ttls) if ttls else None
     except Exception:
       logger.debug(
         "Failed to parse JSON DNS response from %s", provider["host"], exc_info=True
       )
   elif "dns-message" in content_type:
-    rcode, answers = _parse_binary_dns_answers(resp_body)
-    _classify_answers(result, rcode, answers)
+    try:
+      packet = dns.message.from_wire(resp_body)
+      addresses = [
+        str(rr)
+        for rrset in packet.answer
+        for rr in rrset
+        if rr.rdtype in (dns.rdatatype.A, dns.rdatatype.AAAA)
+      ]
+      _classify_answers(result, int(packet.rcode()), addresses)
+      ttls = [rrset.ttl for rrset in packet.answer]
+      result.min_ttl = min(ttls) if ttls else None
+    except Exception:
+      logger.debug(
+        "Failed to parse binary DNS response from %s", provider["host"], exc_info=True
+      )
 
   return result
 
@@ -403,23 +410,7 @@ def _build_provider_result(
 def get_response_min_ttl(result: ProviderResult) -> int | None:
   """Return the minimum TTL from a provider's DNS response, or None."""
 
-  try:
-    is_json = (
-      "dns-json" in result.response_content_type
-      or "application/json" in result.response_content_type
-    )
-
-    if is_json:
-      data = json.loads(result.response_body)
-      ttls = [a["TTL"] for a in data.get("Answer", []) if "TTL" in a]
-    elif isinstance(result.response_body, bytes) and result.response_body:
-      packet = dns.message.from_wire(result.response_body)
-      ttls = [rrset.ttl for rrset in packet.answer]
-    else:
-      return None
-    return min(ttls) if ttls else None
-  except Exception:
-    return None
+  return result.min_ttl
 
 
 async def send_doh_requests_fanout(

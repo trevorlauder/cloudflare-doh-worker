@@ -97,7 +97,7 @@ def build_loki_fetch_promise(
       "streams": [
         {
           "stream": {"source": "cloudflare-doh-worker"},
-          "values": [[ts_ns, json.dumps(log_entry)]],
+          "values": [[ts_ns, json.dumps(log_entry, separators=(",", ":"))]],
         }
       ]
     }
@@ -110,7 +110,7 @@ def build_loki_fetch_promise(
     fetch_options = {
       "method": "POST",
       "headers": headers,
-      "body": json.dumps(loki_payload),
+      "body": json.dumps(loki_payload, separators=(",", ":")),
       "signal": AbortSignal.timeout(LOKI_TIMEOUT_MS),
     }
 
