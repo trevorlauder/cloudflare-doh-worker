@@ -2118,6 +2118,252 @@
         }
       }
     },
+    "panel-29": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "editorMode": "code",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json failed_providers | failed_providers != `` [$__range]))",
+                      "queryType": "range"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Queries where at least one upstream DNS provider failed",
+        "id": 29,
+        "links": [],
+        "title": "Failed Providers",
+        "vizConfig": {
+          "group": "stat",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "thresholds"
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                },
+                "unit": "none"
+              },
+              "overrides": []
+            },
+            "options": {
+              "colorMode": "value",
+              "graphMode": "area",
+              "justifyMode": "auto",
+              "orientation": "auto",
+              "percentChangeColorMode": "standard",
+              "reduceOptions": {
+                "calcs": [
+                  "lastNotNull"
+                ],
+                "fields": "",
+                "values": false
+              },
+              "showPercentChange": false,
+              "textMode": "auto",
+              "wideLayout": true
+            }
+          },
+          "version": "13.0.0-22349652341"
+        }
+      }
+    },
+    "panel-30": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "editorMode": "code",
+                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question, failed_providers | failed_providers != `` | line_format `{{.question}}` | json question_name=\"name\", question_type=\"type\" | line_format `{\"endpoint\":\"{{.endpoint}}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\",\"failed_providers\":\"{{.failed_providers}}\"}`",
+                      "queryType": "range"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": [
+              {
+                "kind": "extractFields",
+                "spec": {
+                  "id": "extractFields",
+                  "options": {
+                    "format": "json",
+                    "replace": false,
+                    "source": "Line"
+                  }
+                }
+              },
+              {
+                "kind": "organize",
+                "spec": {
+                  "id": "organize",
+                  "options": {
+                    "excludeByName": {
+                      "Line": true,
+                      "id": true,
+                      "labelTypes": true,
+                      "labels": true,
+                      "traceID": true,
+                      "traceID (field)": true,
+                      "tsNs": true
+                    },
+                    "indexByName": {
+                      "Time": 0,
+                      "endpoint": 1,
+                      "domain": 2,
+                      "type": 3,
+                      "failed_providers": 4
+                    },
+                    "renameByName": {
+                      "Time": "Time",
+                      "endpoint": "Endpoint",
+                      "domain": "Domain",
+                      "type": "Type",
+                      "failed_providers": "Failed Providers"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "description": "Queries where at least one upstream DNS provider failed",
+        "id": 30,
+        "links": [],
+        "title": "Recent Failed Provider Queries",
+        "vizConfig": {
+          "group": "table",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "thresholds"
+                },
+                "custom": {
+                  "align": "auto",
+                  "cellOptions": {
+                    "type": "auto"
+                  },
+                  "footer": {
+                    "reducers": []
+                  },
+                  "inspect": false
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    }
+                  ]
+                }
+              },
+              "overrides": [
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "Time"
+                  },
+                  "properties": [
+                    {
+                      "id": "custom.width",
+                      "value": 180
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "Endpoint"
+                  },
+                  "properties": [
+                    {
+                      "id": "custom.width",
+                      "value": 200
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "Type"
+                  },
+                  "properties": [
+                    {
+                      "id": "custom.width",
+                      "value": 80
+                    }
+                  ]
+                }
+              ]
+            },
+            "options": {
+              "cellHeight": "sm",
+              "showHeader": true,
+              "sortBy": [
+                {
+                  "desc": true,
+                  "displayName": "Time"
+                }
+              ]
+            }
+          },
+          "version": "13.0.0-22349652341"
+        }
+      }
+    },
     "panel-3": {
       "kind": "Panel",
       "spec": {
@@ -2995,7 +3241,7 @@
               "name": "panel-27"
             },
             "height": 4,
-            "width": 8,
+            "width": 6,
             "x": 0,
             "y": 4
           }
@@ -3008,8 +3254,8 @@
               "name": "panel-16"
             },
             "height": 4,
-            "width": 8,
-            "x": 8,
+            "width": 6,
+            "x": 6,
             "y": 4
           }
         },
@@ -3021,9 +3267,35 @@
               "name": "panel-22"
             },
             "height": 4,
-            "width": 8,
-            "x": 16,
+            "width": 6,
+            "x": 12,
             "y": 4
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-29"
+            },
+            "height": 4,
+            "width": 6,
+            "x": 18,
+            "y": 4
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-30"
+            },
+            "height": 10,
+            "width": 24,
+            "x": 0,
+            "y": 8
           }
         },
         {
@@ -3036,7 +3308,7 @@
             "height": 8,
             "width": 24,
             "x": 0,
-            "y": 8
+            "y": 18
           }
         },
         {
@@ -3049,7 +3321,7 @@
             "height": 8,
             "width": 12,
             "x": 0,
-            "y": 16
+            "y": 26
           }
         },
         {
@@ -3062,7 +3334,7 @@
             "height": 8,
             "width": 12,
             "x": 12,
-            "y": 16
+            "y": 26
           }
         },
         {
@@ -3075,7 +3347,7 @@
             "height": 10,
             "width": 8,
             "x": 0,
-            "y": 24
+            "y": 34
           }
         },
         {
@@ -3088,7 +3360,7 @@
             "height": 10,
             "width": 8,
             "x": 8,
-            "y": 24
+            "y": 34
           }
         },
         {
@@ -3101,7 +3373,7 @@
             "height": 10,
             "width": 8,
             "x": 16,
-            "y": 24
+            "y": 34
           }
         },
         {
@@ -3114,7 +3386,7 @@
             "height": 10,
             "width": 24,
             "x": 0,
-            "y": 34
+            "y": 44
           }
         },
         {
@@ -3127,7 +3399,7 @@
             "height": 10,
             "width": 24,
             "x": 0,
-            "y": 44
+            "y": 54
           }
         },
         {
@@ -3140,7 +3412,7 @@
             "height": 8,
             "width": 12,
             "x": 0,
-            "y": 54
+            "y": 64
           }
         },
         {
@@ -3153,7 +3425,7 @@
             "height": 8,
             "width": 12,
             "x": 12,
-            "y": 54
+            "y": 64
           }
         },
         {
@@ -3166,7 +3438,7 @@
             "height": 8,
             "width": 12,
             "x": 0,
-            "y": 62
+            "y": 72
           }
         },
         {
@@ -3179,7 +3451,7 @@
             "height": 8,
             "width": 12,
             "x": 12,
-            "y": 62
+            "y": 72
           }
         },
         {
@@ -3192,7 +3464,7 @@
             "height": 8,
             "width": 12,
             "x": 0,
-            "y": 70
+            "y": 80
           }
         },
         {
@@ -3205,7 +3477,7 @@
             "height": 8,
             "width": 12,
             "x": 12,
-            "y": 70
+            "y": 80
           }
         },
         {
@@ -3218,7 +3490,7 @@
             "height": 10,
             "width": 24,
             "x": 0,
-            "y": 78
+            "y": 88
           }
         },
         {
@@ -3231,7 +3503,7 @@
             "height": 8,
             "width": 24,
             "x": 0,
-            "y": 88
+            "y": 98
           }
         }
       ]
