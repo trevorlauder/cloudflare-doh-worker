@@ -24,6 +24,13 @@ SUPPORTED_ACCEPT_HEADERS = frozenset(
   {"application/dns-json", "application/dns-message"}
 )
 
+# Pre-built minimal SERVFAIL wire response (built once at import time).
+_servfail_query = dns.message.make_query(dns.name.from_text("."), dns.rdatatype.A)
+_servfail_resp = dns.message.make_response(_servfail_query)
+_servfail_resp.set_rcode(dns.rcode.SERVFAIL)
+_SERVFAIL_WIRE = _servfail_resp.to_wire()
+del _servfail_query, _servfail_resp
+
 
 _PRIVATE_NETWORKS = (
   ipaddress.ip_network("10.0.0.0/8"),
@@ -245,10 +252,9 @@ def make_blocked_response(
     return resp.to_wire(), "application/dns-message"
   except Exception:
     logger.exception("Failed to build blocked DNS wire response")
-    fallback = dns.message.make_query(dns.name.from_text("."), dns.rdatatype.A)
-    fallback_resp = dns.message.make_response(fallback)
-    fallback_resp.set_rcode(dns.rcode.SERVFAIL)
-    return fallback_resp.to_wire(), "application/dns-message"
+    if request_wire and len(request_wire) >= 2:
+      return request_wire[:2] + _SERVFAIL_WIRE[2:], "application/dns-message"
+    return _SERVFAIL_WIRE, "application/dns-message"
 
 
 _BLOCKED_ADDRS = frozenset({"0.0.0.0", "::"})  # noqa: S104
