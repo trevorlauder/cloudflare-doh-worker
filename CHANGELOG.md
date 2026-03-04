@@ -2,15 +2,13 @@
 
 ## [1.0.0-rc4] - 2026-03-04
 
+### Bug Fixes
+
+- Improve error handling, logging, and failed provider tracking ([#46](https://github.com/trevorlauder/cloudflare-doh-worker/pull/46))
+
 ### Changes
 
-- Change js/pyodide.ffi imports to lazy imports
 - Move js & pyodide.ffi imports inside functions ([#45](https://github.com/trevorlauder/cloudflare-doh-worker/pull/45))
-- Fixes
-
-### Dependencies
-
-- Bump rc
 
 ## [1.0.0-rc3] - 2026-03-03
 
