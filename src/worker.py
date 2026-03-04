@@ -9,8 +9,6 @@ import re
 import time
 from typing import NamedTuple
 
-from js import URL
-from pyodide.ffi import to_js
 from workers import Response, WorkerEntrypoint
 
 import config
@@ -185,6 +183,8 @@ def _resolve_config(env) -> _ResolvedConfig:
 
 class Default(WorkerEntrypoint):
   async def fetch(self, request):
+    from js import URL
+
     url = URL.new(request.url)
     pathname = str(url.pathname)
 
@@ -320,6 +320,8 @@ def _to_js_body(body):
   """Convert Python bytes to a JS Uint8Array for Cloudflare Workers Response."""
 
   if isinstance(body, (bytes, bytearray)):
+    from pyodide.ffi import to_js
+
     return to_js(body)
 
   return body
