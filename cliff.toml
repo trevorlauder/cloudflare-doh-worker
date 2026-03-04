@@ -46,7 +46,7 @@ commit_parsers = [
   { message = "^build", group = "Build" },
   { message = "^style", group = "Style" },
   { message = "^chore\\(deps\\)|^Bump |^bump ", group = "Dependencies" },
-  { message = "^chore", group = "Miscellaneous" },
+  { message = "^chore", skip = true },
   { message = "^ci|^CI", group = "CI" },
   { message = ".*", group = "Changes" },
 ]
