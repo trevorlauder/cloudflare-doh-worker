@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.0-rc5] - 2026-03-04
+
+### Bug Fixes
+
+- Harden error handling and add POST body size guard ([#48](https://github.com/trevorlauder/cloudflare-doh-worker/pull/48))
+
+### Features
+
+- Include provider response code in message sent to grafana ([#49](https://github.com/trevorlauder/cloudflare-doh-worker/pull/49))
+
+### Performance
+
+- Improvements to reduce cpu time ([#50](https://github.com/trevorlauder/cloudflare-doh-worker/pull/50))
+
 ## [1.0.0-rc4] - 2026-03-04
 
 ### Bug Fixes
