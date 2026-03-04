@@ -10,6 +10,7 @@ from typing import NamedTuple
 
 import dns.edns
 import dns.exception
+import dns.flags
 import dns.message
 import dns.name
 import dns.rcode
@@ -24,12 +25,15 @@ SUPPORTED_ACCEPT_HEADERS = frozenset(
   {"application/dns-json", "application/dns-message"}
 )
 
-# Pre-built minimal SERVFAIL wire response (built once at import time).
-_servfail_query = dns.message.make_query(dns.name.from_text("."), dns.rdatatype.A)
-_servfail_resp = dns.message.make_response(_servfail_query)
-_servfail_resp.set_rcode(dns.rcode.SERVFAIL)
-_SERVFAIL_WIRE = _servfail_resp.to_wire()
-del _servfail_query, _servfail_resp
+
+def _build_servfail_wire() -> bytes:
+  msg = dns.message.Message(id=0)
+  msg.flags = dns.flags.QR | dns.flags.RD | dns.flags.RA
+  msg.set_rcode(dns.rcode.SERVFAIL)
+  return msg.to_wire()
+
+
+_SERVFAIL_WIRE = _build_servfail_wire()
 
 
 _PRIVATE_NETWORKS = (
