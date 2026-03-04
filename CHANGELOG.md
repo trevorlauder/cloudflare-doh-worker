@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-rc4] - 2026-03-04
+
+### Changes
+
+- Change js/pyodide.ffi imports to lazy imports
+- Move js & pyodide.ffi imports inside functions ([#45](https://github.com/trevorlauder/cloudflare-doh-worker/pull/45))
+- Fixes
+
+### Dependencies
+
+- Bump rc
+
 ## [1.0.0-rc3] - 2026-03-03
 
 ### Changes
@@ -12,7 +24,7 @@
 - Add release notes link to Updating section in README ([#41](https://github.com/trevorlauder/cloudflare-doh-worker/pull/41))
 - Remove hardcoded grafana datasource ([#42](https://github.com/trevorlauder/cloudflare-doh-worker/pull/42))
 - Rename secret template syntax to avoid confusion with variables ([#43](https://github.com/trevorlauder/cloudflare-doh-worker/pull/43))
-- 1.0.0-rc3 prep
+- 1.0.0-rc3 prep ([#44](https://github.com/trevorlauder/cloudflare-doh-worker/pull/44))
 
 ## [1.0.0-rc2] - 2026-03-03
 
