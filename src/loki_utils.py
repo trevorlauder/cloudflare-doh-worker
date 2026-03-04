@@ -53,7 +53,7 @@ def build_loki_fetch_promise(
       rebind_providers[pid] = result.rebind
       possibly_blocked_providers[pid] = result.possibly_blocked
       if result.failed:
-        failed_provider_ids.append(pid)
+        failed_provider_ids.append(f"{pid} ({result.response_status})")
 
     is_blocked = any(r.blocked and r.provider_id == response_from for r in results)
 
