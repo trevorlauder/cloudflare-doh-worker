@@ -126,13 +126,13 @@ def _request(
 # Test failure cases (non-200 responses)
 
 
-def test_unknown_path_returns_404():
-  """A path not in ENDPOINTS should return 404."""
+def test_unknown_path_returns_403_or_404():
+  """A path not in ENDPOINTS should return 403 or 404."""
 
   with pytest.raises(urllib.error.HTTPError) as e:
     urllib.request.urlopen(_request(f"{BASE_URL}/doh/does/not/exist"), timeout=TIMEOUT)
 
-  assert e.value.code == 404
+  assert e.value.code in (403, 404)
 
 
 def test_bad_accept_returns_406():

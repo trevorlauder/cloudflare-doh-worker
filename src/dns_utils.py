@@ -25,6 +25,15 @@ SUPPORTED_ACCEPT_HEADERS = frozenset(
   {"application/dns-json", "application/dns-message"}
 )
 
+DNS_JSON_HOSTS = frozenset(
+  {
+    "cloudflare-dns.com",
+    "security.cloudflare-dns.com",
+    "family.cloudflare-dns.com",
+    "dns.google",
+  }
+)
+
 
 def _build_servfail_wire() -> bytes:
   msg = dns.message.Message(id=0)
@@ -424,81 +433,79 @@ async def send_doh_requests_fanout(
 
   from js import AbortSignal, Object, Promise, Uint8Array
   from js import fetch as js_fetch
-  from pyodide.ffi import create_once_callable, to_js
+  from pyodide.ffi import to_js
 
   if not doh_providers:
     return []
 
   abort_signal = AbortSignal.timeout(config.TIMEOUT_MS)
 
-  def _extract_response_cb(resp):
-    """Synchronous .then() callback — captures imports via closure."""
-
-    ct = str(resp.headers.get("content-type") or "application/dns-message")
-    is_json = "dns-json" in ct or "application/json" in ct
-    body_promise = resp.text() if is_json else resp.arrayBuffer()
-
-    def _package(body):
-      return to_js(
-        {
-          "body": body,
-          "ct": ct,
-          "ok": bool(resp.ok),
-          "status": int(resp.status),
-          "isJson": is_json,
-        },
-        dict_converter=Object.fromEntries,
-      )
-
-    return body_promise.then(create_once_callable(_package))
+  is_json_query = accept == "application/dns-json" and body_bytes is None
 
   promises = []
   provider_meta = []
 
   for provider in doh_providers:
+    if is_json_query and provider.get("host", "") not in DNS_JSON_HOSTS:
+      continue
+
     target_url, fetch_options, main = _build_provider_fetch_request(
       provider, method, accept, abort_signal, body_bytes, query
     )
+
     js_opts = to_js(fetch_options, dict_converter=Object.fromEntries)
-    promises.append(
-      js_fetch(target_url, js_opts).then(create_once_callable(_extract_response_cb))
-    )
+    promises.append(js_fetch(target_url, js_opts))
     provider_meta.append((provider, main))
 
   settled = await Promise.allSettled(to_js(promises))
 
-  results = []
-  for idx, (provider, main) in enumerate(provider_meta):
-    item = settled[idx]
-    status = str(getattr(item, "status", ""))
+  fulfilled = {}
+  body_promises = []
+  body_indices = []
 
-    if status == "fulfilled":
-      val = item.value
-      ct = str(val.ct)
-      is_json = bool(val.isJson)
-      raw = val.body
-      resp_body = str(raw) if is_json else bytes(Uint8Array.new(raw).to_py())
-      try:
-        results.append(
-          _build_provider_result(
-            resp_body, ct, bool(val.ok), int(val.status), provider, main
-          )
-        )
-      except Exception as e:
-        logger.error(
-          "send_doh_requests failed for %s: %s: %s",
-          provider.get("host", ""),
-          type(e).__name__,
-          e,
-        )
-        results.append(_failed_result(provider, main, e))
-    else:
-      reason = getattr(item, "reason", "rejected")
-      logger.error(
-        "send_doh_requests rejected for %s: %s",
-        provider.get("host", ""),
-        reason,
-      )
+  for idx, item in enumerate(settled):
+    if str(getattr(item, "status", "")) != "fulfilled":
+      continue
+    resp = item.value
+    content_type = str(resp.headers.get("content-type") or "application/dns-message")
+    is_json = "dns-json" in content_type or "application/json" in content_type
+    fulfilled[idx] = (content_type, is_json, bool(resp.ok), int(resp.status))
+    body_promises.append(resp.text() if is_json else resp.arrayBuffer())
+    body_indices.append(idx)
+
+  body_settled = await Promise.allSettled(to_js(body_promises)) if body_promises else []
+  body_by_idx = dict(zip(body_indices, body_settled, strict=True))
+
+  results = []
+
+  for idx, (provider, main) in enumerate(provider_meta):
+    host = provider.get("host", "")
+
+    if idx not in fulfilled:
+      reason = getattr(settled[idx], "reason", "rejected")
+      logger.error("send_doh_requests rejected for %s: %s", host, reason)
       results.append(_failed_result(provider, main, reason))
+
+      continue
+
+    content_type, is_json, ok, resp_status = fulfilled[idx]
+    body_item = body_by_idx[idx]
+
+    if str(getattr(body_item, "status", "")) != "fulfilled":
+      reason = getattr(body_item, "reason", "body read failed")
+      logger.error("send_doh_requests body read failed for %s: %s", host, reason)
+      results.append(_failed_result(provider, main, reason))
+      continue
+
+    raw = body_item.value
+    resp_body = str(raw) if is_json else bytes(Uint8Array.new(raw).to_py())
+
+    try:
+      results.append(
+        _build_provider_result(resp_body, content_type, ok, resp_status, provider, main)
+      )
+    except Exception as e:
+      logger.error("send_doh_requests failed for %s: %s: %s", host, type(e).__name__, e)
+      results.append(_failed_result(provider, main, e))
 
   return results
