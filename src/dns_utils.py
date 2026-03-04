@@ -239,9 +239,16 @@ def make_blocked_response(
   else:
     req = dns.message.make_query(qname, rdtype)
 
-  resp = dns.message.make_response(req)
-  resp.set_rcode(dns.rcode.NXDOMAIN)
-  return resp.to_wire(), "application/dns-message"
+  try:
+    resp = dns.message.make_response(req)
+    resp.set_rcode(dns.rcode.NXDOMAIN)
+    return resp.to_wire(), "application/dns-message"
+  except Exception:
+    logger.exception("Failed to build blocked DNS wire response")
+    fallback = dns.message.make_query(dns.name.from_text("."), dns.rdatatype.A)
+    fallback_resp = dns.message.make_response(fallback)
+    fallback_resp.set_rcode(dns.rcode.SERVFAIL)
+    return fallback_resp.to_wire(), "application/dns-message"
 
 
 _BLOCKED_ADDRS = frozenset({"0.0.0.0", "::"})  # noqa: S104
@@ -273,10 +280,14 @@ def _parse_binary_dns_answers(data: bytes) -> tuple[int, list[str]]:
   return int(packet.rcode()), addresses
 
 
+_MAX_DNS_BODY_SIZE = 65535
+
+
 def _build_provider_fetch_request(
   provider: dict,
   method: str,
   accept: str,
+  abort_signal,
   body_bytes: bytes | None = None,
   query: str = "",
 ) -> _ProviderFetchRequest:
@@ -300,12 +311,10 @@ def _build_provider_fetch_request(
 
   headers.update(provider.get("headers", {}))
 
-  from js import AbortSignal
-
   fetch_options: dict = {
     "method": method,
     "headers": headers,
-    "signal": AbortSignal.timeout(config.TIMEOUT_MS),
+    "signal": abort_signal,
   }
 
   if body_bytes is not None and method == "POST":
@@ -412,12 +421,14 @@ async def send_doh_requests_fanout(
 ) -> list:
   """Query providers with JS Promise fan-out to avoid Python task re-entrancy."""
 
-  from js import Object, Promise, Uint8Array
+  from js import AbortSignal, Object, Promise, Uint8Array
   from js import fetch as js_fetch
   from pyodide.ffi import create_once_callable, to_js
 
   if not doh_providers:
     return []
+
+  abort_signal = AbortSignal.timeout(config.TIMEOUT_MS)
 
   def _extract_response_cb(resp):
     """Synchronous .then() callback — captures imports via closure."""
@@ -445,7 +456,7 @@ async def send_doh_requests_fanout(
 
   for provider in doh_providers:
     target_url, fetch_options, main = _build_provider_fetch_request(
-      provider, method, accept, body_bytes, query
+      provider, method, accept, abort_signal, body_bytes, query
     )
     js_opts = to_js(fetch_options, dict_converter=Object.fromEntries)
     promises.append(

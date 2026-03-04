@@ -423,6 +423,16 @@ async def _parse_post(request, accept: str) -> DnsParseResult:
 
   try:
     raw_bytes = await request.bytes()
+  except Exception as e:
+    logger.debug("Failed to read request body: %s", e)
+    raise _RejectError("Failed to read request body", status=400) from None
+
+  from dns_utils import _MAX_DNS_BODY_SIZE
+
+  if len(raw_bytes) > _MAX_DNS_BODY_SIZE:
+    raise _RejectError(f"Request body too large ({len(raw_bytes)} bytes)", status=413)
+
+  try:
     return parse_dns_wire_request(raw_bytes)
   except Exception as e:
     logger.debug("Failed to decode DNS packet: %s", e)
@@ -617,22 +627,27 @@ async def _handle_request(
       doh_providers, method, accept, body_bytes, query
     )
 
-    rebind_response = _make_rebind_blocked_response(
-      results, question, accept, request_wire, ecs_truncated
-    )
-
-    if rebind_response is not None:
-      response_from = "rebind-protection"
-      error = True
-      final_response = rebind_response
-    elif winner := _select_winner(results):
-      response_from = winner.provider_id
-      final_response = _build_winner_response(
-        winner, results, config_allowed, ecs_truncated, endpoint
+    try:
+      rebind_response = _make_rebind_blocked_response(
+        results, question, accept, request_wire, ecs_truncated
       )
-    else:
+
+      if rebind_response is not None:
+        response_from = "rebind-protection"
+        error = True
+        final_response = rebind_response
+      elif winner := _select_winner(results):
+        response_from = winner.provider_id
+        final_response = _build_winner_response(
+          winner, results, config_allowed, ecs_truncated, endpoint
+        )
+      else:
+        error = True
+        final_response = Response("All providers responded with an error", status=500)
+    except Exception:
+      logger.exception("Failed to process provider results")
       error = True
-      final_response = Response("All providers responded with an error", status=500)
+      final_response = Response("Internal server error", status=500)
 
   if loki_enabled:
     promise = build_loki_fetch_promise(
