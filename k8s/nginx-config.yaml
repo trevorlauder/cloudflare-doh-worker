@@ -27,24 +27,31 @@ data:
         add_header Permissions-Policy        "interest-cohort=()" always;
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
 
+        proxy_http_version    1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header X-Forwarded-Port  $server_port;
+        proxy_connect_timeout              60s;
+        proxy_send_timeout                 60s;
+        proxy_read_timeout                 60s;
+
         location ~ /\.(?!well-known) {
             deny all;
         }
 
-        location / {
-            proxy_pass            http://worker:8787;
-            proxy_set_header Host $host;
-            proxy_http_version    1.1;
+        location /default/ {
+            proxy_pass http://worker-default:8787/;
+        }
 
-            proxy_set_header X-Real-IP         $remote_addr;
-            proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_set_header X-Forwarded-Host  $host;
-            proxy_set_header X-Forwarded-Port  $server_port;
+        location /no-ecs-no-rebind/ {
+            proxy_pass http://worker-no-ecs-no-rebind:8787/;
+        }
 
-            proxy_connect_timeout              60s;
-            proxy_send_timeout                 60s;
-            proxy_read_timeout                 60s;
+        location /no-token/ {
+            proxy_pass http://worker-no-token:8787/;
         }
 
         location = /favicon.ico {
