@@ -14,7 +14,7 @@ from workers import Response, WorkerEntrypoint
 
 import config
 from dns_utils import (
-  _MAX_DNS_BODY_SIZE,
+  MAX_DNS_BODY_SIZE,
   SUPPORTED_ACCEPT_HEADERS,
   DnsParseResult,
   ProviderResult,
@@ -426,7 +426,7 @@ async def _parse_post(request, accept: str) -> DnsParseResult:
     logger.debug("Failed to read request body: %s", e)
     raise _RejectError("Failed to read request body", status=400) from None
 
-  if len(raw_bytes) > _MAX_DNS_BODY_SIZE:
+  if len(raw_bytes) > MAX_DNS_BODY_SIZE:
     logger.warning("POST body too large: %d bytes", len(raw_bytes))
     raise _RejectError("Request body too large", status=413)
 

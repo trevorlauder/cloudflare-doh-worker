@@ -289,6 +289,8 @@ def _classify_answers(
     result.rebind = has_private_answers(addresses)
 
 
+MAX_DNS_BODY_SIZE = 65535
+
 _RETRY_STATUS_CODES = frozenset(range(500, 600))
 
 
