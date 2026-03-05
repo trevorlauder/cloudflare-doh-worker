@@ -27,7 +27,7 @@ This started as [a workaround](https://www.lauder.family/blog/2021/09/25/Avoidin
 
 Use this button to deploy this worker to your Cloudflare account.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/trevorlauder/cloudflare-doh-worker/tree/deploy-1.0.0-rc5)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/trevorlauder/cloudflare-doh-worker/tree/deploy-1.0.0-rc6)
 
 - Update `wrangler.toml` and `src/config.py` **in your new repo** created by Cloudflare, based on your needs. See [Configuration](#configuration) for details.
 
@@ -54,7 +54,7 @@ Use this button to deploy this worker to your Cloudflare account.
   ```shell
   git clone https://github.com/your-username/cloudflare-doh-worker.git
   cd cloudflare-doh-worker
-  git checkout -B main deploy-1.0.0-rc5
+  git checkout -B main deploy-1.0.0-rc6
   git push --force-with-lease origin main
   ```
 

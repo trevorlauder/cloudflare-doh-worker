@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0-rc6] - 2026-03-05
+
+### Features
+
+- Add retry logic for providers ([#54](https://github.com/trevorlauder/cloudflare-doh-worker/pull/54))
+- Add retry logic for connection errors ([#55](https://github.com/trevorlauder/cloudflare-doh-worker/pull/55))
+
+### Performance
+
+- Reduce FFI crossings even more using urllib ([#53](https://github.com/trevorlauder/cloudflare-doh-worker/pull/53))
+
 ## [1.0.0-rc5] - 2026-03-04
 
 ### Bug Fixes
