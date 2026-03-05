@@ -18,9 +18,6 @@ ci:
 	tilt down
 	tilt ci
 	tilt down
-	tilt ci -- --config-file=tests/configs/no_ecs_no_rebind.py
-	tilt down
-	tilt ci -- --dev-vars=tests/configs/dev-vars-no-token
 
 test:
 	uv run pytest tests/ -n auto

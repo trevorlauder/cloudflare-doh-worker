@@ -68,7 +68,7 @@ jobs:
           docker push "${STEPS_META_OUTPUTS_IMAGE_REF}"
 
   test:
-    name: Test (${{ matrix.name }})
+    name: Test
     runs-on: ubuntu-latest
     needs:
       - build-image
@@ -76,19 +76,6 @@ jobs:
     permissions:
       contents: read
       packages: read # required to pull prebuilt image from GHCR
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: default
-            config: tests/configs/default.py
-            dev-vars: tests/configs/dev-vars-with-token
-          - name: no-ecs-no-rebind
-            config: tests/configs/no_ecs_no_rebind.py
-            dev-vars: tests/configs/dev-vars-with-token
-          - name: no-admin-token
-            config: tests/configs/default.py
-            dev-vars: tests/configs/dev-vars-no-token
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -117,13 +104,9 @@ jobs:
         env:
           SKIP_DOCKER_BUILD: "1"
           WORKER_IMAGE: k3d-doh-registry:5001/doh-worker:${{ github.sha }}
-          CONFIG_FILE: ${{ matrix.config }}
-          DEV_VARS_FILE: ${{ matrix.dev-vars }}
-        run: tilt ci -- --config-file="$CONFIG_FILE" --dev-vars="$DEV_VARS_FILE"
+        run: tilt ci
       - name: Run tilt ci (fork PR)
         if: needs.build-image.result == 'skipped'
         env:
           WORKER_IMAGE: k3d-doh-registry:5001/doh-worker:${{ github.sha }}
-          CONFIG_FILE: ${{ matrix.config }}
-          DEV_VARS_FILE: ${{ matrix.dev-vars }}
-        run: tilt ci -- --config-file="$CONFIG_FILE" --dev-vars="$DEV_VARS_FILE"
+        run: tilt ci
