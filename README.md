@@ -17,8 +17,9 @@ This started as [a workaround](https://www.lauder.family/blog/2021/09/25/Avoidin
 - EDNS Client Subnet prefix truncation for privacy
 - DNS rebind protection (blocks responses resolving to private IPs)
 - `${SECRET_NAME}` placeholders in config, resolved from Cloudflare Worker secrets at request time
-- Health and config endpoints (`CONFIG_ENDPOINT` requires `ADMIN_TOKEN`)
+- Health check and live config inspection endpoints (`CONFIG_ENDPOINT` requires `ADMIN_TOKEN`)
 - Debug mode adds diagnostic response headers
+- Automatic retry on 5xx responses from upstream providers
 - Optional Grafana Loki logging
 - Supports both `dns-message` and `dns-json` content types
 
@@ -163,19 +164,20 @@ See the full set of options with defaults in `src/config.py`.
 <details>
 <summary>All configuration options</summary>
 
-| Option              | Default                                                | Description                                                                            |
-| ------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| `DEBUG`             | `False`                                                | Enable verbose logging and diagnostic response headers                                 |
-| `CONFIG_ENDPOINT`   | `None`                                                 | Path for the authenticated config endpoint (requires `ADMIN_TOKEN` secret)             |
-| `HEALTH_ENDPOINT`   | `None`                                                 | Path for the health-check endpoint                                                     |
-| `TIMEOUT_MS`        | `5000`                                                 | Upstream provider timeout in milliseconds                                              |
-| `ECS_TRUNCATION`    | `{"enabled": False}`                                   | Truncate EDNS Client Subnet prefixes for privacy                                       |
-| `REBIND_PROTECTION` | `True`                                                 | Block responses that resolve to private/internal IPs                                   |
-| `BLOCKED_DOMAINS`   | `[]`                                                   | Domains to block with synthetic `NXDOMAIN` (supports `*.example.com` wildcards)        |
-| `ALLOWED_DOMAINS`   | `[]`                                                   | Domains to bypass fan-out and send to `BYPASS_PROVIDER` only                           |
-| `BYPASS_PROVIDER`   | `{"host": "cloudflare-dns.com", "path": "/dns-query"}` | Non-filtering provider used for allowed domains                                        |
-| `LOKI_URL`          | `""`                                                   | Grafana Loki push endpoint (also requires `LOKI_USERNAME` and `LOKI_PASSWORD` secrets) |
-| `LOKI_TIMEOUT_MS`   | `5000`                                                 | Loki push timeout in milliseconds                                                      |
+| Option               | Default                                                | Description                                                                                          |
+| -------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `DEBUG`              | `False`                                                | Enable verbose logging and diagnostic response headers                                               |
+| `CONFIG_ENDPOINT`    | `None`                                                 | Path for the authenticated config endpoint (requires `ADMIN_TOKEN` secret)                           |
+| `HEALTH_ENDPOINT`    | `None`                                                 | Path for the health-check endpoint                                                                   |
+| `TIMEOUT_MS`         | `5000`                                                 | Upstream provider timeout in milliseconds                                                            |
+| `ECS_TRUNCATION`     | `{"enabled": False}`                                   | Truncate EDNS Client Subnet prefixes for privacy                                                     |
+| `REBIND_PROTECTION`  | `True`                                                 | Block responses that resolve to private/internal IPs                                                 |
+| `BLOCKED_DOMAINS`    | `[]`                                                   | Domains to block with synthetic `NXDOMAIN` (supports `*.example.com` wildcards)                      |
+| `ALLOWED_DOMAINS`    | `[]`                                                   | Domains to bypass fan-out and send to `BYPASS_PROVIDER` only                                         |
+| `BYPASS_PROVIDER`    | `{"host": "cloudflare-dns.com", "path": "/dns-query"}` | Non-filtering provider used for allowed domains                                                      |
+| `LOKI_URL`           | `""`                                                   | Grafana Loki push endpoint (also requires `LOKI_USERNAME` and `LOKI_PASSWORD` secrets)               |
+| `LOKI_TIMEOUT_MS`    | `5000`                                                 | Loki push timeout in milliseconds                                                                    |
+| `RETRY_MAX_ATTEMPTS` | `2`                                                    | Number of times to retry a provider on 5xx responses before marking it failed; set to `0` to disable |
 
 </details>
 
@@ -214,6 +216,8 @@ See the full set of options with defaults in `src/config.py`.
   - `CLOUDFLARE-DOH-WORKER-TIMED-OUT-PROVIDERS`
   - `CLOUDFLARE-DOH-WORKER-CONFIG-ALLOWED`
   - `CLOUDFLARE-DOH-WORKER-CONFIG-BLOCKED`
+
+- **Retry logic**: retries upstream providers on 5xx responses up to `RETRY_MAX_ATTEMPTS` times before marking them failed.
 
 - **Loki logging** is async and only active when `LOKI_URL`, `LOKI_USERNAME`, and `LOKI_PASSWORD` are all set.
 

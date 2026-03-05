@@ -44,6 +44,7 @@ def build_loki_fetch_promise(
     rebind_providers = {}
     possibly_blocked_providers = {}
     failed_provider_ids = []
+    retried_provider_ids = []
 
     for result in results:
       pid = result.provider_id
@@ -54,6 +55,8 @@ def build_loki_fetch_promise(
       possibly_blocked_providers[pid] = result.possibly_blocked
       if result.failed:
         failed_provider_ids.append(f"{pid} ({result.response_status})")
+      if result.retry_count > 0:
+        retried_provider_ids.append(f"{pid} (x{result.retry_count})")
 
     is_blocked = any(r.blocked and r.provider_id == response_from for r in results)
 
@@ -87,6 +90,7 @@ def build_loki_fetch_promise(
       "timed_out_providers": timed_out_providers,
       "rebind_providers": rebind_providers,
       "failed_providers": ", ".join(failed_provider_ids),
+      "retried_providers": ", ".join(retried_provider_ids),
       "response_codes": response_codes,
       "response_from": response_from,
     }
