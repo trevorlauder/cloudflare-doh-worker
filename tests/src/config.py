@@ -34,6 +34,8 @@ LOKI_URL = ""
 
 LOKI_TIMEOUT_MS = 5000
 
+RETRY_MAX_ATTEMPTS = 2
+
 ENDPOINTS = {
   "/my/doh/path": {
     "main_provider": {
