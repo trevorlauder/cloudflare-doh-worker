@@ -36,6 +36,7 @@ jobs:
           cp uv.lock          /tmp/deploy/
           cp LICENSE          /tmp/deploy/
           cp .gitignore       /tmp/deploy/
+          cp -r dashboard/    /tmp/deploy/dashboard/
           cp mise.deploy.toml /tmp/deploy/mise.toml
 
           cat > /tmp/deploy/README.md << EOF
