@@ -278,10 +278,18 @@ _HEADER_RESPONSE_CODES = f"{_HEADER_PREFIX}-RESPONSE-CODES"
 _HEADER_POSSIBLY_BLOCKED = f"{_HEADER_PREFIX}-POSSIBLY-BLOCKED-PROVIDERS"
 _HEADER_BLOCKED = f"{_HEADER_PREFIX}-BLOCKED-PROVIDERS"
 _HEADER_TIMED_OUT = f"{_HEADER_PREFIX}-TIMED-OUT-PROVIDERS"
+_HEADER_CONN_ERROR = f"{_HEADER_PREFIX}-CONNECTION-ERROR-PROVIDERS"
 _HEADER_ALLOWED = f"{_HEADER_PREFIX}-CONFIG-ALLOWED"
 _HEADER_CONFIG_BLOCKED = f"{_HEADER_PREFIX}-CONFIG-BLOCKED"
 _HEADER_REBIND_PROTECTED = f"{_HEADER_PREFIX}-REBIND-PROTECTED"
 _HEADER_ECS_TRUNCATED = f"{_HEADER_PREFIX}-ECS-TRUNCATED"
+_HEADER_PROVIDERS_QUERIED = f"{_HEADER_PREFIX}-PROVIDERS-QUERIED"
+_HEADER_PROVIDERS_FAILED = f"{_HEADER_PREFIX}-PROVIDERS-FAILED"
+_HEADER_PROVIDERS_TIMED_OUT = f"{_HEADER_PREFIX}-PROVIDERS-TIMED-OUT"
+_HEADER_PROVIDERS_CONN_ERROR = f"{_HEADER_PREFIX}-PROVIDERS-CONNECTION-ERROR"
+_HEADER_PROVIDERS_FAILED_STATUS = f"{_HEADER_PREFIX}-PROVIDERS-FAILED-STATUS-CODE"
+_HEADER_PROVIDERS_RETRIED = f"{_HEADER_PREFIX}-PROVIDERS-RETRIED"
+_HEADER_RESPONSE_FROM_MAIN = f"{_HEADER_PREFIX}-RESPONSE-FROM-MAIN"
 
 
 def _build_response_headers(
@@ -292,10 +300,18 @@ def _build_response_headers(
   possibly_blocked: list[str] | None = None,
   blocked: list[str] | None = None,
   timed_out: list[str] | None = None,
+  connection_error: list[str] | None = None,
   config_allowed: bool = False,
   config_blocked: bool = False,
   rebind: bool = False,
   ecs_truncated: str = "",
+  providers_queried: int = 0,
+  providers_failed: int = 0,
+  providers_timed_out: int = 0,
+  providers_conn_error: int = 0,
+  providers_failed_status: int = 0,
+  providers_retried: int = 0,
+  response_from_main: bool | None = None,
 ) -> dict:
   """Build response headers with optional DEBUG diagnostics."""
 
@@ -307,6 +323,21 @@ def _build_response_headers(
   if ecs_truncated:
     headers[_HEADER_ECS_TRUNCATED] = ecs_truncated
 
+  if providers_queried:
+    headers[_HEADER_PROVIDERS_QUERIED] = str(providers_queried)
+  if providers_failed:
+    headers[_HEADER_PROVIDERS_FAILED] = str(providers_failed)
+  if providers_timed_out:
+    headers[_HEADER_PROVIDERS_TIMED_OUT] = str(providers_timed_out)
+  if providers_conn_error:
+    headers[_HEADER_PROVIDERS_CONN_ERROR] = str(providers_conn_error)
+  if providers_failed_status:
+    headers[_HEADER_PROVIDERS_FAILED_STATUS] = str(providers_failed_status)
+  if providers_retried:
+    headers[_HEADER_PROVIDERS_RETRIED] = str(providers_retried)
+  if response_from_main is not None:
+    headers[_HEADER_RESPONSE_FROM_MAIN] = "1" if response_from_main else "0"
+
   if config.DEBUG:
     headers.update(
       {
@@ -315,6 +346,7 @@ def _build_response_headers(
         _HEADER_POSSIBLY_BLOCKED: ", ".join(possibly_blocked or []),
         _HEADER_BLOCKED: ", ".join(blocked or []),
         _HEADER_TIMED_OUT: ", ".join(timed_out or []),
+        _HEADER_CONN_ERROR: ", ".join(connection_error or []),
         _HEADER_ALLOWED: "1" if config_allowed else "",
         _HEADER_CONFIG_BLOCKED: "1" if config_blocked else "",
       }
@@ -524,6 +556,10 @@ def _build_winner_response(
   blocked_ids = []
   possibly_blocked_ids = []
   timed_out_ids = []
+  connection_error_ids = []
+  retried_count = 0
+  failed_count = 0
+  failed_status_count = 0
 
   for result in results:
     pid = result.provider_id
@@ -534,6 +570,14 @@ def _build_winner_response(
       possibly_blocked_ids.append(pid)
     if result.timed_out:
       timed_out_ids.append(pid)
+    if result.connection_error:
+      connection_error_ids.append(pid)
+    if result.retry_count > 0:
+      retried_count += 1
+    if result.failed:
+      failed_count += 1
+      if not result.timed_out and not result.connection_error:
+        failed_status_count += 1
 
   rebind_triggered = any(result.rebind for result in results)
 
@@ -544,9 +588,17 @@ def _build_winner_response(
     possibly_blocked=possibly_blocked_ids,
     blocked=blocked_ids,
     timed_out=timed_out_ids,
+    connection_error=connection_error_ids,
     config_allowed=config_allowed,
     rebind=rebind_triggered,
     ecs_truncated=ecs_truncated,
+    providers_queried=len(results),
+    providers_failed=failed_count,
+    providers_timed_out=len(timed_out_ids),
+    providers_conn_error=len(connection_error_ids),
+    providers_failed_status=failed_status_count,
+    providers_retried=retried_count,
+    response_from_main=winner.main,
   )
 
   min_ttl = get_response_min_ttl(winner)

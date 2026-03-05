@@ -164,6 +164,7 @@ class ProviderResult:
   possibly_blocked: bool = False
   rebind: bool = False
   timed_out: bool = False
+  connection_error: bool = False
   retry_count: int = 0
   min_ttl: int | None = None
 
@@ -354,6 +355,7 @@ def _failed_result(provider: dict, main: bool, exc) -> ProviderResult:
     main=main,
     failed=True,
     timed_out=timed_out,
+    connection_error=not timed_out,
   )
 
 
@@ -495,14 +497,42 @@ def _process_fanout_round(
     provider, main = provider_meta[entry.global_idx]
     host = provider.get("host", "")
 
+    can_retry = (
+      isinstance(entry, _FanoutFetchEntry) and entry.attempt < config.RETRY_MAX_ATTEMPTS
+    )
+
     if str(getattr(item, "status", "")) != "fulfilled":
       reason = getattr(item, "reason", "rejected")
-      logger.error(
-        "send_doh_requests %s for %s: %s", type(entry).__name__, host, reason
-      )
-      result = _failed_result(provider, main, reason)
-      result.retry_count = entry.attempt
-      results[entry.global_idx] = result
+      if can_retry:
+        logger.warning(
+          "Retrying %s (attempt %d/%d, rejected: %s)",
+          host,
+          entry.attempt + 1,
+          config.RETRY_MAX_ATTEMPTS,
+          reason,
+        )
+
+        next_pending.append(
+          _fanout_fetch_entry(
+            ctx,
+            provider,
+            method,
+            accept,
+            abort_signal,
+            body_bytes,
+            query,
+            entry.global_idx,
+            entry.attempt + 1,
+          )
+        )
+      else:
+        logger.error(
+          "send_doh_requests %s for %s: %s", type(entry).__name__, host, reason
+        )
+
+        result = _failed_result(provider, main, reason)
+        result.retry_count = entry.attempt
+        results[entry.global_idx] = result
       continue
 
     if isinstance(entry, _FanoutFetchEntry):
@@ -511,7 +541,7 @@ def _process_fanout_round(
       content_type = str(resp.headers.get("content-type") or "application/dns-message")
       ok = bool(resp.ok)
 
-      if status in _RETRY_STATUS_CODES and entry.attempt < config.RETRY_MAX_ATTEMPTS:
+      if status in _RETRY_STATUS_CODES and can_retry:
         logger.warning(
           "Retrying %s (attempt %d/%d, status %d)",
           host,

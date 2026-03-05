@@ -39,20 +39,27 @@ def build_loki_fetch_promise(
     credentials = base64.b64encode(f"{loki_username}:{loki_password}".encode()).decode()
 
     response_codes = {}
-    blocked_providers = {}
-    timed_out_providers = {}
-    rebind_providers = {}
-    possibly_blocked_providers = {}
+    blocked_ids = []
+    timed_out_ids = []
+    connection_error_ids = []
+    rebind_ids = []
+    possibly_blocked_ids = []
     failed_provider_ids = []
     retried_provider_ids = []
 
     for result in results:
       pid = result.provider_id
       response_codes[pid] = result.response_status
-      blocked_providers[pid] = result.blocked
-      timed_out_providers[pid] = result.timed_out
-      rebind_providers[pid] = result.rebind
-      possibly_blocked_providers[pid] = result.possibly_blocked
+      if result.blocked:
+        blocked_ids.append(pid)
+      if result.timed_out:
+        timed_out_ids.append(pid)
+      if result.connection_error:
+        connection_error_ids.append(pid)
+      if result.rebind:
+        rebind_ids.append(pid)
+      if result.possibly_blocked:
+        possibly_blocked_ids.append(pid)
       if result.failed:
         failed_provider_ids.append(f"{pid} ({result.response_status})")
       if result.retry_count > 0:
@@ -85,10 +92,11 @@ def build_loki_fetch_promise(
         "type": question.type,
       },
       "result_status": result_status,
-      "blocked_providers": blocked_providers,
-      "possibly_blocked_providers": possibly_blocked_providers,
-      "timed_out_providers": timed_out_providers,
-      "rebind_providers": rebind_providers,
+      "blocked_providers": ", ".join(blocked_ids),
+      "possibly_blocked_providers": ", ".join(possibly_blocked_ids),
+      "timed_out_providers": ", ".join(timed_out_ids),
+      "connection_error_providers": ", ".join(connection_error_ids),
+      "rebind_providers": ", ".join(rebind_ids),
       "failed_providers": ", ".join(failed_provider_ids),
       "retried_providers": ", ".join(retried_provider_ids),
       "response_codes": response_codes,
