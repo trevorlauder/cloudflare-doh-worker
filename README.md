@@ -207,17 +207,35 @@ See the full set of options with defaults in `src/config.py`.
 
 - **ECS truncation**: strips EDNS Client Subnet prefixes down when enabled.
 
-- **Debug mode** (`DEBUG = True`) sets log level to `DEBUG` and adds diagnostic headers to every DNS response. `REBIND-PROTECTED` and `ECS-TRUNCATED` are always included when applicable. Debug-only headers:
+- **Debug mode** (`DEBUG = True`) sets log level to `DEBUG` and adds diagnostic headers to every DNS response.
 
-  - `CLOUDFLARE-DOH-WORKER-RESPONSE-FROM`
-  - `CLOUDFLARE-DOH-WORKER-RESPONSE-CODES`
-  - `CLOUDFLARE-DOH-WORKER-BLOCKED-PROVIDERS`
-  - `CLOUDFLARE-DOH-WORKER-POSSIBLY-BLOCKED-PROVIDERS`
-  - `CLOUDFLARE-DOH-WORKER-TIMED-OUT-PROVIDERS`
-  - `CLOUDFLARE-DOH-WORKER-CONFIG-ALLOWED`
-  - `CLOUDFLARE-DOH-WORKER-CONFIG-BLOCKED`
+  Always-present headers (when applicable):
 
-- **Retry logic**: retries upstream providers on 5xx responses up to `RETRY_MAX_ATTEMPTS` times before marking them failed.
+  | Header                                               | Value                                                                        |
+  | ---------------------------------------------------- | ---------------------------------------------------------------------------- |
+  | `CLOUDFLARE-DOH-WORKER-REBIND-PROTECTED`             | `1` when rebind protection triggered                                         |
+  | `CLOUDFLARE-DOH-WORKER-ECS-TRUNCATED`                | ECS prefix rewrite description when truncation occurred                      |
+  | `CLOUDFLARE-DOH-WORKER-PROVIDERS-QUERIED`            | Number of providers contacted                                                |
+  | `CLOUDFLARE-DOH-WORKER-PROVIDERS-FAILED`             | Number of providers that failed (all causes)                                 |
+  | `CLOUDFLARE-DOH-WORKER-PROVIDERS-TIMED-OUT`          | Number of providers that timed out                                           |
+  | `CLOUDFLARE-DOH-WORKER-PROVIDERS-CONNECTION-ERROR`   | Number of providers that failed with a connection error                      |
+  | `CLOUDFLARE-DOH-WORKER-PROVIDERS-FAILED-STATUS-CODE` | Number of providers that failed with a 5xx response after exhausting retries |
+  | `CLOUDFLARE-DOH-WORKER-PROVIDERS-RETRIED`            | Number of providers that were retried at least once                          |
+
+  Additional headers only present in debug mode:
+
+  | Header                                             | Value                                         |
+  | -------------------------------------------------- | --------------------------------------------- |
+  | `CLOUDFLARE-DOH-WORKER-RESPONSE-FROM`              | Provider ID that won                          |
+  | `CLOUDFLARE-DOH-WORKER-RESPONSE-CODES`             | Per-provider status codes                     |
+  | `CLOUDFLARE-DOH-WORKER-BLOCKED-PROVIDERS`          | Providers that returned a blocked response    |
+  | `CLOUDFLARE-DOH-WORKER-POSSIBLY-BLOCKED-PROVIDERS` | Providers that returned `NXDOMAIN`            |
+  | `CLOUDFLARE-DOH-WORKER-TIMED-OUT-PROVIDERS`        | Providers that timed out                      |
+  | `CLOUDFLARE-DOH-WORKER-CONNECTION-ERROR-PROVIDERS` | Providers that failed with a connection error |
+  | `CLOUDFLARE-DOH-WORKER-CONFIG-ALLOWED`             | `1` when domain matched the allowlist         |
+  | `CLOUDFLARE-DOH-WORKER-CONFIG-BLOCKED`             | `1` when domain matched the blocklist         |
+
+- **Retry logic**: retries upstream providers on both 5xx responses and connection errors up to `RETRY_MAX_ATTEMPTS` times before marking them failed.
 
 - **Loki logging** is async and only active when `LOKI_URL`, `LOKI_USERNAME`, and `LOKI_PASSWORD` are all set.
 

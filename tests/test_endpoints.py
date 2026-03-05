@@ -80,6 +80,10 @@ def _assert_worker_headers(headers) -> None:
     "missing CLOUDFLARE-DOH-WORKER-TIMED-OUT-PROVIDERS header"
   )
 
+  assert headers.get("cloudflare-doh-worker-connection-error-providers") is not None, (
+    "missing CLOUDFLARE-DOH-WORKER-CONNECTION-ERROR-PROVIDERS header"
+  )
+
   assert headers.get("cloudflare-doh-worker-config-allowed") is not None, (
     "missing CLOUDFLARE-DOH-WORKER-CONFIG-ALLOWED header"
   )
@@ -797,6 +801,87 @@ def test_post_empty_body_returns_400():
     )
 
   assert e.value.code == 400
+
+
+# Provider stat header tests
+
+
+def _assert_provider_stat_headers(headers) -> None:
+  """Assert always-on provider stat headers are valid on a successful DNS response."""
+
+  queried = headers.get("cloudflare-doh-worker-providers-queried", "")
+  assert queried, (
+    f"expected CLOUDFLARE-DOH-WORKER-PROVIDERS-QUERIED to be present, got {queried!r}"
+  )
+  assert int(queried) >= 1, (
+    f"expected CLOUDFLARE-DOH-WORKER-PROVIDERS-QUERIED >= 1, got {queried!r}"
+  )
+
+  for name in (
+    "cloudflare-doh-worker-providers-failed",
+    "cloudflare-doh-worker-providers-timed-out",
+    "cloudflare-doh-worker-providers-connection-error",
+    "cloudflare-doh-worker-providers-failed-status-code",
+    "cloudflare-doh-worker-providers-retried",
+  ):
+    val = headers.get(name)
+    if val is not None:
+      assert int(val) >= 1, f"expected {name.upper()} > 0 when present, got {val!r}"
+
+
+def test_provider_stat_headers_present_on_dns_json():
+  """Successful DNS-JSON response includes PROVIDERS-QUERIED header."""
+
+  with urllib.request.urlopen(
+    _request(
+      f"{BASE_URL}{TEST_ENDPOINTS[0]}?name=google.com&type=A",
+      headers={"Accept": "application/dns-json"},
+    ),
+    timeout=TIMEOUT,
+  ) as resp:
+    assert resp.status == 200
+    _assert_provider_stat_headers(resp.headers)
+
+
+def test_provider_stat_headers_present_on_dns_wire():
+  """Successful DNS wire POST response includes PROVIDERS-QUERIED header."""
+
+  wire = _build_dns_wire("cloudflare.com")
+
+  with urllib.request.urlopen(
+    _request(
+      f"{BASE_URL}{TEST_ENDPOINTS[0]}",
+      method="POST",
+      headers={
+        "Content-Type": "application/dns-message",
+        "Accept": "application/dns-message",
+      },
+      data=wire,
+    ),
+    timeout=TIMEOUT,
+  ) as resp:
+    assert resp.status == 200
+    _assert_provider_stat_headers(resp.headers)
+
+
+@pytest.mark.skipif(not BLOCKED_DOMAINS, reason="BLOCKED_DOMAINS is empty in config")
+def test_provider_stat_headers_absent_on_config_blocked():
+  """Config-blocked domains skip provider fan-out so PROVIDERS-QUERIED should be absent."""
+
+  domain = next(iter(BLOCKED_DOMAINS)).lstrip("*").lstrip(".")
+
+  with urllib.request.urlopen(
+    _request(
+      f"{BASE_URL}{TEST_ENDPOINTS[0]}?name={domain}&type=A",
+      headers={"Accept": "application/dns-json"},
+    ),
+    timeout=TIMEOUT,
+  ) as resp:
+    assert resp.status == 200
+    queried = resp.headers.get("cloudflare-doh-worker-providers-queried", "")
+    assert not queried, (
+      f"expected no PROVIDERS-QUERIED header for config-blocked domain, got {queried!r}"
+    )
 
 
 def test_post_garbage_bytes_returns_400():
