@@ -7,6 +7,7 @@ import json
 import logging
 import re
 import time
+import urllib.parse
 from typing import NamedTuple
 
 from workers import Response, WorkerEntrypoint
@@ -191,10 +192,8 @@ class Default(WorkerEntrypoint):
       return Response("Internal server error", status=500)
 
   async def _handle(self, request):
-    from js import URL
-
-    url = URL.new(request.url)
-    pathname = str(url.pathname)
+    parsed_url = urllib.parse.urlparse(str(request.url))
+    pathname = parsed_url.path
 
     try:
       cfg = _resolve_config(self.env)
@@ -214,7 +213,7 @@ class Default(WorkerEntrypoint):
       return Response("", status=404)
 
     return await _handle_request(
-      request, pathname, doh_providers, cfg, self.env, self.ctx, url
+      request, pathname, doh_providers, cfg, self.env, self.ctx, parsed_url
     )
 
 
@@ -355,7 +354,7 @@ class _RejectError(Exception):
 
 async def _parse_dns_request(
   request,
-  js_url,
+  query_string: str,
   method: str,
   accept: str,
 ) -> DnsParseResult | Response:
@@ -366,7 +365,7 @@ async def _parse_dns_request(
 
   try:
     if method == "GET":
-      return _parse_get(js_url, accept)
+      return _parse_get(query_string, accept)
 
     if method == "POST":
       return await _parse_post(request, accept)
@@ -376,23 +375,22 @@ async def _parse_dns_request(
     return r.response
 
 
-def _parse_get(js_url, accept: str) -> DnsParseResult:
+def _parse_get(query_string: str, accept: str) -> DnsParseResult:
   """Handle GET requests (wire ?dns= or JSON ?name=)."""
 
   if not accept:
     supported = ", ".join(sorted(SUPPORTED_ACCEPT_HEADERS))
     raise _RejectError(f"Unsupported Accept header\n\nUse one of: {supported}")
 
-  sp = js_url.searchParams
-  dns_param = sp.get("dns")
-  name_param = sp.get("name")
+  params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
+  dns_param = params.get("dns", [None])[0]
+  name_param = params.get("name", [None])[0]
 
   if dns_param:
     if accept != "application/dns-message":
       raise _RejectError("GET ?dns= requires Accept: application/dns-message")
 
-    raw = str(dns_param)
-    padded = raw + "=" * (-len(raw) % 4)
+    padded = dns_param + "=" * (-len(dns_param) % 4)
 
     try:
       data = base64.urlsafe_b64decode(padded)
@@ -404,10 +402,10 @@ def _parse_get(js_url, accept: str) -> DnsParseResult:
     if accept != "application/dns-json":
       raise _RejectError("GET ?name= requires Accept: application/dns-json")
 
-    type_param = sp.get("type")
+    type_param = params.get("type", [None])[0]
     question = Question(
-      name=str(name_param),
-      type=str(type_param) if type_param else "",
+      name=name_param,
+      type=type_param if type_param else "",
     )
     return DnsParseResult(question, None, "", None)
 
@@ -576,11 +574,11 @@ async def _handle_request(
   cfg: _ResolvedConfig,
   env,
   ctx,
-  js_url,
+  parsed_url: urllib.parse.ParseResult,
 ) -> Response:
   request_timestamp_ms = int(time.time() * 1000)
   client_ip = str(request.headers.get("cf-connecting-ip") or "unknown")
-  query = str(js_url.search)
+  query = f"?{parsed_url.query}" if parsed_url.query else ""
   method = str(request.method).upper()
   raw_accept = str(request.headers.get("accept") or "")
   accept = _negotiate_accept(raw_accept)
@@ -592,7 +590,7 @@ async def _handle_request(
     and getattr(env, "LOKI_PASSWORD", None)
   )
 
-  parsed = await _parse_dns_request(request, js_url, method, accept)
+  parsed = await _parse_dns_request(request, parsed_url.query, method, accept)
   if isinstance(parsed, Response):
     return parsed
 
