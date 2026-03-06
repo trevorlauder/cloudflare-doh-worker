@@ -50,8 +50,6 @@ _PRIVATE_NETWORKS = (
 
 
 def _is_private_ip(addr: str) -> bool:
-  """Return True if *addr* falls within a private/reserved IP range."""
-
   try:
     ip = ipaddress.ip_address(addr)
     return any(ip in net for net in _PRIVATE_NETWORKS)
@@ -60,8 +58,6 @@ def _is_private_ip(addr: str) -> bool:
 
 
 def has_private_answers(addresses: list[str]) -> bool:
-  """Return True if any address string is a private/internal IP."""
-
   return any(_is_private_ip(addr) for addr in addresses)
 
 
@@ -69,7 +65,6 @@ def truncate_ecs(
   data: bytes, *, msg: dns.message.Message | None = None
 ) -> tuple[bytes, str]:
   """Truncate ECS prefix lengths in a DNS wire message."""
-
   if not (config.ECS_TRUNCATION and config.ECS_TRUNCATION.get("enabled")):
     return data, ""
 
@@ -169,8 +164,6 @@ class _ProviderFetchRequest(NamedTuple):
 
 
 def _extract_question(packet: dns.message.Message) -> Question:
-  """Extract the first question from a parsed DNS message."""
-
   question = packet.question[0]
   return Question(
     name=str(question.name).rstrip("."),
@@ -180,7 +173,6 @@ def _extract_question(packet: dns.message.Message) -> Question:
 
 def parse_dns_wire_request(data: bytes) -> DnsParseResult:
   """Decode, ECS-truncate, and parse a DNS wire message in one step."""
-
   packet = dns.message.from_wire(data)
   question = _extract_question(packet)
   truncated, ecs_desc = truncate_ecs(data, msg=packet)
@@ -189,7 +181,6 @@ def parse_dns_wire_request(data: bytes) -> DnsParseResult:
 
 def compile_domain_set(domains: list) -> tuple[frozenset, tuple]:
   """Split a domain set into (exact_set, suffix_tuple) for fast matching."""
-
   exact = set()
   suffixes = []
   for domain in domains:
@@ -202,7 +193,6 @@ def compile_domain_set(domains: list) -> tuple[frozenset, tuple]:
 
 def domain_matches(name: str, compiled: tuple[frozenset, tuple]) -> bool:
   """Check if a domain matches a pre-compiled (exact, suffixes) pair."""
-
   exact, suffixes = compiled
   name = name.rstrip(".").lower()
   if name in exact:
@@ -218,7 +208,6 @@ def make_blocked_response(
   parsed_request: dns.message.Message | None = None,
 ) -> tuple:
   """Build a synthetic NXDOMAIN DNS response for a blocked domain."""
-
   try:
     rdtype = dns.rdatatype.from_text(question.type or "A")
   except (dns.exception.SyntaxError, ValueError):
@@ -273,7 +262,6 @@ def _classify_answers(
   result: ProviderResult, status: int, addresses: list[str]
 ) -> None:
   """Set blocked/possibly_blocked/rebind directly on *result*."""
-
   blocked = any(addr in _BLOCKED_ADDRS for addr in addresses)
   result.blocked = blocked
   result.possibly_blocked = status == dns.rcode.NXDOMAIN
@@ -328,7 +316,6 @@ def _build_provider_fetch_request(
 
 def _get_provider_id(provider: dict) -> str:
   """Return the provider_id from config, falling back to host+path."""
-
   return provider.get("provider_id") or f"{provider['host']}{provider['path']}"
 
 
@@ -359,7 +346,6 @@ def _build_provider_result(
   accept: str,
 ) -> ProviderResult:
   """Build a ProviderResult from pre-read response data (no async)."""
-
   is_json = accept == "application/dns-json"
 
   result = ProviderResult(
@@ -410,8 +396,6 @@ def _build_provider_result(
 
 
 def get_response_min_ttl(result: ProviderResult) -> int | None:
-  """Return the minimum TTL from a provider's DNS response, or None."""
-
   return result.min_ttl
 
 
@@ -453,8 +437,6 @@ def _fanout_fetch_entry(
   global_idx: int,
   attempt: int,
 ) -> _FanoutFetchEntry:
-  """Build a _FanoutFetchEntry for the given provider."""
-
   target_url, fetch_options, _ = _build_provider_fetch_request(
     provider, method, accept, abort_signal, body_bytes, query
   )
@@ -480,7 +462,6 @@ def _process_fanout_round(
   ctx: "_FanoutContext",
 ) -> list:
   """Process one allSettled round and return the next pending list."""
-
   next_pending: list = []
 
   for item, entry in zip(round_settled, pending, strict=True):
@@ -601,7 +582,6 @@ async def send_doh_requests_fanout(
   query: str = "",
 ) -> list:
   """Query providers with JS Promise fan-out to avoid Python task re-entrancy."""
-
   from js import AbortSignal, Object, Promise, Uint8Array
   from js import fetch as js_fetch
   from pyodide.ffi import to_js
