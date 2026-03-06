@@ -86,10 +86,8 @@ def build_loki_fetch_promise(
     log_entry = {
       "client_ip": client_ip,
       "endpoint": endpoint,
-      "question": {
-        "name": question.name,
-        "type": question.type,
-      },
+      "question_name": question.name,
+      "question_type": question.type,
       "result_status": result_status,
       "blocked_providers": ", ".join(blocked_ids),
       "possibly_blocked_providers": ", ".join(possibly_blocked_ids),

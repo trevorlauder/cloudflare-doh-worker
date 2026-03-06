@@ -100,7 +100,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -123,7 +123,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question, result_status, response_from | result_status != `not blocked` | line_format `{{.question}}` | json question_name=\"name\", question_type=\"type\" | line_format `{\"endpoint\":\"{{.endpoint}}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\",\"status\":\"{{.result_status}}\",\"provider\":\"{{.response_from}}\"}`",
+                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question_name, question_type, result_status, response_from | result_status != `not blocked` | line_format `{\"endpoint\":\"{{.endpoint}}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\",\"status\":\"{{.result_status}}\",\"provider\":\"{{.response_from}}\"}`",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -288,7 +288,31 @@
                   "properties": [
                     {
                       "id": "custom.width",
-                      "value": 200
+                      "value": 661
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "Domain"
+                  },
+                  "properties": [
+                    {
+                      "id": "custom.width",
+                      "value": 512
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "Type"
+                  },
+                  "properties": [
+                    {
+                      "id": "custom.width",
+                      "value": 124
                     }
                   ]
                 }
@@ -305,7 +329,7 @@
               ]
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -421,123 +445,7 @@
               }
             }
           },
-          "version": "13.0.0-22515653778"
-        }
-      }
-    },
-    "panel-12": {
-      "kind": "Panel",
-      "spec": {
-        "data": {
-          "kind": "QueryGroup",
-          "spec": {
-            "queries": [
-              {
-                "kind": "PanelQuery",
-                "spec": {
-                  "hidden": false,
-                  "query": {
-                    "datasource": {
-                      "name": "${datasource}"
-                    },
-                    "group": "loki",
-                    "kind": "DataQuery",
-                    "spec": {
-                      "direction": "backward",
-                      "editorMode": "code",
-                      "expr": "sum by (result_status) (rate({source=\"cloudflare-doh-worker\"} | json [$__interval]))",
-                      "legendFormat": "{{result_status}}",
-                      "queryType": "range"
-                    },
-                    "version": "v0"
-                  },
-                  "refId": "A"
-                }
-              }
-            ],
-            "queryOptions": {},
-            "transformations": []
-          }
-        },
-        "description": "Blocked vs Not Blocked queries over time",
-        "id": 12,
-        "links": [],
-        "title": "Query Status Over Time",
-        "vizConfig": {
-          "group": "timeseries",
-          "kind": "VizConfig",
-          "spec": {
-            "fieldConfig": {
-              "defaults": {
-                "color": {
-                  "mode": "palette-classic"
-                },
-                "custom": {
-                  "axisBorderShow": false,
-                  "axisCenteredZero": false,
-                  "axisColorMode": "text",
-                  "axisLabel": "",
-                  "axisPlacement": "auto",
-                  "barAlignment": 0,
-                  "barWidthFactor": 0.6,
-                  "drawStyle": "points",
-                  "fillOpacity": 10,
-                  "gradientMode": "none",
-                  "hideFrom": {
-                    "legend": false,
-                    "tooltip": false,
-                    "viz": false
-                  },
-                  "insertNulls": false,
-                  "lineInterpolation": "smooth",
-                  "lineWidth": 2,
-                  "pointSize": 5,
-                  "scaleDistribution": {
-                    "type": "linear"
-                  },
-                  "showPoints": "never",
-                  "showValues": false,
-                  "spanNulls": false,
-                  "stacking": {
-                    "group": "A",
-                    "mode": "normal"
-                  },
-                  "thresholdsStyle": {
-                    "mode": "off"
-                  }
-                },
-                "thresholds": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": 0
-                    }
-                  ]
-                },
-                "unit": "short"
-              },
-              "overrides": []
-            },
-            "options": {
-              "legend": {
-                "calcs": [
-                  "sum"
-                ],
-                "displayMode": "table",
-                "placement": "right",
-                "showLegend": true,
-                "sortBy": "Total",
-                "sortDesc": true
-              },
-              "tooltip": {
-                "hideZeros": false,
-                "mode": "multi",
-                "sort": "desc"
-              }
-            }
-          },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -660,7 +568,7 @@
               ]
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -683,7 +591,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "topk(15, sum by (question_name) (count_over_time({source=\"cloudflare-doh-worker\"} | json | result_status=~`blocked|possibly blocked` | line_format `{{.question}}` | json question_name=\"name\" [$__range])))",
+                      "expr": "topk(15, sum by (question_name) (count_over_time({source=\"cloudflare-doh-worker\"} | json question_name, result_status | result_status=~`blocked|possibly blocked` [$__range])))",
                       "legendFormat": "{{question_name}}",
                       "queryType": "instant"
                     },
@@ -800,7 +708,7 @@
               ]
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -892,7 +800,7 @@
               }
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -976,7 +884,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -999,7 +907,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question, timed_out_providers | timed_out_providers != \"\" | line_format `{{.question}}` | json question_name=\"name\", question_type=\"type\" | line_format `{\"endpoint\":\"{{.endpoint}}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\"}`",
+                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question_name, question_type, timed_out_providers | timed_out_providers != \"\" | line_format `{\"endpoint\":\"{{.endpoint}}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\"}`",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -1136,7 +1044,7 @@
               ]
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -1220,7 +1128,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -1242,8 +1150,9 @@
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
+                      "direction": "backward",
                       "editorMode": "code",
-                      "expr": "topk(15, sum by (question_name) (count_over_time({source=\"cloudflare-doh-worker\"} | json | result_status=`config blocked` | line_format `{{.question}}` | json question_name=\"name\" [$__range])))",
+                      "expr": "topk(15, sum by (question_name) (count_over_time({source=\"cloudflare-doh-worker\"} | json question_name, result_status | result_status=`config blocked` [$__range])))",
                       "legendFormat": "{{question_name}}",
                       "queryType": "instant"
                     },
@@ -1360,7 +1269,7 @@
               ]
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -1444,7 +1353,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -1528,7 +1437,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -1551,7 +1460,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "topk(15, sum by (question_name) (count_over_time({source=\"cloudflare-doh-worker\"} | json | result_status=`config allowed` | line_format `{{.question}}` | json question_name=\"name\" [$__range])))",
+                      "expr": "topk(15, sum by (question_name) (count_over_time({source=\"cloudflare-doh-worker\"} | json question_name, result_status | result_status=`config allowed` [$__range])))",
                       "legendFormat": "{{question_name}}",
                       "queryType": "instant"
                     },
@@ -1668,7 +1577,7 @@
               ]
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -1752,7 +1661,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -1853,9 +1762,7 @@
             "options": {
               "legend": {
                 "calcs": [
-                  "sum",
-                  "mean",
-                  "max"
+                  "sum"
                 ],
                 "displayMode": "table",
                 "placement": "right",
@@ -1870,7 +1777,7 @@
               }
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -1954,7 +1861,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -1976,8 +1883,9 @@
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
+                      "direction": "backward",
                       "editorMode": "code",
-                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question, rebind_providers | rebind_providers != \"\" | line_format `{{.question}}` | json question_name=\"name\", question_type=\"type\" | line_format `{\"endpoint\":\"{{.endpoint}}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\"}`",
+                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question_name, question_type, rebind_providers | rebind_providers != \"\" | line_format `{\"endpoint\":\"{{.endpoint}}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\"}`",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -2114,7 +2022,7 @@
               ]
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -2198,7 +2106,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -2282,7 +2190,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -2305,7 +2213,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question, failed_providers | failed_providers != `` | line_format `{{.question}}` | json question_name=\"name\", question_type=\"type\" | line_format `{\"endpoint\":\"{{.endpoint}}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\",\"failed_providers\":\"{{.failed_providers}}\"}`",
+                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question_name, question_type, failed_providers | failed_providers != `` | line_format `{\"endpoint\":\"{{.endpoint}}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\",\"failed_providers\":\"{{.failed_providers}}\"}`",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -2444,7 +2352,7 @@
               ]
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -2528,7 +2436,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -2551,7 +2459,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "{source=\"cloudflare-doh-worker\"} | json retried_providers, endpoint, question | retried_providers != `` | line_format `{{.question}}` | json question_name=\"name\", question_type=\"type\" | line_format `{\"endpoint\":\"{{.endpoint}}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\",\"retried_providers\":\"{{.retried_providers}}\"}`",
+                      "expr": "{source=\"cloudflare-doh-worker\"} | json retried_providers, endpoint, question_name, question_type | retried_providers != `` | line_format `{\"endpoint\":\"{{.endpoint}}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\",\"retried_providers\":\"{{.retried_providers}}\"}`",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -2690,7 +2598,7 @@
               ]
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -2774,7 +2682,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -2797,7 +2705,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question, connection_error_providers | connection_error_providers != \"\" | line_format `{{.question}}` | json question_name=\"name\", question_type=\"type\" | line_format `{\"endpoint\":\"{{.endpoint}}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\",\"connection_error_providers\":\"{{.connection_error_providers}}\"}` ",
+                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question_name, question_type, connection_error_providers | connection_error_providers != \"\" | line_format `{\"endpoint\":\"{{.endpoint}}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\",\"connection_error_providers\":\"{{.connection_error_providers}}\"}`",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -2835,17 +2743,17 @@
                     },
                     "indexByName": {
                       "Time": 0,
-                      "endpoint": 1,
+                      "connection_error_providers": 4,
                       "domain": 2,
-                      "type": 3,
-                      "connection_error_providers": 4
+                      "endpoint": 1,
+                      "type": 3
                     },
                     "renameByName": {
                       "Time": "Time",
+                      "connection_error_providers": "Connection Errors",
                       "domain": "Domain",
                       "endpoint": "Endpoint",
-                      "type": "Type",
-                      "connection_error_providers": "Connection Errors"
+                      "type": "Type"
                     }
                   }
                 }
@@ -2936,7 +2844,7 @@
               ]
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -3017,7 +2925,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -3194,9 +3102,7 @@
             "options": {
               "legend": {
                 "calcs": [
-                  "sum",
-                  "mean",
-                  "max"
+                  "sum"
                 ],
                 "displayMode": "table",
                 "placement": "right",
@@ -3211,7 +3117,7 @@
               }
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -3312,8 +3218,7 @@
             "options": {
               "legend": {
                 "calcs": [
-                  "sum",
-                  "mean"
+                  "sum"
                 ],
                 "displayMode": "table",
                 "placement": "right",
@@ -3328,7 +3233,7 @@
               }
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -3351,7 +3256,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum by (question_type) (count_over_time({source=\"cloudflare-doh-worker\"} | json | line_format `{{.question}}` | json question_type=\"type\" [$__range]))",
+                      "expr": "sum by (question_type) (count_over_time({source=\"cloudflare-doh-worker\"} | json question_type [$__range]))",
                       "legendFormat": "{{question_type}}",
                       "queryType": "instant"
                     },
@@ -3420,7 +3325,7 @@
               }
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -3443,7 +3348,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "topk(20, sum by (question_name) (count_over_time({source=\"cloudflare-doh-worker\"} | json | line_format `{{.question}}` | json question_name=\"name\" [$__range])))",
+                      "expr": "topk(20, sum by (question_name) (count_over_time({source=\"cloudflare-doh-worker\"} | json question_name [$__range])))",
                       "legendFormat": "{{question_name}}",
                       "queryType": "instant"
                     },
@@ -3546,7 +3451,7 @@
               ]
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     },
@@ -3638,7 +3543,7 @@
               }
             }
           },
-          "version": "13.0.0-22515653778"
+          "version": "13.0.0-22751934439"
         }
       }
     }
@@ -3808,24 +3713,11 @@
           "spec": {
             "element": {
               "kind": "ElementReference",
-              "name": "panel-32"
+              "name": "panel-11"
             },
-            "height": 7,
+            "height": 8,
             "width": 12,
             "x": 0,
-            "y": 8
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-30"
-            },
-            "height": 7,
-            "width": 12,
-            "x": 12,
             "y": 8
           }
         },
@@ -3837,9 +3729,22 @@
               "name": "panel-5"
             },
             "height": 8,
-            "width": 24,
+            "width": 12,
+            "x": 12,
+            "y": 8
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-26"
+            },
+            "height": 8,
+            "width": 12,
             "x": 0,
-            "y": 15
+            "y": 16
           }
         },
         {
@@ -3851,8 +3756,34 @@
             },
             "height": 8,
             "width": 12,
+            "x": 12,
+            "y": 16
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-15"
+            },
+            "height": 8,
+            "width": 8,
             "x": 0,
-            "y": 23
+            "y": 24
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-9"
+            },
+            "height": 8,
+            "width": 8,
+            "x": 8,
+            "y": 24
           }
         },
         {
@@ -3863,48 +3794,9 @@
               "name": "panel-7"
             },
             "height": 8,
-            "width": 12,
-            "x": 12,
-            "y": 23
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-8"
-            },
-            "height": 10,
-            "width": 8,
-            "x": 0,
-            "y": 31
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-9"
-            },
-            "height": 10,
-            "width": 8,
-            "x": 8,
-            "y": 31
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-15"
-            },
-            "height": 10,
             "width": 8,
             "x": 16,
-            "y": 31
+            "y": 24
           }
         },
         {
@@ -3917,7 +3809,33 @@
             "height": 10,
             "width": 24,
             "x": 0,
-            "y": 41
+            "y": 32
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-32"
+            },
+            "height": 7,
+            "width": 12,
+            "x": 0,
+            "y": 42
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-30"
+            },
+            "height": 7,
+            "width": 12,
+            "x": 12,
+            "y": 42
           }
         },
         {
@@ -3930,33 +3848,7 @@
             "height": 10,
             "width": 24,
             "x": 0,
-            "y": 51
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-11"
-            },
-            "height": 8,
-            "width": 12,
-            "x": 0,
-            "y": 61
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-12"
-            },
-            "height": 8,
-            "width": 12,
-            "x": 12,
-            "y": 61
+            "y": 49
           }
         },
         {
@@ -3969,7 +3861,20 @@
             "height": 8,
             "width": 12,
             "x": 0,
-            "y": 69
+            "y": 59
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-8"
+            },
+            "height": 8,
+            "width": 12,
+            "x": 12,
+            "y": 59
           }
         },
         {
@@ -3980,9 +3885,9 @@
               "name": "panel-14"
             },
             "height": 8,
-            "width": 12,
-            "x": 12,
-            "y": 69
+            "width": 8,
+            "x": 0,
+            "y": 67
           }
         },
         {
@@ -3993,9 +3898,9 @@
               "name": "panel-19"
             },
             "height": 8,
-            "width": 12,
-            "x": 0,
-            "y": 77
+            "width": 8,
+            "x": 8,
+            "y": 67
           }
         },
         {
@@ -4006,9 +3911,9 @@
               "name": "panel-21"
             },
             "height": 8,
-            "width": 12,
-            "x": 12,
-            "y": 77
+            "width": 8,
+            "x": 16,
+            "y": 67
           }
         },
         {
@@ -4019,22 +3924,9 @@
               "name": "panel-28"
             },
             "height": 10,
-            "width": 24,
+            "width": 12,
             "x": 0,
-            "y": 85
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-26"
-            },
-            "height": 8,
-            "width": 24,
-            "x": 0,
-            "y": 95
+            "y": 75
           }
         },
         {
@@ -4045,9 +3937,9 @@
               "name": "panel-34"
             },
             "height": 10,
-            "width": 24,
-            "x": 0,
-            "y": 103
+            "width": 12,
+            "x": 12,
+            "y": 75
           }
         }
       ]
@@ -4090,7 +3982,7 @@
         "allowCustomValue": true,
         "current": {
           "text": "",
-          "value": ""
+          "value": "grafanacloud-logs"
         },
         "hide": "dontHide",
         "includeAll": false,
