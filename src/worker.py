@@ -247,12 +247,12 @@ def _handle_config(request, env) -> Response:
 
   auth_header = str(request.headers.get("authorization") or "")
 
-  provided = ""
+  if not auth_header.startswith("Bearer "):
+    return Response("Unauthorized", status=401)
 
-  if auth_header.startswith("Bearer "):
-    provided = auth_header[7:].strip()
+  provided = auth_header[7:].strip()
 
-  if not hmac.compare_digest(provided, str(token)):
+  if not provided or not hmac.compare_digest(provided, str(token)):
     return Response("Unauthorized", status=401)
 
   payload = {k: getattr(config, k) for k in _CONFIG_ALLOWLIST if hasattr(config, k)}
