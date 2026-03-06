@@ -24,6 +24,22 @@ spec:
       labels:
         app: worker
     spec:
+      initContainers:
+        - name: trust-nginx-cert
+          image: k3d-doh-registry:5001/doh-worker
+          securityContext:
+            runAsUser: 0
+          command:
+            - sh
+            - -c
+            - |
+              cp /etc/ssl/certs/ca-certificates.crt /ssl-certs/ca-certificates.crt &&
+              cat /nginx-ca/ca.crt >> /ssl-certs/ca-certificates.crt
+          volumeMounts:
+            - name: nginx-ca
+              mountPath: /nginx-ca
+            - name: ssl-certs
+              mountPath: /ssl-certs
       containers:
         - name: worker
           image: k3d-doh-registry:5001/doh-worker
@@ -37,7 +53,12 @@ spec:
             limits:
               cpu: 2000m
               memory: 1Gi
+          env:
+            - name: SSL_CERT_FILE
+              value: /ssl-certs/ca-certificates.crt
           volumeMounts:
+            - name: ssl-certs
+              mountPath: /ssl-certs
             - name: config
               mountPath: /usr/src/app/src/config.py
               subPath: config.py
@@ -65,6 +86,11 @@ spec:
             timeoutSeconds: 10
             failureThreshold: 3
       volumes:
+        - name: ssl-certs
+          emptyDir: {}
+        - name: nginx-ca
+          configMap:
+            name: nginx-ca
         - name: config
           configMap:
             name: worker-config

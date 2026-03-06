@@ -31,21 +31,6 @@ spec:
       labels:
         app: nginx
     spec:
-      initContainers:
-        - name: gen-tls
-          image: nginx:1.29.5@sha256:0236ee02dcbce00b9bd83e0f5fbc51069e7e1161bd59d99885b3ae1734f3392e
-          command:
-            - sh
-            - -c
-            - |
-              openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
-                -keyout /etc/nginx/ssl/tls.key -out /etc/nginx/ssl/tls.crt \
-                -subj "/CN=localhost" \
-                -addext "subjectAltName=IP:127.0.0.1,DNS:localhost" \
-                -quiet 2>/dev/null
-          volumeMounts:
-            - name: tls
-              mountPath: /etc/nginx/ssl
       containers:
         - name: nginx
           image: nginx:1.29.5@sha256:0236ee02dcbce00b9bd83e0f5fbc51069e7e1161bd59d99885b3ae1734f3392e
@@ -89,4 +74,5 @@ spec:
           configMap:
             name: nginx-config
         - name: tls
-          emptyDir: {}
+          secret:
+            secretName: nginx-tls

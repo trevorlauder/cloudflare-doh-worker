@@ -60,8 +60,6 @@ _CONFIG_TYPE_RULES: list[tuple[str, type | tuple]] = [
 
 
 def _validate_types():
-  """Validate configuration value types at module load time."""
-
   for name, expected_type in _CONFIG_TYPE_RULES:
     value = getattr(config, name, None)
 
@@ -72,13 +70,8 @@ def _validate_types():
 
 
 def _validate_config():
-  """Validate configuration at module load time."""
-
   if not config.ALLOWED_DOMAINS:
     return
-
-  if not isinstance(config.BYPASS_PROVIDER, dict):
-    raise ValueError("BYPASS_PROVIDER must be a dict when ALLOWED_DOMAINS is set")
 
   for key in ("host", "path"):
     value = config.BYPASS_PROVIDER.get(key)
@@ -94,7 +87,6 @@ _validate_config()
 
 def _with_provider_id(provider: dict) -> dict:
   """Return a copy of *provider* with a pre-computed provider_id key."""
-
   return {**provider, "provider_id": f"{provider['host']}{provider['path']}"}
 
 
@@ -103,7 +95,6 @@ _SECRET_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
 
 def _resolve_secrets(obj, env):
   """Recursively substitute ${SECRET_NAME} placeholders in strings, dicts, and lists."""
-
   missing: list[str] = []
 
   def _resolve(value):
@@ -138,7 +129,6 @@ def _resolve_secrets(obj, env):
 
 def _resolve_providers(providers: list[dict], env) -> list[dict]:
   """Resolve secret placeholders in providers and recompute provider_id."""
-
   resolved = _resolve_secrets(providers, env)
 
   for provider in resolved:
@@ -148,8 +138,6 @@ def _resolve_providers(providers: list[dict], env) -> list[dict]:
 
 
 def _build_provider_lists() -> dict[str, list[dict]]:
-  """Build the per-endpoint provider lists from ENDPOINTS config."""
-
   result: dict[str, list[dict]] = {}
   for path, cfg in config.ENDPOINTS.items():
     main = _with_provider_id({**cfg["main_provider"], "main": True})
@@ -187,7 +175,6 @@ class _ResolvedConfig(NamedTuple):
 
 def _resolve_config(env) -> _ResolvedConfig:
   """Resolve all ${SECRET} placeholders in the config."""
-
   global _resolved_config_cache
 
   if _resolved_config_cache is not None:
@@ -280,7 +267,6 @@ _CONFIG_ALLOWLIST = frozenset(
 
 def _handle_config(request, env) -> Response:
   """Return current runtime configuration as JSON, gated by ADMIN_TOKEN secret."""
-
   token = getattr(env, "ADMIN_TOKEN", None)
 
   if not token:
@@ -358,7 +344,6 @@ def _build_response_headers(
   response_from_main: bool | None = None,
 ) -> dict:
   """Build response headers with optional DEBUG diagnostics."""
-
   headers = {"content-type": content_type}
 
   if rebind:
@@ -401,7 +386,6 @@ def _build_response_headers(
 
 def _to_js_body(body):
   """Convert Python bytes to a JS Uint8Array for Cloudflare Workers Response."""
-
   if isinstance(body, (bytes, bytearray)):
     from pyodide.ffi import to_js
 
@@ -412,7 +396,6 @@ def _to_js_body(body):
 
 def _negotiate_accept(raw: str) -> str:
   """Return the first supported media type from a raw Accept header."""
-
   for part in raw.split(","):
     media_type = part.split(";", 1)[0].strip().lower()
     if media_type in SUPPORTED_ACCEPT_HEADERS:
@@ -434,11 +417,7 @@ async def _parse_dns_request(
   method: str,
   accept: str,
 ) -> DnsParseResult | Response:
-  """Parse DNS question and body bytes from the incoming request.
-
-  Returns a DnsParseResult on success, or a Response on error.
-  """
-
+  """Parse DNS question and wire bytes; returns DnsParseResult or a Response on error."""
   try:
     if method == "GET":
       return _parse_get(query_string, accept)
@@ -452,8 +431,6 @@ async def _parse_dns_request(
 
 
 def _parse_get(query_string: str, accept: str) -> DnsParseResult:
-  """Handle GET requests (wire ?dns= or JSON ?name=)."""
-
   if not accept:
     supported = ", ".join(sorted(SUPPORTED_ACCEPT_HEADERS))
     raise _RejectError(f"Unsupported Accept header\n\nUse one of: {supported}")
@@ -505,8 +482,6 @@ def _parse_get(query_string: str, accept: str) -> DnsParseResult:
 
 
 async def _parse_post(request, accept: str) -> DnsParseResult:
-  """Handle POST requests (wire body)."""
-
   if accept != "application/dns-message":
     raise _RejectError("POST requires Accept: application/dns-message")
 
@@ -528,8 +503,6 @@ async def _parse_post(request, accept: str) -> DnsParseResult:
 
 
 def _select_winner(results: list[ProviderResult]) -> ProviderResult | None:
-  """Pick the best result from provider responses."""
-
   first_blocked = None
   first_possibly_blocked = None
   first_successful_main = None
@@ -548,10 +521,10 @@ def _select_winner(results: list[ProviderResult]) -> ProviderResult | None:
           first_non_rebind = result
         if result.main and first_non_rebind_main is None:
           first_non_rebind_main = result
-    if result.blocked and first_blocked is None:
-      first_blocked = result
-    if result.possibly_blocked and first_possibly_blocked is None:
-      first_possibly_blocked = result
+      if result.blocked and first_blocked is None:
+        first_blocked = result
+      if result.possibly_blocked and first_possibly_blocked is None:
+        first_possibly_blocked = result
 
   winner = (
     first_blocked or first_possibly_blocked or first_successful_main or first_successful
@@ -577,7 +550,6 @@ def _make_rebind_blocked_response(
   parsed_request=None,
 ) -> Response | None:
   """Build a synthetic NXDOMAIN when all successful responses have private IPs."""
-
   if not (
     config.REBIND_PROTECTION
     and any(r.rebind for r in results)
@@ -608,8 +580,6 @@ def _build_winner_response(
   ecs_truncated: str,
   endpoint: str,
 ) -> Response:
-  """Build the final Response from the winning provider result."""
-
   response_codes = []
   blocked_ids = []
   possibly_blocked_ids = []

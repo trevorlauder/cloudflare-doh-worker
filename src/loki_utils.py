@@ -25,7 +25,6 @@ def build_loki_fetch_promise(
   error: bool = False,
 ):
   """Build a Loki log entry and return a JS fetch Promise, or None on failure."""
-
   try:
     from js import AbortSignal, Object, fetch
     from pyodide.ffi import to_js

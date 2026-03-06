@@ -17,8 +17,8 @@ concurrency:
 
 jobs:
   pre-commit:
-    name: Pre-commit
-    runs-on: ubuntu-latest
+    name: pre-commit
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -37,7 +37,7 @@ jobs:
 
   build-image:
     name: Build image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     permissions:
       contents: read
@@ -67,9 +67,22 @@ jobs:
             .
           docker push "${STEPS_META_OUTPUTS_IMAGE_REF}"
 
-  test:
-    name: Test
-    runs-on: ubuntu-latest
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@e79ddf65a11cec7b0e882bedced08d6e976efb2d # v3.6.2
+        with:
+          install: true
+          cache: true
+      - run: uv run pytest tests/test_unit.py
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-24.04
     needs:
       - build-image
     if: always() && (needs.build-image.result == 'success' || needs.build-image.result == 'skipped')
