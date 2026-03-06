@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.0-rc8] - 2026-03-06
+
+### Bug Fixes
+
+- Flatten loki json structure and cleanup dashboard ([#68](https://github.com/trevorlauder/cloudflare-doh-worker/pull/68))
+
+### Style
+
+- Code cleanup
+
 ## [1.0.0-rc7] - 2026-03-06
 
 ### Bug Fixes

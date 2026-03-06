@@ -111,7 +111,7 @@ wheels = [
 
 [[package]]
 name = "doh"
-version = "1.0.0rc7"
+version = "1.0.0rc8"
 source = { virtual = "." }
 dependencies = [
     { name = "dnspython" },
