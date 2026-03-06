@@ -25,15 +25,6 @@ SUPPORTED_ACCEPT_HEADERS = frozenset(
   {"application/dns-json", "application/dns-message"}
 )
 
-DNS_JSON_HOSTS = frozenset(
-  {
-    "cloudflare-dns.com",
-    "security.cloudflare-dns.com",
-    "family.cloudflare-dns.com",
-    "dns.google",
-  }
-)
-
 
 def _build_servfail_wire() -> bytes:
   msg = dns.message.Message(id=0)
@@ -626,7 +617,7 @@ async def send_doh_requests_fanout(
   pending: list = []
 
   for provider in doh_providers:
-    if is_json_query and provider.get("host", "") not in DNS_JSON_HOSTS:
+    if is_json_query and not provider.get("dns_json", False):
       continue
 
     idx = len(provider_meta)

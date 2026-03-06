@@ -105,6 +105,8 @@ All config lives in `src/config.py`. You can define as many endpoint paths as yo
 
 Each endpoint has one `main_provider` (whose answer is used when nothing is blocked) and optional `additional_providers`.
 
+Each provider dict accepts `host`, `path`, and optional `headers`. If your clients use `application/dns-json`, add `"dns_json": True` to the providers that support it so they aren't skipped for those requests.
+
 If your repo is public, use `${SECRET_NAME}` placeholders for sensitive values like endpoint paths and provider paths. They're resolved from Cloudflare Worker secrets at runtime. Setting your endpoint paths to include random strings keeps them from being discovered.
 
 ```python
