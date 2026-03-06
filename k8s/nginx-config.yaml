@@ -42,16 +42,24 @@ data:
             deny all;
         }
 
-        location /default/ {
+        location /test-default/ {
             proxy_pass http://worker-default:8787/;
         }
 
-        location /no-ecs-no-rebind/ {
+        location /test-no-ecs-no-rebind/ {
             proxy_pass http://worker-no-ecs-no-rebind:8787/;
         }
 
-        location /no-token/ {
+        location /test-no-token/ {
             proxy_pass http://worker-no-token:8787/;
+        }
+
+        location /test-ecs-mock/ {
+            proxy_pass http://worker-ecs-mock:8787/;
+        }
+
+        location /mock-doh/ {
+            proxy_pass http://mock-doh:8080/;
         }
 
         location = /favicon.ico {

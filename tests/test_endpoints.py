@@ -12,6 +12,7 @@ import tomllib
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 import dns.edns
 import dns.message
@@ -34,6 +35,11 @@ from config import (
   REBIND_PROTECTION,
 )
 
+_provider_paths = (
+  cfg.get("main_provider", {}).get("path", "") for cfg in ENDPOINTS.values()
+)
+MOCK_DOH_ENABLED = any("/mock-doh/" in path for path in _provider_paths)
+
 TEST_ENDPOINTS = [resolve_env(e) for e in ENDPOINTS]
 HEALTH_ENDPOINT = resolve_env(HEALTH_ENDPOINT)
 CONFIG_ENDPOINT = resolve_env(CONFIG_ENDPOINT)
@@ -54,9 +60,11 @@ DEFAULT_HEADERS = {
 
 TIMEOUT = 10
 
+MOCK_DOH_URL = f"https://{urlparse(BASE_URL).netloc}/mock-doh"
+
 
 def _assert_worker_headers(headers) -> None:
-  """Assert all diagnostic headers are present (skipped when DEBUG is off)."""
+  """Check debug headers are present."""
   if not DEBUG:
     return
 
@@ -94,7 +102,7 @@ def _assert_worker_headers(headers) -> None:
 
 
 def _build_dns_wire(name: str, rdtype=dns.rdatatype.A) -> bytes:
-  """Build a DNS query wire packet."""
+  """Build a wire-format DNS query."""
 
   return dns.message.make_query(name, rdtype).to_wire()
 
@@ -102,12 +110,72 @@ def _build_dns_wire(name: str, rdtype=dns.rdatatype.A) -> bytes:
 def _build_dns_wire_with_ecs(
   name: str, address: str = "203.0.113.1", srclen: int = 32
 ) -> bytes:
-  """Build a DNS query wire packet with an ECS option."""
+  """Build a wire-format DNS query with an ECS option."""
 
   msg = dns.message.make_query(name, dns.rdatatype.A, use_edns=True)
   ecs = dns.edns.ECSOption(address, srclen=srclen, scopelen=0)
   msg.use_edns(edns=0, options=[ecs])
   return msg.to_wire()
+
+
+def _first_domain(domains) -> str:
+  """First domain from a set, without wildcard prefix."""
+  return next(iter(domains)).lstrip("*").lstrip(".")
+
+
+def _assert_cache_control(headers) -> None:
+  """Check Cache-Control: max-age=N with a positive TTL."""
+  cache_control = headers.get("cache-control", "")
+  assert cache_control.startswith("max-age="), (
+    f"expected Cache-Control: max-age=N, got {cache_control!r}"
+  )
+  ttl = int(cache_control.split("=", 1)[1])
+  assert ttl > 0, f"expected positive TTL in Cache-Control, got {ttl}"
+
+
+def _post_wire(wire: bytes, endpoint: str | None = None) -> tuple:
+  """POST a wire-format DNS query."""
+  ep = endpoint or TEST_ENDPOINTS[0]
+  with urllib.request.urlopen(
+    _request(
+      f"{BASE_URL}{ep}",
+      method="POST",
+      headers={
+        "Content-Type": "application/dns-message",
+        "Accept": "application/dns-message",
+      },
+      data=wire,
+    ),
+    timeout=TIMEOUT,
+  ) as resp:
+    return resp.status, resp.headers, resp.read()
+
+
+def _get_wire(wire: bytes, endpoint: str | None = None) -> tuple:
+  """GET a wire-format DNS query via ?dns=."""
+  ep = endpoint or TEST_ENDPOINTS[0]
+  encoded = base64.urlsafe_b64encode(wire).rstrip(b"=").decode()
+  with urllib.request.urlopen(
+    _request(
+      f"{BASE_URL}{ep}?dns={encoded}",
+      headers={"Accept": "application/dns-message"},
+    ),
+    timeout=TIMEOUT,
+  ) as resp:
+    return resp.status, resp.headers, resp.read()
+
+
+def _get_json(name: str, type: str = "A", endpoint: str | None = None) -> tuple:
+  """GET a DNS-JSON query."""
+  ep = endpoint or TEST_ENDPOINTS[0]
+  with urllib.request.urlopen(
+    _request(
+      f"{BASE_URL}{ep}?name={name}&type={type}",
+      headers={"Accept": "application/dns-json"},
+    ),
+    timeout=TIMEOUT,
+  ) as resp:
+    return resp.status, resp.headers, json.loads(resp.read())
 
 
 def _request(
@@ -117,7 +185,7 @@ def _request(
   headers: dict | None = None,
   data: bytes | None = None,
 ) -> urllib.request.Request:
-  """Build a Request with DEFAULT_HEADERS merged in."""
+  """Build a request with default headers."""
 
   return urllib.request.Request(
     url,
@@ -127,7 +195,7 @@ def _request(
   )
 
 
-# Test failure cases (non-200 responses)
+# Error cases
 
 
 def test_unknown_path_returns_403_or_404():
@@ -186,10 +254,13 @@ def test_unsupported_method_returns_405(method: str):
   assert e.value.code == 405
 
 
-# Test http3 support
+# HTTP/3
 
 
 @pytest.mark.skipif(not IS_HTTPS, reason="Requires HTTPS stack")
+@pytest.mark.skipif(
+  MOCK_DOH_ENABLED, reason="mock-doh provider does not support DNS-JSON"
+)
 def test_http3_alt_svc_advertised():
   """Cloudflare should advertise HTTP/3 via the Alt-Svc response header."""
 
@@ -209,6 +280,9 @@ def test_http3_alt_svc_advertised():
   not IS_HTTPS or IS_LOCAL,
   reason="HTTP/3 requires nginx HTTPS stack; skipped for localhost",
 )
+@pytest.mark.skipif(
+  MOCK_DOH_ENABLED, reason="mock-doh provider does not support DNS-JSON"
+)
 def test_http3_udp():
   """Connect using HTTP/3 (QUIC over UDP)"""
 
@@ -224,28 +298,24 @@ def test_http3_udp():
   _assert_worker_headers(resp.headers)
 
 
-# Per endpoint tests
+# Per-endpoint
 
 
+@pytest.mark.skipif(
+  MOCK_DOH_ENABLED, reason="mock-doh provider does not support DNS-JSON"
+)
 @pytest.mark.parametrize("endpoint", TEST_ENDPOINTS)
 def test_get_dns_json_name(endpoint: str):
   """GET ?name=google.com with Accept: application/dns-json"""
 
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{endpoint}?name=google.com&type=A",
-      headers={"Accept": "application/dns-json"},
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    content_type = resp.headers.get("content-type", "")
-    assert "dns-json" in content_type or "json" in content_type, (
-      f"unexpected content-type: {content_type}"
-    )
-    data = json.loads(resp.read())
-    assert "Status" in data, "JSON response missing 'Status' key"
-    _assert_worker_headers(resp.headers)
+  status, headers, data = _get_json("google.com", "A", endpoint)
+  assert status == 200
+  content_type = headers.get("content-type", "")
+  assert "dns-json" in content_type or "json" in content_type, (
+    f"unexpected content-type: {content_type}"
+  )
+  assert "Status" in data, "JSON response missing 'Status' key"
+  _assert_worker_headers(headers)
 
 
 @pytest.mark.parametrize("endpoint", TEST_ENDPOINTS)
@@ -253,20 +323,12 @@ def test_get_dns_wire_param(endpoint: str):
   """GET ?dns=<base64url wire> with Accept: application/dns-message"""
 
   wire = _build_dns_wire("google.com")
-  encoded = base64.urlsafe_b64encode(wire).rstrip(b"=").decode()
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{endpoint}?dns={encoded}",
-      headers={"Accept": "application/dns-message"},
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    content_type = resp.headers.get("content-type", "")
-    assert "dns-message" in content_type, f"unexpected content-type: {content_type}"
-    assert resp.read()[:2] == wire[:2], "transaction ID mismatch in response"
-    _assert_worker_headers(resp.headers)
+  status, headers, body = _get_wire(wire, endpoint)
+  assert status == 200
+  content_type = headers.get("content-type", "")
+  assert "dns-message" in content_type, f"unexpected content-type: {content_type}"
+  assert body[:2] == wire[:2], "transaction ID mismatch in response"
+  _assert_worker_headers(headers)
 
 
 @pytest.mark.parametrize("endpoint", TEST_ENDPOINTS)
@@ -274,115 +336,78 @@ def test_post_dns_wire(endpoint: str):
   """POST DNS wire-format body with Content-Type: application/dns-message"""
 
   wire = _build_dns_wire("cloudflare.com")
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{endpoint}",
-      method="POST",
-      headers={
-        "Content-Type": "application/dns-message",
-        "Accept": "application/dns-message",
-      },
-      data=wire,
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    content_type = resp.headers.get("content-type", "")
-    assert "dns-message" in content_type, f"unexpected content-type: {content_type}"
-    assert resp.read()[:2] == wire[:2], "transaction ID mismatch in response"
-    _assert_worker_headers(resp.headers)
+  status, headers, body = _post_wire(wire, endpoint)
+  assert status == 200
+  content_type = headers.get("content-type", "")
+  assert "dns-message" in content_type, f"unexpected content-type: {content_type}"
+  assert body[:2] == wire[:2], "transaction ID mismatch in response"
+  _assert_worker_headers(headers)
 
 
-# Config-level block / allow / provider-block tests
+# Block / allow / provider-block
 
 
 @pytest.mark.skipif(not BLOCKED_DOMAINS, reason="BLOCKED_DOMAINS is empty in config")
 def test_config_blocked_domain_returns_nxdomain():
   """Blocked domain returns synthetic NXDOMAIN."""
 
-  domain = next(iter(BLOCKED_DOMAINS)).lstrip("*").lstrip(".")
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}?name={domain}&type=A",
-      headers={"Accept": "application/dns-json"},
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    data = json.loads(resp.read())
-    assert data["Status"] == 3, f"expected NXDOMAIN (Status 3), got {data['Status']}"
-    if DEBUG:
-      response_from = resp.headers.get("cloudflare-doh-worker-response-from", "")
-      assert response_from == "config", (
-        f"expected response-from 'config', got {response_from!r}"
-      )
-      config_blocked = resp.headers.get("cloudflare-doh-worker-config-blocked", "")
-      assert config_blocked == "1", (
-        f"expected CLOUDFLARE-DOH-WORKER-CONFIG-BLOCKED to be '1', got {config_blocked!r}"
-      )
+  domain = _first_domain(BLOCKED_DOMAINS)
+  status, headers, data = _get_json(domain, "A")
+  assert status == 200
+  assert data["Status"] == 3, f"expected NXDOMAIN (Status 3), got {data['Status']}"
+  if DEBUG:
+    response_from = headers.get("cloudflare-doh-worker-response-from", "")
+    assert response_from == "config", (
+      f"expected response-from 'config', got {response_from!r}"
+    )
+    config_blocked = headers.get("cloudflare-doh-worker-config-blocked", "")
+    assert config_blocked == "1", (
+      f"expected CLOUDFLARE-DOH-WORKER-CONFIG-BLOCKED to be '1', got {config_blocked!r}"
+    )
 
 
 @pytest.mark.skipif(not ALLOWED_DOMAINS, reason="ALLOWED_DOMAINS is empty in config")
 def test_allowed_domain_uses_bypass_provider():
   """Allowed domain resolves via BYPASS_PROVIDER."""
 
-  domain = next(iter(ALLOWED_DOMAINS)).lstrip("*").lstrip(".")
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}?name={domain}&type=A",
-      headers={"Accept": "application/dns-json"},
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    if DEBUG:
-      response_from = resp.headers.get("cloudflare-doh-worker-response-from", "")
-      assert BYPASS_PROVIDER["host"] in response_from, (
-        f"expected bypass provider {BYPASS_PROVIDER['host']!r} in response-from, got {response_from!r}"
-      )
-    _assert_worker_headers(resp.headers)
+  status, headers, _ = _get_json(_first_domain(ALLOWED_DOMAINS), "A")
+  assert status == 200
+  if DEBUG:
+    response_from = headers.get("cloudflare-doh-worker-response-from", "")
+    assert BYPASS_PROVIDER["host"] in response_from, (
+      f"expected bypass provider {BYPASS_PROVIDER['host']!r} in response-from, got {response_from!r}"
+    )
+  _assert_worker_headers(headers)
 
 
+@pytest.mark.skipif(
+  MOCK_DOH_ENABLED, reason="mock-doh provider does not implement DNS filtering"
+)
 def test_provider_blocks_known_malware_domain():
   """Malware domain resolves to NXDOMAIN or blocked IP."""
 
   domain = "malware.testcategory.com"
+  _, headers, data = _get_json(domain, "A")
+  dns_status = data.get("Status", 0)
+  answers = data.get("Answer", [])
+  blocked_ips = {"0.0.0.0", "::"}
+  is_nxdomain = dns_status == 3
+  is_blocked_ip = any(a.get("data") in blocked_ips for a in answers)
 
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}?name={domain}&type=A",
-      headers={"Accept": "application/dns-json"},
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    data = json.loads(resp.read())
-    status = data.get("Status", 0)
-    answers = data.get("Answer", [])
-    blocked_ips = {"0.0.0.0", "::"}
-    is_nxdomain = status == 3
-    is_blocked_ip = any(a.get("data") in blocked_ips for a in answers)
+  assert is_nxdomain or is_blocked_ip, (
+    f"expected {domain!r} to resolve to NXDOMAIN or a blocked IP, "
+    f"got Status={dns_status}, Answer={answers}"
+  )
 
-    assert is_nxdomain or is_blocked_ip, (
-      f"expected {domain!r} to resolve to NXDOMAIN or a blocked IP, "
-      f"got Status={status}, Answer={answers}"
+  if DEBUG:
+    blocked_by = headers.get("cloudflare-doh-worker-blocked-providers", "")
+    possibly_blocked_by = headers.get(
+      "cloudflare-doh-worker-possibly-blocked-providers", ""
     )
-
-    if DEBUG:
-      blocked_by = resp.headers.get("cloudflare-doh-worker-blocked-providers", "")
-      possibly_blocked_by = resp.headers.get(
-        "cloudflare-doh-worker-possibly-blocked-providers", ""
-      )
-      assert blocked_by or possibly_blocked_by, (
-        f"expected at least one provider to report blocking {domain!r}, "
-        f"blocked-providers={blocked_by!r}, possibly-blocked-providers={possibly_blocked_by!r}"
-      )
-
-
-# Config endpoint tests
+    assert blocked_by or possibly_blocked_by, (
+      f"expected at least one provider to report blocking {domain!r}, "
+      f"blocked-providers={blocked_by!r}, possibly-blocked-providers={possibly_blocked_by!r}"
+    )
 
 
 @pytest.mark.skipif(not CONFIG_ENDPOINT, reason="CONFIG_ENDPOINT is not set")
@@ -467,74 +492,37 @@ def test_health_returns_ok():
     assert resp.read().decode() == "ok"
 
 
-# Cache header tests
+# Cache headers
 
 
+@pytest.mark.skipif(
+  MOCK_DOH_ENABLED, reason="mock-doh provider does not support DNS-JSON"
+)
 def test_cache_control_present_on_successful_dns_json():
   """Successful DNS-JSON response has Cache-Control: max-age=N."""
 
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}?name=google.com&type=A",
-      headers={"Accept": "application/dns-json"},
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    cache_control = resp.headers.get("cache-control", "")
-    assert cache_control.startswith("max-age="), (
-      f"expected Cache-Control: max-age=N, got {cache_control!r}"
-    )
-    ttl = int(cache_control.split("=", 1)[1])
-    assert ttl > 0, f"expected positive TTL in Cache-Control, got {ttl}"
+  _, headers, _ = _get_json("google.com", "A")
+  _assert_cache_control(headers)
 
 
 def test_cache_control_present_on_successful_dns_wire():
   """Successful DNS wire response has Cache-Control: max-age=N."""
 
-  wire = _build_dns_wire("google.com")
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}",
-      method="POST",
-      headers={
-        "Content-Type": "application/dns-message",
-        "Accept": "application/dns-message",
-      },
-      data=wire,
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    cache_control = resp.headers.get("cache-control", "")
-    assert cache_control.startswith("max-age="), (
-      f"expected Cache-Control: max-age=N, got {cache_control!r}"
-    )
-    ttl = int(cache_control.split("=", 1)[1])
-    assert ttl > 0, f"expected positive TTL in Cache-Control, got {ttl}"
+  _, headers, _ = _post_wire(_build_dns_wire("google.com"))
+  _assert_cache_control(headers)
 
 
 @pytest.mark.skipif(not BLOCKED_DOMAINS, reason="BLOCKED_DOMAINS is empty in config")
 def test_blocked_domain_json_has_empty_answer():
   """Blocked domain DNS-JSON response includes 'Answer': []."""
 
-  domain = next(iter(BLOCKED_DOMAINS)).lstrip("*").lstrip(".")
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}?name={domain}&type=A",
-      headers={"Accept": "application/dns-json"},
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    data = json.loads(resp.read())
-    assert data["Status"] == 3, f"expected NXDOMAIN (Status 3), got {data['Status']}"
-    assert "Answer" in data, "blocked JSON response missing 'Answer' key"
-    assert data["Answer"] == [], (
-      f"expected empty Answer list for blocked domain, got {data['Answer']!r}"
-    )
+  status, _, data = _get_json(_first_domain(BLOCKED_DOMAINS), "A")
+  assert status == 200
+  assert data["Status"] == 3, f"expected NXDOMAIN (Status 3), got {data['Status']}"
+  assert "Answer" in data, "blocked JSON response missing 'Answer' key"
+  assert data["Answer"] == [], (
+    f"expected empty Answer list for blocked domain, got {data['Answer']!r}"
+  )
 
 
 @pytest.mark.skipif(not REBIND_PROTECTION, reason="REBIND_PROTECTION is disabled")
@@ -542,57 +530,41 @@ def test_rebind_protection_blocks_private_ip():
   """Private IP domain is blocked by rebind protection."""
 
   domain = "doh-rebind-test.trevorlauder.dev"
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}?name={domain}&type=A",
-      headers={"Accept": "application/dns-json"},
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    data = json.loads(resp.read())
-    assert data["Status"] == 3, f"expected NXDOMAIN (Status 3), got {data['Status']}"
-
-    if DEBUG:
-      response_from = resp.headers.get("cloudflare-doh-worker-response-from", "")
-      assert response_from == "rebind-protection", (
-        f"expected response-from 'rebind-protection', got {response_from!r}"
-      )
-    rebind_by = resp.headers.get("cloudflare-doh-worker-rebind-protected", "")
-    assert rebind_by == "1", (
-      f"expected CLOUDFLARE-DOH-WORKER-REBIND-PROTECTED to be '1', got {rebind_by!r}"
+  status, headers, data = _get_json(domain, "A")
+  assert status == 200
+  assert data["Status"] == 3, f"expected NXDOMAIN (Status 3), got {data['Status']}"
+  if DEBUG:
+    response_from = headers.get("cloudflare-doh-worker-response-from", "")
+    assert response_from == "rebind-protection", (
+      f"expected response-from 'rebind-protection', got {response_from!r}"
     )
+  rebind_by = headers.get("cloudflare-doh-worker-rebind-protected", "")
+  assert rebind_by == "1", (
+    f"expected CLOUDFLARE-DOH-WORKER-REBIND-PROTECTED to be '1', got {rebind_by!r}"
+  )
 
 
 @pytest.mark.skipif(REBIND_PROTECTION, reason="REBIND_PROTECTION is enabled")
+@pytest.mark.skipif(
+  MOCK_DOH_ENABLED, reason="mock-doh provider does not support DNS-JSON"
+)
 def test_rebind_protection_disabled_allows_private_ip():
   """Private IP domain resolves normally when rebind protection is off."""
 
   domain = "doh-rebind-test.trevorlauder.dev"
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}?name={domain}&type=A",
-      headers={"Accept": "application/dns-json"},
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    data = json.loads(resp.read())
-    assert data["Status"] == 0, (
-      f"expected NOERROR (Status 0) when rebind protection is off, got {data['Status']}"
+  status, headers, data = _get_json(domain, "A")
+  assert status == 200
+  assert data["Status"] == 0, (
+    f"expected NOERROR (Status 0) when rebind protection is off, got {data['Status']}"
+  )
+  if DEBUG:
+    response_from = headers.get("cloudflare-doh-worker-response-from", "")
+    assert response_from != "rebind-protection", (
+      f"expected response NOT from rebind-protection, got {response_from!r}"
     )
 
-    if DEBUG:
-      response_from = resp.headers.get("cloudflare-doh-worker-response-from", "")
-      assert response_from != "rebind-protection", (
-        f"expected response NOT from rebind-protection, got {response_from!r}"
-      )
-    _assert_worker_headers(resp.headers)
 
-
-# ECS truncation tests
+# ECS truncation
 
 
 @pytest.mark.skipif(not _ECS_ENABLED, reason="ECS_TRUNCATION is disabled")
@@ -600,33 +572,15 @@ def test_post_dns_wire_with_ecs():
   """POST wire query with ECS returns valid response."""
 
   wire = _build_dns_wire_with_ecs("trevorlauder.dev", address="203.0.113.1", srclen=32)
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}",
-      method="POST",
-      headers={
-        "Content-Type": "application/dns-message",
-        "Accept": "application/dns-message",
-      },
-      data=wire,
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    content_type = resp.headers.get("content-type", "")
-    assert "dns-message" in content_type, f"unexpected content-type: {content_type}"
-    body = resp.read()
-    assert len(body) > 12, "response body too short to be a valid DNS message"
-    assert body[:2] == wire[:2], "transaction ID mismatch in response"
-    _assert_worker_headers(resp.headers)
-    ecs_truncated = resp.headers.get("cloudflare-doh-worker-ecs-truncated", "")
-    assert "203.0.113.1/32" in ecs_truncated, (
-      f"expected original /32 prefix in ECS-TRUNCATED, got '{ecs_truncated}'"
-    )
-    assert f"/{_ECS_IPV4_PREFIX}" in ecs_truncated, (
-      f"expected truncated /{_ECS_IPV4_PREFIX} prefix in ECS-TRUNCATED, got '{ecs_truncated}'"
-    )
+  status, headers, _ = _post_wire(wire)
+  assert status == 200
+  ecs_truncated = headers.get("cloudflare-doh-worker-ecs-truncated", "")
+  assert "203.0.113.1/32" in ecs_truncated, (
+    f"expected original /32 prefix in ECS-TRUNCATED, got '{ecs_truncated}'"
+  )
+  assert f"/{_ECS_IPV4_PREFIX}" in ecs_truncated, (
+    f"expected truncated /{_ECS_IPV4_PREFIX} prefix in ECS-TRUNCATED, got '{ecs_truncated}'"
+  )
 
 
 def test_post_dns_wire_with_ecs_no_truncation():
@@ -635,24 +589,12 @@ def test_post_dns_wire_with_ecs_no_truncation():
   wire = _build_dns_wire_with_ecs(
     "trevorlauder.dev", address="203.0.113.0", srclen=_ECS_IPV4_PREFIX
   )
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}",
-      method="POST",
-      headers={
-        "Content-Type": "application/dns-message",
-        "Accept": "application/dns-message",
-      },
-      data=wire,
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    ecs_truncated = resp.headers.get("cloudflare-doh-worker-ecs-truncated", "")
-    assert not ecs_truncated, (
-      f"expected ECS-TRUNCATED to be empty for /{_ECS_IPV4_PREFIX} prefix, got '{ecs_truncated}'"
-    )
+  status, headers, _ = _post_wire(wire)
+  assert status == 200
+  ecs_truncated = headers.get("cloudflare-doh-worker-ecs-truncated", "")
+  assert not ecs_truncated, (
+    f"expected ECS-TRUNCATED to be empty for /{_ECS_IPV4_PREFIX} prefix, got '{ecs_truncated}'"
+  )
 
 
 @pytest.mark.skipif(not _ECS_ENABLED, reason="ECS_TRUNCATION is disabled")
@@ -660,22 +602,15 @@ def test_get_dns_wire_with_ecs():
   """Oversized ECS prefix is truncated (GET)."""
 
   wire = _build_dns_wire_with_ecs("trevorlauder.dev", address="203.0.113.1", srclen=32)
-  encoded = base64.urlsafe_b64encode(wire).rstrip(b"=").decode("ascii")
-  url = f"{BASE_URL}{TEST_ENDPOINTS[0]}?dns={encoded}"
-
-  with urllib.request.urlopen(
-    _request(url, headers={"Accept": "application/dns-message"}),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    _assert_worker_headers(resp.headers)
-    ecs_truncated = resp.headers.get("cloudflare-doh-worker-ecs-truncated", "")
-    assert "203.0.113.1/32" in ecs_truncated, (
-      f"expected original /32 prefix in ECS-TRUNCATED for GET, got '{ecs_truncated}'"
-    )
-    assert f"/{_ECS_IPV4_PREFIX}" in ecs_truncated, (
-      f"expected truncated /{_ECS_IPV4_PREFIX} prefix in ECS-TRUNCATED for GET, got '{ecs_truncated}'"
-    )
+  status, headers, _ = _get_wire(wire)
+  assert status == 200
+  ecs_truncated = headers.get("cloudflare-doh-worker-ecs-truncated", "")
+  assert "203.0.113.1/32" in ecs_truncated, (
+    f"expected original /32 prefix in ECS-TRUNCATED for GET, got '{ecs_truncated}'"
+  )
+  assert f"/{_ECS_IPV4_PREFIX}" in ecs_truncated, (
+    f"expected truncated /{_ECS_IPV4_PREFIX} prefix in ECS-TRUNCATED for GET, got '{ecs_truncated}'"
+  )
 
 
 def test_get_dns_wire_with_ecs_no_truncation():
@@ -684,21 +619,15 @@ def test_get_dns_wire_with_ecs_no_truncation():
   wire = _build_dns_wire_with_ecs(
     "trevorlauder.dev", address="203.0.113.0", srclen=_ECS_IPV4_PREFIX
   )
-  encoded = base64.urlsafe_b64encode(wire).rstrip(b"=").decode("ascii")
-  url = f"{BASE_URL}{TEST_ENDPOINTS[0]}?dns={encoded}"
-
-  with urllib.request.urlopen(
-    _request(url, headers={"Accept": "application/dns-message"}),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    ecs_truncated = resp.headers.get("cloudflare-doh-worker-ecs-truncated", "")
-    assert not ecs_truncated, (
-      f"expected ECS-TRUNCATED to be empty for GET /{_ECS_IPV4_PREFIX} prefix, got '{ecs_truncated}'"
-    )
+  status, headers, _ = _get_wire(wire)
+  assert status == 200
+  ecs_truncated = headers.get("cloudflare-doh-worker-ecs-truncated", "")
+  assert not ecs_truncated, (
+    f"expected ECS-TRUNCATED to be empty for GET /{_ECS_IPV4_PREFIX} prefix, got '{ecs_truncated}'"
+  )
 
 
-# IPv6 ECS truncation tests
+# IPv6 ECS truncation
 
 
 @pytest.mark.skipif(not _ECS_ENABLED, reason="ECS_TRUNCATION is disabled")
@@ -706,27 +635,15 @@ def test_post_dns_wire_with_ipv6_ecs_truncated():
   """IPv6 ECS /128 prefix truncates to configured prefix."""
 
   wire = _build_dns_wire_with_ecs("trevorlauder.dev", address="2001:db8::1", srclen=128)
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}",
-      method="POST",
-      headers={
-        "Content-Type": "application/dns-message",
-        "Accept": "application/dns-message",
-      },
-      data=wire,
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    ecs_truncated = resp.headers.get("cloudflare-doh-worker-ecs-truncated", "")
-    assert "2001:db8::1/128" in ecs_truncated, (
-      f"expected original /128 prefix in ECS-TRUNCATED, got '{ecs_truncated}'"
-    )
-    assert f"/{_ECS_IPV6_PREFIX}" in ecs_truncated, (
-      f"expected truncated /{_ECS_IPV6_PREFIX} prefix in ECS-TRUNCATED, got '{ecs_truncated}'"
-    )
+  status, headers, _ = _post_wire(wire)
+  assert status == 200
+  ecs_truncated = headers.get("cloudflare-doh-worker-ecs-truncated", "")
+  assert "2001:db8::1/128" in ecs_truncated, (
+    f"expected original /128 prefix in ECS-TRUNCATED, got '{ecs_truncated}'"
+  )
+  assert f"/{_ECS_IPV6_PREFIX}" in ecs_truncated, (
+    f"expected truncated /{_ECS_IPV6_PREFIX} prefix in ECS-TRUNCATED, got '{ecs_truncated}'"
+  )
 
 
 def test_post_dns_wire_with_ipv6_ecs_no_truncation():
@@ -735,24 +652,12 @@ def test_post_dns_wire_with_ipv6_ecs_no_truncation():
   wire = _build_dns_wire_with_ecs(
     "trevorlauder.dev", address="2001:db8::", srclen=_ECS_IPV6_PREFIX
   )
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}",
-      method="POST",
-      headers={
-        "Content-Type": "application/dns-message",
-        "Accept": "application/dns-message",
-      },
-      data=wire,
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    ecs_truncated = resp.headers.get("cloudflare-doh-worker-ecs-truncated", "")
-    assert not ecs_truncated, (
-      f"expected ECS-TRUNCATED to be empty for IPv6 /{_ECS_IPV6_PREFIX} prefix, got '{ecs_truncated}'"
-    )
+  status, headers, _ = _post_wire(wire)
+  assert status == 200
+  ecs_truncated = headers.get("cloudflare-doh-worker-ecs-truncated", "")
+  assert not ecs_truncated, (
+    f"expected ECS-TRUNCATED to be empty for IPv6 /{_ECS_IPV6_PREFIX} prefix, got '{ecs_truncated}'"
+  )
 
 
 @pytest.mark.skipif(_ECS_ENABLED, reason="ECS_TRUNCATION is enabled")
@@ -760,27 +665,15 @@ def test_ecs_disabled_no_truncation_header():
   """Oversized ECS prefix passes through when truncation is disabled."""
 
   wire = _build_dns_wire_with_ecs("trevorlauder.dev", address="203.0.113.1", srclen=32)
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}",
-      method="POST",
-      headers={
-        "Content-Type": "application/dns-message",
-        "Accept": "application/dns-message",
-      },
-      data=wire,
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    ecs_truncated = resp.headers.get("cloudflare-doh-worker-ecs-truncated", "")
-    assert not ecs_truncated, (
-      f"expected no ECS-TRUNCATED header when truncation is disabled, got '{ecs_truncated}'"
-    )
+  status, headers, _ = _post_wire(wire)
+  assert status == 200
+  ecs_truncated = headers.get("cloudflare-doh-worker-ecs-truncated", "")
+  assert not ecs_truncated, (
+    f"expected no ECS-TRUNCATED header when truncation is disabled, got '{ecs_truncated}'"
+  )
 
 
-# Invalid input edge cases
+# Invalid inputs
 
 
 def test_post_empty_body_returns_400():
@@ -803,11 +696,11 @@ def test_post_empty_body_returns_400():
   assert e.value.code == 400
 
 
-# Provider stat header tests
+# Provider stat headers
 
 
 def _assert_provider_stat_headers(headers) -> None:
-  """Assert always-on provider stat headers are valid on a successful DNS response."""
+  """Check provider stat headers on a successful response."""
 
   queried = headers.get("cloudflare-doh-worker-providers-queried", "")
   assert queried, (
@@ -829,59 +722,35 @@ def _assert_provider_stat_headers(headers) -> None:
       assert int(val) >= 1, f"expected {name.upper()} > 0 when present, got {val!r}"
 
 
+@pytest.mark.skipif(
+  MOCK_DOH_ENABLED, reason="mock-doh provider does not support DNS-JSON"
+)
 def test_provider_stat_headers_present_on_dns_json():
   """Successful DNS-JSON response includes PROVIDERS-QUERIED header."""
 
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}?name=google.com&type=A",
-      headers={"Accept": "application/dns-json"},
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    _assert_provider_stat_headers(resp.headers)
+  status, headers, _ = _get_json("google.com", "A")
+  assert status == 200
+  _assert_provider_stat_headers(headers)
 
 
 def test_provider_stat_headers_present_on_dns_wire():
   """Successful DNS wire POST response includes PROVIDERS-QUERIED header."""
 
-  wire = _build_dns_wire("cloudflare.com")
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}",
-      method="POST",
-      headers={
-        "Content-Type": "application/dns-message",
-        "Accept": "application/dns-message",
-      },
-      data=wire,
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    _assert_provider_stat_headers(resp.headers)
+  status, headers, _ = _post_wire(_build_dns_wire("cloudflare.com"))
+  assert status == 200
+  _assert_provider_stat_headers(headers)
 
 
 @pytest.mark.skipif(not BLOCKED_DOMAINS, reason="BLOCKED_DOMAINS is empty in config")
 def test_provider_stat_headers_absent_on_config_blocked():
   """Config-blocked domains skip provider fan-out so PROVIDERS-QUERIED should be absent."""
 
-  domain = next(iter(BLOCKED_DOMAINS)).lstrip("*").lstrip(".")
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}?name={domain}&type=A",
-      headers={"Accept": "application/dns-json"},
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    queried = resp.headers.get("cloudflare-doh-worker-providers-queried", "")
-    assert not queried, (
-      f"expected no PROVIDERS-QUERIED header for config-blocked domain, got {queried!r}"
-    )
+  status, headers, _ = _get_json(_first_domain(BLOCKED_DOMAINS), "A")
+  assert status == 200
+  queried = headers.get("cloudflare-doh-worker-providers-queried", "")
+  assert not queried, (
+    f"expected no PROVIDERS-QUERIED header for config-blocked domain, got {queried!r}"
+  )
 
 
 def test_post_garbage_bytes_returns_400():
@@ -952,197 +821,99 @@ def test_head_request_returns_405():
   assert e.value.code == 405
 
 
-# DNS query type coverage
+# Query types
 
 
-def test_get_dns_json_aaaa_query():
-  """GET ?name=&type=AAAA — verify IPv6 answer parsing works."""
+@pytest.mark.skipif(
+  MOCK_DOH_ENABLED, reason="mock-doh provider does not support DNS-JSON"
+)
+@pytest.mark.parametrize("qtype", ["AAAA", "TXT", "MX"])
+def test_get_dns_json_query_type(qtype: str):
+  """GET with various record types — verify the worker handles them correctly."""
 
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}?name=google.com&type=AAAA",
-      headers={"Accept": "application/dns-json"},
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    data = json.loads(resp.read())
-    assert "Status" in data
-    assert data["Status"] == 0, f"expected NOERROR (0), got {data['Status']}"
-    _assert_worker_headers(resp.headers)
-
-
-def test_get_dns_json_txt_query():
-  """GET ?name=&type=TXT — verify non-address record type passes through."""
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}?name=google.com&type=TXT",
-      headers={"Accept": "application/dns-json"},
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    data = json.loads(resp.read())
-    assert "Status" in data
-    _assert_worker_headers(resp.headers)
-
-
-def test_get_dns_json_mx_query():
-  """GET ?name=&type=MX — verify MX record type passes through."""
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}?name=google.com&type=MX",
-      headers={"Accept": "application/dns-json"},
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    data = json.loads(resp.read())
-    assert "Status" in data
-    _assert_worker_headers(resp.headers)
+  status, headers, data = _get_json("google.com", qtype)
+  assert status == 200
+  assert "Status" in data
+  _assert_worker_headers(headers)
 
 
 def test_post_dns_wire_aaaa_query():
   """POST DNS wire AAAA query — verify binary AAAA path."""
 
   wire = _build_dns_wire("google.com", rdtype=dns.rdatatype.AAAA)
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}",
-      method="POST",
-      headers={
-        "Content-Type": "application/dns-message",
-        "Accept": "application/dns-message",
-      },
-      data=wire,
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    body = resp.read()
-    assert body[:2] == wire[:2], "transaction ID mismatch"
-    _assert_worker_headers(resp.headers)
+  status, _, _ = _post_wire(wire)
+  assert status == 200
 
 
-# Wire-format paths for config-level logic
+# Wire / config tests
 
 
 @pytest.mark.skipif(not BLOCKED_DOMAINS, reason="BLOCKED_DOMAINS is empty in config")
 def test_config_blocked_domain_via_post_wire():
   """Blocked domain via POST wire returns NXDOMAIN."""
 
-  domain = next(iter(BLOCKED_DOMAINS)).lstrip("*").lstrip(".")
-  wire = _build_dns_wire(domain)
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}",
-      method="POST",
-      headers={
-        "Content-Type": "application/dns-message",
-        "Accept": "application/dns-message",
-      },
-      data=wire,
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    content_type = resp.headers.get("content-type", "")
-    assert "dns-message" in content_type, f"unexpected content-type: {content_type}"
-    body = resp.read()
-    msg = dns.message.from_wire(body)
-    assert msg.rcode() == dns.rcode.NXDOMAIN, (
-      f"expected NXDOMAIN, got {dns.rcode.to_text(msg.rcode())}"
-    )
-    if DEBUG:
-      response_from = resp.headers.get("cloudflare-doh-worker-response-from", "")
-      assert response_from == "config"
+  wire = _build_dns_wire(_first_domain(BLOCKED_DOMAINS))
+  status, headers, body = _post_wire(wire)
+  assert status == 200
+  msg = dns.message.from_wire(body)
+  assert msg.rcode() == dns.rcode.NXDOMAIN, (
+    f"expected NXDOMAIN, got {dns.rcode.to_text(msg.rcode())}"
+  )
+  if DEBUG:
+    response_from = headers.get("cloudflare-doh-worker-response-from", "")
+    assert response_from == "config"
 
 
 @pytest.mark.skipif(not BLOCKED_DOMAINS, reason="BLOCKED_DOMAINS is empty in config")
 def test_config_blocked_domain_via_get_wire():
   """Blocked domain via GET wire returns NXDOMAIN."""
 
-  domain = next(iter(BLOCKED_DOMAINS)).lstrip("*").lstrip(".")
-  wire = _build_dns_wire(domain)
-  encoded = base64.urlsafe_b64encode(wire).rstrip(b"=").decode()
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}?dns={encoded}",
-      headers={"Accept": "application/dns-message"},
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    content_type = resp.headers.get("content-type", "")
-    assert "dns-message" in content_type, f"unexpected content-type: {content_type}"
-    body = resp.read()
-    msg = dns.message.from_wire(body)
-    assert msg.rcode() == dns.rcode.NXDOMAIN, (
-      f"expected NXDOMAIN, got {dns.rcode.to_text(msg.rcode())}"
-    )
-    if DEBUG:
-      response_from = resp.headers.get("cloudflare-doh-worker-response-from", "")
-      assert response_from == "config"
+  wire = _build_dns_wire(_first_domain(BLOCKED_DOMAINS))
+  status, headers, body = _get_wire(wire)
+  assert status == 200
+  msg = dns.message.from_wire(body)
+  assert msg.rcode() == dns.rcode.NXDOMAIN, (
+    f"expected NXDOMAIN, got {dns.rcode.to_text(msg.rcode())}"
+  )
+  if DEBUG:
+    response_from = headers.get("cloudflare-doh-worker-response-from", "")
+    assert response_from == "config"
 
 
 @pytest.mark.skipif(not ALLOWED_DOMAINS, reason="ALLOWED_DOMAINS is empty in config")
 def test_allowed_domain_via_post_wire():
   """Allowed domain via POST wire uses bypass provider."""
 
-  domain = next(iter(ALLOWED_DOMAINS)).lstrip("*").lstrip(".")
-  wire = _build_dns_wire(domain)
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}",
-      method="POST",
-      headers={
-        "Content-Type": "application/dns-message",
-        "Accept": "application/dns-message",
-      },
-      data=wire,
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    if DEBUG:
-      response_from = resp.headers.get("cloudflare-doh-worker-response-from", "")
-      assert BYPASS_PROVIDER["host"] in response_from, (
-        f"expected bypass provider {BYPASS_PROVIDER['host']!r} in response-from, got {response_from!r}"
-      )
-    _assert_worker_headers(resp.headers)
+  wire = _build_dns_wire(_first_domain(ALLOWED_DOMAINS))
+  status, headers, _ = _post_wire(wire)
+  assert status == 200
+  if DEBUG:
+    response_from = headers.get("cloudflare-doh-worker-response-from", "")
+    assert BYPASS_PROVIDER["host"] in response_from, (
+      f"expected bypass provider {BYPASS_PROVIDER['host']!r} in response-from, got {response_from!r}"
+    )
 
 
 # Non-existent domain
 
 
+@pytest.mark.skipif(
+  MOCK_DOH_ENABLED, reason="mock-doh provider does not support DNS-JSON"
+)
 def test_random_subdomain_does_not_500():
   """Random subdomain resolves without crashing the worker."""
 
   subdomain = "".join(random.choices(string.ascii_lowercase, k=20))
   domain = f"{subdomain}.trevorlauder.dev"
-
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}?name={domain}&type=A",
-      headers={"Accept": "application/dns-json"},
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    data = json.loads(resp.read())
-    assert data["Status"] in (0, 3), (
-      f"expected NOERROR (0) or NXDOMAIN (3), got {data['Status']}"
-    )
-    _assert_worker_headers(resp.headers)
+  status, headers, data = _get_json(domain, "A")
+  assert status == 200
+  assert data["Status"] in (0, 3), (
+    f"expected NOERROR (0) or NXDOMAIN (3), got {data['Status']}"
+  )
+  _assert_worker_headers(headers)
 
 
-# ECS + config-blocked interaction
+# ECS + blocked domain
 
 
 @pytest.mark.skipif(not BLOCKED_DOMAINS, reason="BLOCKED_DOMAINS is empty in config")
@@ -1150,40 +921,24 @@ def test_random_subdomain_does_not_500():
 def test_post_ecs_with_blocked_domain():
   """Blocked domain with ECS shows truncation and config headers."""
 
-  domain = next(iter(BLOCKED_DOMAINS)).lstrip("*").lstrip(".")
-  wire = _build_dns_wire_with_ecs(domain, address="203.0.113.1", srclen=32)
+  wire = _build_dns_wire_with_ecs(
+    _first_domain(BLOCKED_DOMAINS), address="203.0.113.1", srclen=32
+  )
 
-  with urllib.request.urlopen(
-    _request(
-      f"{BASE_URL}{TEST_ENDPOINTS[0]}",
-      method="POST",
-      headers={
-        "Content-Type": "application/dns-message",
-        "Accept": "application/dns-message",
-      },
-      data=wire,
-    ),
-    timeout=TIMEOUT,
-  ) as resp:
-    assert resp.status == 200
-    ecs_truncated = resp.headers.get("cloudflare-doh-worker-ecs-truncated", "")
-    assert "203.0.113.1/32" in ecs_truncated, (
-      f"expected original /32 prefix in ECS-TRUNCATED for blocked domain, got '{ecs_truncated}'"
-    )
-    assert f"/{_ECS_IPV4_PREFIX}" in ecs_truncated, (
-      f"expected truncated /{_ECS_IPV4_PREFIX} in ECS-TRUNCATED for blocked domain, got '{ecs_truncated}'"
-    )
-    if DEBUG:
-      response_from = resp.headers.get("cloudflare-doh-worker-response-from", "")
-      assert response_from == "config", (
-        f"expected response-from 'config', got {response_from!r}"
-      )
-    body = resp.read()
-    msg = dns.message.from_wire(body)
-    assert msg.rcode() == dns.rcode.NXDOMAIN
+  status, headers, _ = _post_wire(wire)
+  assert status == 200
+  ecs_truncated = headers.get("cloudflare-doh-worker-ecs-truncated", "")
+
+  assert "203.0.113.1/32" in ecs_truncated, (
+    f"expected original /32 prefix in ECS-TRUNCATED for blocked domain, got '{ecs_truncated}'"
+  )
+
+  assert f"/{_ECS_IPV4_PREFIX}" in ecs_truncated, (
+    f"expected truncated /{_ECS_IPV4_PREFIX} in ECS-TRUNCATED for blocked domain, got '{ecs_truncated}'"
+  )
 
 
-# Mismatched Accept header tests — these non-standard combos must be rejected (406)
+# Mismatched Accept headers
 
 
 def test_get_wire_param_with_json_accept_rejected():
@@ -1236,3 +991,91 @@ def test_post_wire_with_json_accept_rejected():
       timeout=TIMEOUT,
     )
   assert e.value.code == 406
+
+
+# Mock-DoH ECS tests
+
+
+def _mock_doh_reset() -> None:
+  """Clear mock-doh state."""
+  urllib.request.urlopen(
+    _request(f"{MOCK_DOH_URL}/last-ecs", method="DELETE"),
+    timeout=TIMEOUT,
+  )
+
+
+def _mock_doh_last_ecs() -> dict | None:
+  """Fetch last ECS from mock-doh."""
+  with urllib.request.urlopen(
+    _request(f"{MOCK_DOH_URL}/last-ecs"),
+    timeout=TIMEOUT,
+  ) as resp:
+    return json.loads(resp.read())
+
+
+@pytest.mark.skipif(not MOCK_DOH_ENABLED, reason="MOCK_DOH_ENABLED is False")
+def test_mock_doh_ipv4_ecs_truncated_to_configured_prefix():
+  """Worker truncates /32 IPv4 ECS to the configured ipv4_prefix before forwarding."""
+
+  _mock_doh_reset()
+  wire = _build_dns_wire_with_ecs("example.com", address="203.0.113.1", srclen=32)
+  assert _post_wire(wire)[0] == 200
+  ecs = _mock_doh_last_ecs()
+  assert ecs is not None, "mock-doh server recorded no ECS option"
+
+  assert ecs["prefix"] == _ECS_IPV4_PREFIX, (
+    f"expected forwarded prefix {_ECS_IPV4_PREFIX}, got {ecs['prefix']}"
+  )
+
+
+@pytest.mark.skipif(not MOCK_DOH_ENABLED, reason="MOCK_DOH_ENABLED is False")
+def test_mock_doh_ipv4_ecs_at_configured_prefix_not_modified():
+  """Worker does not modify an IPv4 ECS option already at the configured prefix."""
+
+  _mock_doh_reset()
+
+  wire = _build_dns_wire_with_ecs(
+    "example.com", address="203.0.113.0", srclen=_ECS_IPV4_PREFIX
+  )
+
+  assert _post_wire(wire)[0] == 200
+  ecs = _mock_doh_last_ecs()
+  assert ecs is not None, "mock-doh server recorded no ECS option"
+
+  assert ecs["prefix"] == _ECS_IPV4_PREFIX, (
+    f"expected prefix {_ECS_IPV4_PREFIX} unchanged, got {ecs['prefix']}"
+  )
+
+
+@pytest.mark.skipif(not MOCK_DOH_ENABLED, reason="MOCK_DOH_ENABLED is False")
+def test_mock_doh_ipv6_ecs_truncated_to_configured_prefix():
+  """Worker truncates /128 IPv6 ECS to the configured ipv6_prefix before forwarding."""
+
+  _mock_doh_reset()
+  wire = _build_dns_wire_with_ecs("example.com", address="2001:db8::1", srclen=128)
+  assert _post_wire(wire)[0] == 200
+  ecs = _mock_doh_last_ecs()
+  assert ecs is not None, "mock-doh server recorded no ECS option"
+
+  assert ecs["prefix"] == _ECS_IPV6_PREFIX, (
+    f"expected forwarded prefix {_ECS_IPV6_PREFIX}, got {ecs['prefix']}"
+  )
+
+
+@pytest.mark.skipif(not MOCK_DOH_ENABLED, reason="MOCK_DOH_ENABLED is False")
+def test_mock_doh_ipv6_ecs_at_configured_prefix_not_modified():
+  """Worker does not modify an IPv6 ECS option already at the configured prefix."""
+
+  _mock_doh_reset()
+
+  wire = _build_dns_wire_with_ecs(
+    "example.com", address="2001:db8::", srclen=_ECS_IPV6_PREFIX
+  )
+
+  assert _post_wire(wire)[0] == 200
+  ecs = _mock_doh_last_ecs()
+  assert ecs is not None, "mock-doh server recorded no ECS option"
+
+  assert ecs["prefix"] == _ECS_IPV6_PREFIX, (
+    f"expected prefix {_ECS_IPV6_PREFIX} unchanged, got {ecs['prefix']}"
+  )
