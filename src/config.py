@@ -22,6 +22,7 @@ ALLOWED_DOMAINS = []
 BYPASS_PROVIDER = {
   "host": "cloudflare-dns.com",
   "path": "/dns-query",
+  "dns_json": True,
 }
 
 LOKI_URL = ""
@@ -35,6 +36,7 @@ ENDPOINTS = {
     "main_provider": {
       "host": "security.cloudflare-dns.com",
       "path": "/dns-query",
+      "dns_json": True,
     },
     "additional_providers": [
       {
