@@ -42,13 +42,44 @@ _ALLOWED_COMPILED = compile_domain_set(config.ALLOWED_DOMAINS)
 _BLOCKED_COMPILED = compile_domain_set(config.BLOCKED_DOMAINS)
 
 
+_CONFIG_TYPE_RULES: list[tuple[str, type | tuple]] = [
+  ("DEBUG", bool),
+  ("TIMEOUT_MS", int),
+  ("LOKI_TIMEOUT_MS", int),
+  ("RETRY_MAX_ATTEMPTS", int),
+  ("REBIND_PROTECTION", bool),
+  ("BLOCKED_DOMAINS", list),
+  ("ALLOWED_DOMAINS", list),
+  ("BYPASS_PROVIDER", dict),
+  ("ECS_TRUNCATION", dict),
+  ("ENDPOINTS", dict),
+  ("LOKI_URL", str),
+  ("CONFIG_ENDPOINT", str),
+  ("HEALTH_ENDPOINT", str),
+]
+
+
+def _validate_types():
+  """Validate configuration value types at module load time."""
+
+  for name, expected_type in _CONFIG_TYPE_RULES:
+    value = getattr(config, name, None)
+
+    if value is not None and not isinstance(value, expected_type):
+      raise TypeError(
+        f"config.{name} must be {expected_type.__name__}, got {type(value).__name__}"
+      )
+
+
 def _validate_config():
   """Validate configuration at module load time."""
 
   if not config.ALLOWED_DOMAINS:
     return
+
   if not isinstance(config.BYPASS_PROVIDER, dict):
     raise ValueError("BYPASS_PROVIDER must be a dict when ALLOWED_DOMAINS is set")
+
   for key in ("host", "path"):
     value = config.BYPASS_PROVIDER.get(key)
     if not isinstance(value, str) or not value:
@@ -57,6 +88,7 @@ def _validate_config():
       )
 
 
+_validate_types()
 _validate_config()
 
 
@@ -108,6 +140,7 @@ def _resolve_providers(providers: list[dict], env) -> list[dict]:
   """Resolve secret placeholders in providers and recompute provider_id."""
 
   resolved = _resolve_secrets(providers, env)
+
   for provider in resolved:
     provider["provider_id"] = f"{provider['host']}{provider['path']}"
 
@@ -120,11 +153,14 @@ def _build_provider_lists() -> dict[str, list[dict]]:
   result: dict[str, list[dict]] = {}
   for path, cfg in config.ENDPOINTS.items():
     main = _with_provider_id({**cfg["main_provider"], "main": True})
+
     additional = [
       _with_provider_id({**p, "main": False})
       for p in cfg.get("additional_providers", [])
     ]
+
     result[path] = [main, *additional]
+
   return result
 
 
@@ -165,7 +201,9 @@ def _resolve_config(env) -> _ResolvedConfig:
   )
   try:
     loki_url = _resolve_secrets(config.LOKI_URL, env) if config.LOKI_URL else ""
-  except ValueError:
+  except ValueError as e:
+    logger.warning("Loki logging disabled: failed to resolve LOKI_URL secret(s): %s", e)
+
     loki_url = ""
 
   provider_lists = {
@@ -181,7 +219,8 @@ def _resolve_config(env) -> _ResolvedConfig:
     bypass_provider_list=_resolve_providers(_BYPASS_PROVIDER_LIST, env),
   )
 
-  _resolved_config_cache = resolved
+  if loki_url or not config.LOKI_URL:
+    _resolved_config_cache = resolved
 
   return resolved
 
@@ -232,6 +271,8 @@ _CONFIG_ALLOWLIST = frozenset(
     "ALLOWED_DOMAINS",
     "BYPASS_PROVIDER",
     "LOKI_URL",
+    "LOKI_TIMEOUT_MS",
+    "RETRY_MAX_ATTEMPTS",
     "ENDPOINTS",
   }
 )
