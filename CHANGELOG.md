@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.0.0-rc7] - 2026-03-06
+
+### Bug Fixes
+
+- Sanitize get/post request parameters ([#60](https://github.com/trevorlauder/cloudflare-doh-worker/pull/60))
+- Harden config endpoint ([#61](https://github.com/trevorlauder/cloudflare-doh-worker/pull/61))
+- Sanitize response content-type ([#63](https://github.com/trevorlauder/cloudflare-doh-worker/pull/63))
+- Validate config and secrets ([#64](https://github.com/trevorlauder/cloudflare-doh-worker/pull/64))
+
+### Features
+
+- Make dns-json configurable instead of hardcoded ([#65](https://github.com/trevorlauder/cloudflare-doh-worker/pull/65))
+
+### Testing
+
+- Consolidate all tests into a single tilt run ([#58](https://github.com/trevorlauder/cloudflare-doh-worker/pull/58))
+- Simplify and add eco integration tests and some unit tests ([#66](https://github.com/trevorlauder/cloudflare-doh-worker/pull/66))
+
 ## [1.0.0-rc6] - 2026-03-05
 
 ### Features
