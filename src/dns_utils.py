@@ -308,7 +308,7 @@ def _build_provider_fetch_request(
   if method == "GET" and body_bytes is not None:
     encoded = base64.urlsafe_b64encode(body_bytes).rstrip(b"=").decode("ascii")
     target_url += "?dns=" + encoded
-  elif query:
+  elif method == "GET" and query:
     target_url += query
 
   main = provider.get("main", False)
