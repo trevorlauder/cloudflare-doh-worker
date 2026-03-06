@@ -10,6 +10,9 @@ import time
 import urllib.parse
 from typing import NamedTuple
 
+import dns.exception
+import dns.name
+import dns.rdatatype
 from workers import Response, WorkerEntrypoint
 
 import config
@@ -244,12 +247,12 @@ def _handle_config(request, env) -> Response:
 
   auth_header = str(request.headers.get("authorization") or "")
 
-  provided = ""
+  if not auth_header.startswith("Bearer "):
+    return Response("Unauthorized", status=401)
 
-  if auth_header.startswith("Bearer "):
-    provided = auth_header[7:].strip()
+  provided = auth_header[7:].strip()
 
-  if not hmac.compare_digest(provided, str(token)):
+  if not provided or not hmac.compare_digest(provided, str(token)):
     return Response("Unauthorized", status=401)
 
   payload = {k: getattr(config, k) for k in _CONFIG_ALLOWLIST if hasattr(config, k)}
@@ -435,10 +438,24 @@ def _parse_get(query_string: str, accept: str) -> DnsParseResult:
       raise _RejectError("GET ?name= requires Accept: application/dns-json")
 
     type_param = params.get("type", [None])[0]
+    try:
+      dns.name.from_text(name_param)
+
+      if type_param is not None:
+        dns.rdatatype.from_text(type_param)
+    except (
+      dns.exception.DNSException,
+      dns.name.LabelTooLong,
+      dns.name.EmptyLabel,
+      ValueError,
+    ):
+      raise _RejectError("Invalid DNS name or type", status=400) from None
+
     question = Question(
       name=name_param,
       type=type_param if type_param else "",
     )
+
     return DnsParseResult(question, None, "", None)
 
   raise _RejectError(
@@ -651,6 +668,12 @@ async def _handle_request(
   ecs_truncated = parsed.ecs_description
   request_wire = parsed.request_wire
   parsed_request = parsed.parsed_request
+
+  if method == "GET" and body_bytes is None and question.name:
+    _json_params: dict[str, str] = {"name": question.name}
+    if question.type:
+      _json_params["type"] = question.type
+    query = "?" + urllib.parse.urlencode(_json_params)
 
   name = question.name
   config_allowed = bool(name and domain_matches(name, _ALLOWED_COMPILED))
