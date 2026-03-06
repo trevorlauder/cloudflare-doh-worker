@@ -4,7 +4,7 @@
   "toml": {},
   "dockerfile": {},
   "ruff": {
-    "indentWidth": 2
+    "indentWidth": 4
   },
   "yaml": {},
   "excludes": [],

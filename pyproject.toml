@@ -23,8 +23,30 @@ main = "src/worker.py"
 addopts = "--reruns=2 --reruns-delay=2 -vv -ra"
 pythonpath = ["src"]
 
+[tool.ruff]
+line-length = 120
+
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F", "B", "N", "Q", "I", "UP", "SIM", "C4", "PT", "RUF", "T20", "S"]
+select = [
+  "ANN",
+  "E4",
+  "E7",
+  "E9",
+  "E501",
+  "F",
+  "B",
+  "N",
+  "Q",
+  "I",
+  "UP",
+  "SIM",
+  "C4",
+  "COM812",
+  "PT",
+  "RUF",
+  "T20",
+  "S",
+]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S104", "S310", "S311"]
+"tests/**" = ["ANN201", "S101", "S104", "S310", "S311"]

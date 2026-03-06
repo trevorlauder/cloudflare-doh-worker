@@ -1,6 +1,8 @@
 # Copyright 2025-2026 Trevor Lauder.
 # SPDX-License-Identifier: MIT
 
+"""Cloudflare Worker entrypoint for the DNS-over-HTTPS proxy."""
+
 import base64
 import hmac
 import json
@@ -17,23 +19,23 @@ from workers import Response, WorkerEntrypoint
 
 import config
 from dns_utils import (
-  MAX_DNS_BODY_SIZE,
-  SUPPORTED_ACCEPT_HEADERS,
-  DnsParseResult,
-  ProviderResult,
-  Question,
-  compile_domain_set,
-  domain_matches,
-  get_response_min_ttl,
-  make_blocked_response,
-  parse_dns_wire_request,
-  send_doh_requests_fanout,
+    MAX_DNS_BODY_SIZE,
+    SUPPORTED_ACCEPT_HEADERS,
+    DnsParseResult,
+    ProviderResult,
+    Question,
+    compile_domain_set,
+    domain_matches,
+    get_response_min_ttl,
+    make_blocked_response,
+    parse_dns_wire_request,
+    send_doh_requests_fanout,
 )
 from loki_utils import build_loki_fetch_promise
 
 logging.basicConfig(
-  level=logging.DEBUG if config.DEBUG else logging.WARNING,
-  format="%(name)s %(levelname)s %(message)s",
+    level=logging.DEBUG if config.DEBUG else logging.WARNING,
+    format="%(name)s %(levelname)s %(message)s",
 )
 
 logger = logging.getLogger(__name__)
@@ -43,42 +45,44 @@ _BLOCKED_COMPILED = compile_domain_set(config.BLOCKED_DOMAINS)
 
 
 _CONFIG_TYPE_RULES: list[tuple[str, type | tuple]] = [
-  ("DEBUG", bool),
-  ("TIMEOUT_MS", int),
-  ("LOKI_TIMEOUT_MS", int),
-  ("RETRY_MAX_ATTEMPTS", int),
-  ("REBIND_PROTECTION", bool),
-  ("BLOCKED_DOMAINS", list),
-  ("ALLOWED_DOMAINS", list),
-  ("BYPASS_PROVIDER", dict),
-  ("ECS_TRUNCATION", dict),
-  ("ENDPOINTS", dict),
-  ("LOKI_URL", str),
-  ("CONFIG_ENDPOINT", str),
-  ("HEALTH_ENDPOINT", str),
+    ("DEBUG", bool),
+    ("TIMEOUT_MS", int),
+    ("LOKI_TIMEOUT_MS", int),
+    ("RETRY_MAX_ATTEMPTS", int),
+    ("REBIND_PROTECTION", bool),
+    ("BLOCKED_DOMAINS", list),
+    ("ALLOWED_DOMAINS", list),
+    ("BYPASS_PROVIDER", dict),
+    ("ECS_TRUNCATION", dict),
+    ("ENDPOINTS", dict),
+    ("LOKI_URL", str),
+    ("CONFIG_ENDPOINT", str),
+    ("HEALTH_ENDPOINT", str),
 ]
 
 
-def _validate_types():
-  for name, expected_type in _CONFIG_TYPE_RULES:
-    value = getattr(config, name, None)
+def _validate_types() -> None:
+    """Raise TypeError if any config value has the wrong type."""
+    for name, expected_type in _CONFIG_TYPE_RULES:
+        value = getattr(config, name, None)
 
-    if value is not None and not isinstance(value, expected_type):
-      raise TypeError(
-        f"config.{name} must be {expected_type.__name__}, got {type(value).__name__}"
-      )
+        if value is not None and not isinstance(value, expected_type):
+            raise TypeError(
+                f"config.{name} must be {expected_type.__name__}, got {type(value).__name__}",
+            )
 
 
-def _validate_config():
-  if not config.ALLOWED_DOMAINS:
-    return
+def _validate_config() -> None:
+    """Validate cross-field config constraints at import time."""
+    if not config.ALLOWED_DOMAINS:
+        return
 
-  for key in ("host", "path"):
-    value = config.BYPASS_PROVIDER.get(key)
-    if not isinstance(value, str) or not value:
-      raise ValueError(
-        f"BYPASS_PROVIDER '{key}' must be a non-empty string when ALLOWED_DOMAINS is set"
-      )
+    for key in ("host", "path"):
+        value = config.BYPASS_PROVIDER.get(key)
+        if not isinstance(value, str) or not value:
+            raise ValueError(
+                f"BYPASS_PROVIDER '{key}' must be a non-empty string when ALLOWED_DOMAINS is set",
+            )
 
 
 _validate_types()
@@ -86,220 +90,239 @@ _validate_config()
 
 
 def _with_provider_id(provider: dict) -> dict:
-  """Return a copy of *provider* with a pre-computed provider_id key."""
-  return {**provider, "provider_id": f"{provider['host']}{provider['path']}"}
+    """Return a copy of *provider* with a pre-computed provider_id key."""
+    return {**provider, "provider_id": f"{provider['host']}{provider['path']}"}
 
 
 _SECRET_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
 
 
-def _resolve_secrets(obj, env):
-  """Recursively substitute ${SECRET_NAME} placeholders in strings, dicts, and lists."""
-  missing: list[str] = []
+def _resolve_secrets(obj: object, env: object) -> object:
+    """Recursively substitute ${SECRET_NAME} placeholders in strings, dicts, and lists."""
+    missing: list[str] = []
 
-  def _resolve(value):
-    if isinstance(value, str):
-      if "${" not in value:
+    def _resolve(value: object) -> object:
+        if isinstance(value, str):
+            if "${" not in value:
+                return value
+
+            def _replacer(m: re.Match) -> str:
+                try:
+                    secret = getattr(env, m.group(1), None)
+                except Exception:
+                    secret = None
+                if not secret:
+                    missing.append(m.group(1))
+                    return m.group(0)
+                return str(secret)
+
+            return _SECRET_RE.sub(_replacer, value)
+        if isinstance(value, dict):
+            return {k: _resolve(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [_resolve(item) for item in value]
         return value
 
-      def _replacer(m):
-        try:
-          secret = getattr(env, m.group(1), None)
-        except Exception:
-          secret = None
-        if not secret:
-          missing.append(m.group(1))
-          return m.group(0)
-        return str(secret)
+    resolved = _resolve(obj)
 
-      return _SECRET_RE.sub(_replacer, value)
-    if isinstance(value, dict):
-      return {k: _resolve(v) for k, v in value.items()}
-    if isinstance(value, list):
-      return [_resolve(item) for item in value]
-    return value
+    if missing:
+        raise ValueError(f"Missing secret(s): {', '.join(sorted(set(missing)))}")
 
-  resolved = _resolve(obj)
-
-  if missing:
-    raise ValueError(f"Missing secret(s): {', '.join(sorted(set(missing)))}")
-
-  return resolved
+    return resolved
 
 
-def _resolve_providers(providers: list[dict], env) -> list[dict]:
-  """Resolve secret placeholders in providers and recompute provider_id."""
-  resolved = _resolve_secrets(providers, env)
+def _resolve_providers(providers: list[dict], env: object) -> list[dict]:
+    """Resolve secret placeholders in providers and recompute provider_id."""
+    resolved = _resolve_secrets(providers, env)
 
-  for provider in resolved:
-    provider["provider_id"] = f"{provider['host']}{provider['path']}"
+    for provider in resolved:
+        provider["provider_id"] = f"{provider['host']}{provider['path']}"
 
-  return resolved
+    return resolved
 
 
 def _build_provider_lists() -> dict[str, list[dict]]:
-  result: dict[str, list[dict]] = {}
-  for path, cfg in config.ENDPOINTS.items():
-    main = _with_provider_id({**cfg["main_provider"], "main": True})
+    """Build per-endpoint provider lists from config at import time."""
+    result: dict[str, list[dict]] = {}
+    for path, cfg in config.ENDPOINTS.items():
+        main = _with_provider_id({**cfg["main_provider"], "main": True})
 
-    additional = [
-      _with_provider_id({**p, "main": False})
-      for p in cfg.get("additional_providers", [])
-    ]
+        additional = [
+            _with_provider_id({**p, "main": False})
+            for p in cfg.get("additional_providers", [])
+        ]
 
-    result[path] = [main, *additional]
+        result[path] = [main, *additional]
 
-  return result
+    return result
 
 
 _PROVIDER_LISTS = _build_provider_lists()
 
 _BYPASS_PROVIDER_LIST = (
-  [_with_provider_id({**config.BYPASS_PROVIDER, "main": True})]
-  if config.ALLOWED_DOMAINS
-  else []
+    [_with_provider_id({**config.BYPASS_PROVIDER, "main": True})]
+    if config.ALLOWED_DOMAINS
+    else []
 )
 
 _resolved_config_cache: "_ResolvedConfig | None" = None
 
 
 class _ResolvedConfig(NamedTuple):
-  """Runtime configuration with all ${SECRET} placeholders resolved."""
+    """Runtime configuration with all ${SECRET} placeholders resolved."""
 
-  health_endpoint: str | None
-  config_endpoint: str | None
-  loki_url: str
-  provider_lists: dict[str, list[dict]]
-  bypass_provider_list: list[dict]
+    health_endpoint: str | None
+    config_endpoint: str | None
+    loki_url: str
+    provider_lists: dict[str, list[dict]]
+    bypass_provider_list: list[dict]
 
 
-def _resolve_config(env) -> _ResolvedConfig:
-  """Resolve all ${SECRET} placeholders in the config."""
-  global _resolved_config_cache
+def _resolve_config(env: object) -> _ResolvedConfig:
+    """Resolve all ${SECRET} placeholders in the config."""
+    global _resolved_config_cache
 
-  if _resolved_config_cache is not None:
-    return _resolved_config_cache
+    if _resolved_config_cache is not None:
+        return _resolved_config_cache
 
-  health = (
-    _resolve_secrets(config.HEALTH_ENDPOINT, env) if config.HEALTH_ENDPOINT else None
-  )
-  config_ep = (
-    _resolve_secrets(config.CONFIG_ENDPOINT, env) if config.CONFIG_ENDPOINT else None
-  )
-  try:
-    loki_url = _resolve_secrets(config.LOKI_URL, env) if config.LOKI_URL else ""
-  except ValueError as e:
-    logger.warning("Loki logging disabled: failed to resolve LOKI_URL secret(s): %s", e)
+    health = (
+        _resolve_secrets(config.HEALTH_ENDPOINT, env)
+        if config.HEALTH_ENDPOINT
+        else None
+    )
+    config_ep = (
+        _resolve_secrets(config.CONFIG_ENDPOINT, env)
+        if config.CONFIG_ENDPOINT
+        else None
+    )
+    try:
+        loki_url = _resolve_secrets(config.LOKI_URL, env) if config.LOKI_URL else ""
+    except ValueError as e:
+        logger.warning(
+            "Loki logging disabled: failed to resolve LOKI_URL secret(s): %s",
+            e,
+        )
 
-    loki_url = ""
+        loki_url = ""
 
-  provider_lists = {
-    _resolve_secrets(path, env): _resolve_providers(providers, env)
-    for path, providers in _PROVIDER_LISTS.items()
-  }
+    provider_lists = {
+        _resolve_secrets(path, env): _resolve_providers(providers, env)
+        for path, providers in _PROVIDER_LISTS.items()
+    }
 
-  resolved = _ResolvedConfig(
-    health_endpoint=health,
-    config_endpoint=config_ep,
-    loki_url=loki_url,
-    provider_lists=provider_lists,
-    bypass_provider_list=_resolve_providers(_BYPASS_PROVIDER_LIST, env),
-  )
+    resolved = _ResolvedConfig(
+        health_endpoint=health,
+        config_endpoint=config_ep,
+        loki_url=loki_url,
+        provider_lists=provider_lists,
+        bypass_provider_list=_resolve_providers(_BYPASS_PROVIDER_LIST, env),
+    )
 
-  if loki_url or not config.LOKI_URL:
-    _resolved_config_cache = resolved
+    if loki_url or not config.LOKI_URL:
+        _resolved_config_cache = resolved
 
-  return resolved
+    return resolved
 
 
 class Default(WorkerEntrypoint):
-  async def fetch(self, request):
-    try:
-      return await self._handle(request)
-    except Exception:
-      logger.exception("Unhandled exception in fetch")
-      return Response("Internal server error", status=500)
+    """Cloudflare Worker entrypoint handling DNS-over-HTTPS requests."""
 
-  async def _handle(self, request):
-    parsed_url = urllib.parse.urlparse(str(request.url))
-    pathname = parsed_url.path
+    async def fetch(self, request: object) -> Response:
+        """Top-level request handler with global exception guard."""
+        try:
+            return await self._handle(request)
+        except Exception:
+            logger.exception("Unhandled exception in fetch")
+            return Response("Internal server error", status=500)
 
-    try:
-      cfg = _resolve_config(self.env)
-    except ValueError as e:
-      logger.exception("Configuration error: %s", e)
-      return Response("Internal server error", status=500)
+    async def _handle(self, request: object) -> Response:
+        """Route the request to health, config, or DoH handler."""
+        parsed_url = urllib.parse.urlparse(str(request.url))
+        pathname = parsed_url.path
 
-    if cfg.health_endpoint and pathname == cfg.health_endpoint:
-      return Response("ok", status=200)
+        try:
+            cfg = _resolve_config(self.env)
+        except ValueError as e:
+            logger.exception("Configuration error: %s", e)
+            return Response("Internal server error", status=500)
 
-    if cfg.config_endpoint and pathname == cfg.config_endpoint:
-      return _handle_config(request, self.env)
+        if cfg.health_endpoint and pathname == cfg.health_endpoint:
+            return Response("ok", status=200)
 
-    doh_providers = cfg.provider_lists.get(pathname)
+        if cfg.config_endpoint and pathname == cfg.config_endpoint:
+            return _handle_config(request, self.env)
 
-    if doh_providers is None:
-      return Response("", status=404)
+        doh_providers = cfg.provider_lists.get(pathname)
 
-    return await _handle_request(
-      request, pathname, doh_providers, cfg, self.env, self.ctx, parsed_url
-    )
+        if doh_providers is None:
+            return Response("", status=404)
+
+        return await _handle_request(
+            request,
+            pathname,
+            doh_providers,
+            cfg,
+            self.env,
+            self.ctx,
+            parsed_url,
+        )
 
 
 _CONFIG_ALLOWLIST = frozenset(
-  {
-    "CONFIG_ENDPOINT",
-    "DEBUG",
-    "HEALTH_ENDPOINT",
-    "TIMEOUT_MS",
-    "ECS_TRUNCATION",
-    "REBIND_PROTECTION",
-    "BLOCKED_DOMAINS",
-    "ALLOWED_DOMAINS",
-    "BYPASS_PROVIDER",
-    "LOKI_URL",
-    "LOKI_TIMEOUT_MS",
-    "RETRY_MAX_ATTEMPTS",
-    "ENDPOINTS",
-  }
+    {
+        "CONFIG_ENDPOINT",
+        "DEBUG",
+        "HEALTH_ENDPOINT",
+        "TIMEOUT_MS",
+        "ECS_TRUNCATION",
+        "REBIND_PROTECTION",
+        "BLOCKED_DOMAINS",
+        "ALLOWED_DOMAINS",
+        "BYPASS_PROVIDER",
+        "LOKI_URL",
+        "LOKI_TIMEOUT_MS",
+        "RETRY_MAX_ATTEMPTS",
+        "ENDPOINTS",
+    },
 )
 
 
-def _handle_config(request, env) -> Response:
-  """Return current runtime configuration as JSON, gated by ADMIN_TOKEN secret."""
-  token = getattr(env, "ADMIN_TOKEN", None)
+def _handle_config(request: object, env: object) -> Response:
+    """Return current runtime configuration as JSON, gated by ADMIN_TOKEN secret."""
+    token = getattr(env, "ADMIN_TOKEN", None)
 
-  if not token:
-    return Response("", status=404)
+    if not token:
+        return Response("", status=404)
 
-  auth_header = str(request.headers.get("authorization") or "")
+    auth_header = str(request.headers.get("authorization") or "")
 
-  if not auth_header.startswith("Bearer "):
-    return Response("Unauthorized", status=401)
+    if not auth_header.startswith("Bearer "):
+        return Response("Unauthorized", status=401)
 
-  provided = auth_header[7:].strip()
+    provided = auth_header[7:].strip()
 
-  if not provided or not hmac.compare_digest(provided, str(token)):
-    return Response("Unauthorized", status=401)
+    if not provided or not hmac.compare_digest(provided, str(token)):
+        return Response("Unauthorized", status=401)
 
-  payload = {k: getattr(config, k) for k in _CONFIG_ALLOWLIST if hasattr(config, k)}
+    payload = {k: getattr(config, k) for k in _CONFIG_ALLOWLIST if hasattr(config, k)}
 
-  return Response(
-    json.dumps(payload, indent=2, default=_json_default),
-    status=200,
-    headers={
-      "content-type": "application/json",
-      "Cache-Control": "no-store",
-      "Pragma": "no-cache",
-    },
-  )
+    return Response(
+        json.dumps(payload, indent=2, default=_json_default),
+        status=200,
+        headers={
+            "content-type": "application/json",
+            "Cache-Control": "no-store",
+            "Pragma": "no-cache",
+        },
+    )
 
 
-def _json_default(obj):
-  if isinstance(obj, set):
-    return sorted(obj)
+def _json_default(obj: object) -> list:
+    """JSON serializer fallback for set objects."""
+    if isinstance(obj, set):
+        return sorted(obj)
 
-  raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
 _HEADER_PREFIX = "CLOUDFLARE-DOH-WORKER"
@@ -323,438 +346,476 @@ _HEADER_RESPONSE_FROM_MAIN = f"{_HEADER_PREFIX}-RESPONSE-FROM-MAIN"
 
 
 def _build_response_headers(
-  content_type: str,
-  response_from: str,
-  *,
-  response_codes: list[str] | None = None,
-  possibly_blocked: list[str] | None = None,
-  blocked: list[str] | None = None,
-  timed_out: list[str] | None = None,
-  connection_error: list[str] | None = None,
-  config_allowed: bool = False,
-  config_blocked: bool = False,
-  rebind: bool = False,
-  ecs_truncated: str = "",
-  providers_queried: int = 0,
-  providers_failed: int = 0,
-  providers_timed_out: int = 0,
-  providers_conn_error: int = 0,
-  providers_failed_status: int = 0,
-  providers_retried: int = 0,
-  response_from_main: bool | None = None,
+    content_type: str,
+    response_from: str,
+    *,
+    response_codes: list[str] | None = None,
+    possibly_blocked: list[str] | None = None,
+    blocked: list[str] | None = None,
+    timed_out: list[str] | None = None,
+    connection_error: list[str] | None = None,
+    config_allowed: bool = False,
+    config_blocked: bool = False,
+    rebind: bool = False,
+    ecs_truncated: str = "",
+    providers_queried: int = 0,
+    providers_failed: int = 0,
+    providers_timed_out: int = 0,
+    providers_conn_error: int = 0,
+    providers_failed_status: int = 0,
+    providers_retried: int = 0,
+    response_from_main: bool | None = None,
 ) -> dict:
-  """Build response headers with optional DEBUG diagnostics."""
-  headers = {"content-type": content_type}
+    """Build response headers with optional DEBUG diagnostics."""
+    headers = {"content-type": content_type}
 
-  if rebind:
-    headers[_HEADER_REBIND_PROTECTED] = "1"
+    if rebind:
+        headers[_HEADER_REBIND_PROTECTED] = "1"
 
-  if ecs_truncated:
-    headers[_HEADER_ECS_TRUNCATED] = ecs_truncated
+    if ecs_truncated:
+        headers[_HEADER_ECS_TRUNCATED] = ecs_truncated
 
-  if providers_queried:
-    headers[_HEADER_PROVIDERS_QUERIED] = str(providers_queried)
-  if providers_failed:
-    headers[_HEADER_PROVIDERS_FAILED] = str(providers_failed)
-  if providers_timed_out:
-    headers[_HEADER_PROVIDERS_TIMED_OUT] = str(providers_timed_out)
-  if providers_conn_error:
-    headers[_HEADER_PROVIDERS_CONN_ERROR] = str(providers_conn_error)
-  if providers_failed_status:
-    headers[_HEADER_PROVIDERS_FAILED_STATUS] = str(providers_failed_status)
-  if providers_retried:
-    headers[_HEADER_PROVIDERS_RETRIED] = str(providers_retried)
-  if response_from_main is not None:
-    headers[_HEADER_RESPONSE_FROM_MAIN] = "1" if response_from_main else "0"
+    if providers_queried:
+        headers[_HEADER_PROVIDERS_QUERIED] = str(providers_queried)
+    if providers_failed:
+        headers[_HEADER_PROVIDERS_FAILED] = str(providers_failed)
+    if providers_timed_out:
+        headers[_HEADER_PROVIDERS_TIMED_OUT] = str(providers_timed_out)
+    if providers_conn_error:
+        headers[_HEADER_PROVIDERS_CONN_ERROR] = str(providers_conn_error)
+    if providers_failed_status:
+        headers[_HEADER_PROVIDERS_FAILED_STATUS] = str(providers_failed_status)
+    if providers_retried:
+        headers[_HEADER_PROVIDERS_RETRIED] = str(providers_retried)
+    if response_from_main is not None:
+        headers[_HEADER_RESPONSE_FROM_MAIN] = "1" if response_from_main else "0"
 
-  if config.DEBUG:
-    headers.update(
-      {
-        _HEADER_RESPONSE_FROM: response_from,
-        _HEADER_RESPONSE_CODES: ", ".join(response_codes or []),
-        _HEADER_POSSIBLY_BLOCKED: ", ".join(possibly_blocked or []),
-        _HEADER_BLOCKED: ", ".join(blocked or []),
-        _HEADER_TIMED_OUT: ", ".join(timed_out or []),
-        _HEADER_CONN_ERROR: ", ".join(connection_error or []),
-        _HEADER_ALLOWED: "1" if config_allowed else "",
-        _HEADER_CONFIG_BLOCKED: "1" if config_blocked else "",
-      }
-    )
+    if config.DEBUG:
+        headers.update(
+            {
+                _HEADER_RESPONSE_FROM: response_from,
+                _HEADER_RESPONSE_CODES: ", ".join(response_codes or []),
+                _HEADER_POSSIBLY_BLOCKED: ", ".join(possibly_blocked or []),
+                _HEADER_BLOCKED: ", ".join(blocked or []),
+                _HEADER_TIMED_OUT: ", ".join(timed_out or []),
+                _HEADER_CONN_ERROR: ", ".join(connection_error or []),
+                _HEADER_ALLOWED: "1" if config_allowed else "",
+                _HEADER_CONFIG_BLOCKED: "1" if config_blocked else "",
+            },
+        )
 
-  return headers
+    return headers
 
 
-def _to_js_body(body):
-  """Convert Python bytes to a JS Uint8Array for Cloudflare Workers Response."""
-  if isinstance(body, (bytes, bytearray)):
-    from pyodide.ffi import to_js
+def _to_js_body(body: bytes | bytearray | str) -> object:
+    """Convert Python bytes to a JS Uint8Array for Cloudflare Workers Response."""
+    if isinstance(body, (bytes, bytearray)):
+        from pyodide.ffi import to_js
 
-    return to_js(body)
+        return to_js(body)
 
-  return body
+    return body
 
 
 def _negotiate_accept(raw: str) -> str:
-  """Return the first supported media type from a raw Accept header."""
-  for part in raw.split(","):
-    media_type = part.split(";", 1)[0].strip().lower()
-    if media_type in SUPPORTED_ACCEPT_HEADERS:
-      return media_type
+    """Return the first supported media type from a raw Accept header."""
+    for part in raw.split(","):
+        media_type = part.split(";", 1)[0].strip().lower()
+        if media_type in SUPPORTED_ACCEPT_HEADERS:
+            return media_type
 
-  return ""
+    return ""
 
 
 class _RejectError(Exception):
-  """Raised to short-circuit _parse_dns_request with an error Response."""
+    """Raised to short-circuit _parse_dns_request with an error Response."""
 
-  def __init__(self, message: str, status: int = 406):
-    self.response = Response(message, status=status)
+    def __init__(self, message: str, status: int = 406) -> None:
+        self.response = Response(message, status=status)
 
 
 async def _parse_dns_request(
-  request,
-  query_string: str,
-  method: str,
-  accept: str,
+    request: object,
+    query_string: str,
+    method: str,
+    accept: str,
 ) -> DnsParseResult | Response:
-  """Parse DNS question and wire bytes; returns DnsParseResult or a Response on error."""
-  try:
-    if method == "GET":
-      return _parse_get(query_string, accept)
+    """Parse DNS question and wire bytes; returns DnsParseResult or a Response on error."""
+    try:
+        if method == "GET":
+            return _parse_get(query_string, accept)
 
-    if method == "POST":
-      return await _parse_post(request, accept)
+        if method == "POST":
+            return await _parse_post(request, accept)
 
-    raise _RejectError(f"Method not allowed: {method}", status=405)
-  except _RejectError as r:
-    return r.response
+        raise _RejectError(f"Method not allowed: {method}", status=405)
+    except _RejectError as r:
+        return r.response
 
 
 def _parse_get(query_string: str, accept: str) -> DnsParseResult:
-  if not accept:
-    supported = ", ".join(sorted(SUPPORTED_ACCEPT_HEADERS))
-    raise _RejectError(f"Unsupported Accept header\n\nUse one of: {supported}")
+    """Parse a DNS question from GET query parameters."""
+    if not accept:
+        supported = ", ".join(sorted(SUPPORTED_ACCEPT_HEADERS))
+        raise _RejectError(f"Unsupported Accept header\n\nUse one of: {supported}")
 
-  params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
-  dns_param = params.get("dns", [None])[0]
-  name_param = params.get("name", [None])[0]
+    params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
+    dns_param = params.get("dns", [None])[0]
+    name_param = params.get("name", [None])[0]
 
-  if dns_param:
-    if accept != "application/dns-message":
-      raise _RejectError("GET ?dns= requires Accept: application/dns-message")
+    if dns_param:
+        if accept != "application/dns-message":
+            raise _RejectError("GET ?dns= requires Accept: application/dns-message")
 
-    padded = dns_param + "=" * (-len(dns_param) % 4)
+        padded = dns_param + "=" * (-len(dns_param) % 4)
 
-    try:
-      data = base64.urlsafe_b64decode(padded)
-      return parse_dns_wire_request(data)
-    except Exception:
-      raise _RejectError("Failed to decode dns query parameter", status=400) from None
+        try:
+            data = base64.urlsafe_b64decode(padded)
+            return parse_dns_wire_request(data)
+        except Exception:
+            raise _RejectError(
+                "Failed to decode dns query parameter",
+                status=400,
+            ) from None
 
-  if name_param:
-    if accept != "application/dns-json":
-      raise _RejectError("GET ?name= requires Accept: application/dns-json")
+    if name_param:
+        if accept != "application/dns-json":
+            raise _RejectError("GET ?name= requires Accept: application/dns-json")
 
-    type_param = params.get("type", [None])[0]
-    try:
-      dns.name.from_text(name_param)
+        type_param = params.get("type", [None])[0]
+        try:
+            dns.name.from_text(name_param)
 
-      if type_param is not None:
-        dns.rdatatype.from_text(type_param)
-    except (
-      dns.exception.DNSException,
-      dns.name.LabelTooLong,
-      dns.name.EmptyLabel,
-      ValueError,
-    ):
-      raise _RejectError("Invalid DNS name or type", status=400) from None
+            if type_param is not None:
+                dns.rdatatype.from_text(type_param)
+        except (
+            dns.exception.DNSException,
+            dns.name.LabelTooLong,
+            dns.name.EmptyLabel,
+            ValueError,
+        ):
+            raise _RejectError("Invalid DNS name or type", status=400) from None
 
-    question = Question(
-      name=name_param,
-      type=type_param if type_param else "",
+        question = Question(
+            name=name_param,
+            type=type_param if type_param else "",
+        )
+
+        return DnsParseResult(question, None, "", None)
+
+    raise _RejectError(
+        "GET requests must include one of name or dns as query parameters",
+        status=400,
     )
 
-    return DnsParseResult(question, None, "", None)
 
-  raise _RejectError(
-    "GET requests must include one of name or dns as query parameters", status=400
-  )
+async def _parse_post(request: object, accept: str) -> DnsParseResult:
+    """Parse a DNS wire message from a POST request body."""
+    if accept != "application/dns-message":
+        raise _RejectError("POST requires Accept: application/dns-message")
 
+    try:
+        raw_bytes = await request.bytes()
+    except Exception as e:
+        logger.debug("Failed to read request body: %s", e)
+        raise _RejectError("Failed to read request body", status=400) from None
 
-async def _parse_post(request, accept: str) -> DnsParseResult:
-  if accept != "application/dns-message":
-    raise _RejectError("POST requires Accept: application/dns-message")
+    if len(raw_bytes) > MAX_DNS_BODY_SIZE:
+        logger.warning("POST body too large: %d bytes", len(raw_bytes))
+        raise _RejectError("Request body too large", status=413)
 
-  try:
-    raw_bytes = await request.bytes()
-  except Exception as e:
-    logger.debug("Failed to read request body: %s", e)
-    raise _RejectError("Failed to read request body", status=400) from None
-
-  if len(raw_bytes) > MAX_DNS_BODY_SIZE:
-    logger.warning("POST body too large: %d bytes", len(raw_bytes))
-    raise _RejectError("Request body too large", status=413)
-
-  try:
-    return parse_dns_wire_request(raw_bytes)
-  except Exception as e:
-    logger.debug("Failed to decode DNS packet: %s", e)
-    raise _RejectError("Failed to decode DNS packet", status=400) from None
+    try:
+        return parse_dns_wire_request(raw_bytes)
+    except Exception as e:
+        logger.debug("Failed to decode DNS packet: %s", e)
+        raise _RejectError("Failed to decode DNS packet", status=400) from None
 
 
 def _select_winner(results: list[ProviderResult]) -> ProviderResult | None:
-  first_blocked = None
-  first_possibly_blocked = None
-  first_successful_main = None
-  first_successful = None
-  first_non_rebind_main = None
-  first_non_rebind = None
+    """Pick the best upstream result: blocked > possibly_blocked > main > any."""
+    first_blocked = None
+    first_possibly_blocked = None
+    first_successful_main = None
+    first_successful = None
+    first_non_rebind_main = None
+    first_non_rebind = None
 
-  for result in results:
-    if not result.failed:
-      if first_successful is None:
-        first_successful = result
-      if result.main and first_successful_main is None:
-        first_successful_main = result
-      if not result.rebind:
-        if first_non_rebind is None:
-          first_non_rebind = result
-        if result.main and first_non_rebind_main is None:
-          first_non_rebind_main = result
-      if result.blocked and first_blocked is None:
-        first_blocked = result
-      if result.possibly_blocked and first_possibly_blocked is None:
-        first_possibly_blocked = result
+    for result in results:
+        if not result.failed:
+            if first_successful is None:
+                first_successful = result
+            if result.main and first_successful_main is None:
+                first_successful_main = result
+            if not result.rebind:
+                if first_non_rebind is None:
+                    first_non_rebind = result
+                if result.main and first_non_rebind_main is None:
+                    first_non_rebind_main = result
+            if result.blocked and first_blocked is None:
+                first_blocked = result
+            if result.possibly_blocked and first_possibly_blocked is None:
+                first_possibly_blocked = result
 
-  winner = (
-    first_blocked or first_possibly_blocked or first_successful_main or first_successful
-  )
+    winner = (
+        first_blocked
+        or first_possibly_blocked
+        or first_successful_main
+        or first_successful
+    )
 
-  if winner is None:
-    return None
+    if winner is None:
+        return None
 
-  if winner.rebind and config.REBIND_PROTECTION:
-    replacement = first_non_rebind_main or first_non_rebind
-    if replacement:
-      winner = replacement
+    if winner.rebind and config.REBIND_PROTECTION:
+        replacement = first_non_rebind_main or first_non_rebind
+        if replacement:
+            winner = replacement
 
-  return winner
+    return winner
 
 
 def _make_rebind_blocked_response(
-  results: list[ProviderResult],
-  question: Question,
-  accept: str,
-  request_wire: bytes | None,
-  ecs_truncated: str,
-  parsed_request=None,
+    results: list[ProviderResult],
+    question: Question,
+    accept: str,
+    request_wire: bytes | None,
+    ecs_truncated: str,
+    parsed_request: object = None,
 ) -> Response | None:
-  """Build a synthetic NXDOMAIN when all successful responses have private IPs."""
-  if not (
-    config.REBIND_PROTECTION
-    and any(r.rebind for r in results)
-    and all(r.failed or r.rebind for r in results)
-  ):
-    return None
+    """Build a synthetic NXDOMAIN when all successful responses have private IPs."""
+    """Build a synthetic NXDOMAIN when all successful responses have private IPs."""
+    if not (
+        config.REBIND_PROTECTION
+        and any(r.rebind for r in results)
+        and all(r.failed or r.rebind for r in results)
+    ):
+        return None
 
-  body, content_type = make_blocked_response(
-    question, accept, request_wire, parsed_request
-  )
+    body, content_type = make_blocked_response(
+        question,
+        accept,
+        request_wire,
+        parsed_request,
+    )
 
-  return Response(
-    _to_js_body(body),
-    status=200,
-    headers=_build_response_headers(
-      content_type,
-      "rebind-protection",
-      rebind=True,
-      ecs_truncated=ecs_truncated,
-    ),
-  )
+    return Response(
+        _to_js_body(body),
+        status=200,
+        headers=_build_response_headers(
+            content_type,
+            "rebind-protection",
+            rebind=True,
+            ecs_truncated=ecs_truncated,
+        ),
+    )
 
 
 def _build_winner_response(
-  winner: ProviderResult,
-  results: list[ProviderResult],
-  config_allowed: bool,
-  ecs_truncated: str,
-  endpoint: str,
+    winner: ProviderResult,
+    results: list[ProviderResult],
+    config_allowed: bool,
+    ecs_truncated: str,
+    endpoint: str,
 ) -> Response:
-  response_codes = []
-  blocked_ids = []
-  possibly_blocked_ids = []
-  timed_out_ids = []
-  connection_error_ids = []
-  retried_count = 0
-  failed_count = 0
-  failed_status_count = 0
+    """Build the final HTTP Response from the winning provider result."""
+    response_codes = []
+    blocked_ids = []
+    possibly_blocked_ids = []
+    timed_out_ids = []
+    connection_error_ids = []
+    retried_count = 0
+    failed_count = 0
+    failed_status_count = 0
 
-  for result in results:
-    pid = result.provider_id
-    response_codes.append(f"{pid}:{result.response_status}")
-    if result.blocked:
-      blocked_ids.append(pid)
-    if result.possibly_blocked:
-      possibly_blocked_ids.append(pid)
-    if result.timed_out:
-      timed_out_ids.append(pid)
-    if result.connection_error:
-      connection_error_ids.append(pid)
-    if result.retry_count > 0:
-      retried_count += 1
-    if result.failed:
-      failed_count += 1
-      if not result.timed_out and not result.connection_error:
-        failed_status_count += 1
+    for result in results:
+        pid = result.provider_id
+        response_codes.append(f"{pid}:{result.response_status}")
+        if result.blocked:
+            blocked_ids.append(pid)
+        if result.possibly_blocked:
+            possibly_blocked_ids.append(pid)
+        if result.timed_out:
+            timed_out_ids.append(pid)
+        if result.connection_error:
+            connection_error_ids.append(pid)
+        if result.retry_count > 0:
+            retried_count += 1
+        if result.failed:
+            failed_count += 1
+            if not result.timed_out and not result.connection_error:
+                failed_status_count += 1
 
-  rebind_triggered = any(result.rebind for result in results)
+    rebind_triggered = any(result.rebind for result in results)
 
-  response_headers = _build_response_headers(
-    winner.response_content_type,
-    winner.provider_id,
-    response_codes=response_codes,
-    possibly_blocked=possibly_blocked_ids,
-    blocked=blocked_ids,
-    timed_out=timed_out_ids,
-    connection_error=connection_error_ids,
-    config_allowed=config_allowed,
-    rebind=rebind_triggered,
-    ecs_truncated=ecs_truncated,
-    providers_queried=len(results),
-    providers_failed=failed_count,
-    providers_timed_out=len(timed_out_ids),
-    providers_conn_error=len(connection_error_ids),
-    providers_failed_status=failed_status_count,
-    providers_retried=retried_count,
-    response_from_main=winner.main,
-  )
+    response_headers = _build_response_headers(
+        winner.response_content_type,
+        winner.provider_id,
+        response_codes=response_codes,
+        possibly_blocked=possibly_blocked_ids,
+        blocked=blocked_ids,
+        timed_out=timed_out_ids,
+        connection_error=connection_error_ids,
+        config_allowed=config_allowed,
+        rebind=rebind_triggered,
+        ecs_truncated=ecs_truncated,
+        providers_queried=len(results),
+        providers_failed=failed_count,
+        providers_timed_out=len(timed_out_ids),
+        providers_conn_error=len(connection_error_ids),
+        providers_failed_status=failed_status_count,
+        providers_retried=retried_count,
+        response_from_main=winner.main,
+    )
 
-  min_ttl = get_response_min_ttl(winner)
+    min_ttl = get_response_min_ttl(winner)
 
-  if min_ttl is not None:
-    response_headers["Cache-Control"] = f"max-age={min_ttl}"
+    if min_ttl is not None:
+        response_headers["Cache-Control"] = f"max-age={min_ttl}"
 
-  if config.DEBUG:
-    logger.debug("endpoint: '%s'", endpoint)
-    for key, value in response_headers.items():
-      if key != "content-type":
-        logger.debug("%s: '%s'", key, value)
+    if config.DEBUG:
+        logger.debug("endpoint: '%s'", endpoint)
+        for key, value in response_headers.items():
+            if key != "content-type":
+                logger.debug("%s: '%s'", key, value)
 
-  return Response(
-    _to_js_body(winner.response_body),
-    status=winner.response_status,
-    headers=response_headers,
-  )
+    return Response(
+        _to_js_body(winner.response_body),
+        status=winner.response_status,
+        headers=response_headers,
+    )
 
 
 async def _handle_request(
-  request,
-  endpoint: str,
-  doh_providers: list[dict],
-  cfg: _ResolvedConfig,
-  env,
-  ctx,
-  parsed_url: urllib.parse.ParseResult,
+    request: object,
+    endpoint: str,
+    doh_providers: list[dict],
+    cfg: _ResolvedConfig,
+    env: object,
+    ctx: object,
+    parsed_url: urllib.parse.ParseResult,
 ) -> Response:
-  request_timestamp_ms = int(time.time() * 1000)
-  client_ip = str(request.headers.get("cf-connecting-ip") or "unknown")
-  query = f"?{parsed_url.query}" if parsed_url.query else ""
-  method = str(request.method).upper()
-  raw_accept = str(request.headers.get("accept") or "")
-  accept = _negotiate_accept(raw_accept)
+    """Core DoH handler: parse, fan-out to providers, select winner, respond."""
+    request_timestamp_ms = int(time.time() * 1000)
+    client_ip = str(request.headers.get("cf-connecting-ip") or "unknown")
+    query = f"?{parsed_url.query}" if parsed_url.query else ""
+    method = str(request.method).upper()
+    raw_accept = str(request.headers.get("accept") or "")
+    accept = _negotiate_accept(raw_accept)
 
-  loki_url = cfg.loki_url
-  loki_enabled = bool(
-    loki_url
-    and getattr(env, "LOKI_USERNAME", None)
-    and getattr(env, "LOKI_PASSWORD", None)
-  )
-
-  parsed = await _parse_dns_request(request, parsed_url.query, method, accept)
-  if isinstance(parsed, Response):
-    return parsed
-
-  question = parsed.question
-  body_bytes = parsed.body_bytes
-  ecs_truncated = parsed.ecs_description
-  request_wire = parsed.request_wire
-  parsed_request = parsed.parsed_request
-
-  if method == "GET" and body_bytes is None and question.name:
-    _json_params: dict[str, str] = {"name": question.name}
-    if question.type:
-      _json_params["type"] = question.type
-    query = "?" + urllib.parse.urlencode(_json_params)
-
-  name = question.name
-  config_allowed = bool(name and domain_matches(name, _ALLOWED_COMPILED))
-
-  config_blocked = False
-  error = False
-  results = []
-  response_from = "error"
-
-  if config_allowed:
-    doh_providers = cfg.bypass_provider_list
-
-  if name and domain_matches(name, _BLOCKED_COMPILED):
-    body, content_type = make_blocked_response(
-      question, accept, request_wire, parsed_request
+    loki_url = cfg.loki_url
+    loki_enabled = bool(
+        loki_url
+        and getattr(env, "LOKI_USERNAME", None)
+        and getattr(env, "LOKI_PASSWORD", None),
     )
 
-    final_response = Response(
-      _to_js_body(body),
-      status=200,
-      headers=_build_response_headers(
-        content_type, "config", config_blocked=True, ecs_truncated=ecs_truncated
-      ),
-    )
+    parsed = await _parse_dns_request(request, parsed_url.query, method, accept)
+    if isinstance(parsed, Response):
+        return parsed
 
-    config_blocked = True
-    response_from = "config"
-  else:
-    results = await send_doh_requests_fanout(
-      doh_providers, method, accept, body_bytes, query
-    )
+    question = parsed.question
+    body_bytes = parsed.body_bytes
+    ecs_truncated = parsed.ecs_description
+    request_wire = parsed.request_wire
+    parsed_request = parsed.parsed_request
 
-    try:
-      rebind_response = _make_rebind_blocked_response(
-        results, question, accept, request_wire, ecs_truncated, parsed_request
-      )
+    if method == "GET" and body_bytes is None and question.name:
+        _json_params: dict[str, str] = {"name": question.name}
+        if question.type:
+            _json_params["type"] = question.type
+        query = "?" + urllib.parse.urlencode(_json_params)
 
-      if rebind_response is not None:
-        response_from = "rebind-protection"
-        error = True
-        final_response = rebind_response
-      elif winner := _select_winner(results):
-        response_from = winner.provider_id
-        final_response = _build_winner_response(
-          winner, results, config_allowed, ecs_truncated, endpoint
+    name = question.name
+    config_allowed = bool(name and domain_matches(name, _ALLOWED_COMPILED))
+
+    config_blocked = False
+    error = False
+    results = []
+    response_from = "error"
+
+    if config_allowed:
+        doh_providers = cfg.bypass_provider_list
+
+    if name and domain_matches(name, _BLOCKED_COMPILED):
+        body, content_type = make_blocked_response(
+            question,
+            accept,
+            request_wire,
+            parsed_request,
         )
-      else:
-        error = True
-        final_response = Response("All providers responded with an error", status=500)
-    except Exception:
-      logger.exception("Failed to process provider results")
-      error = True
-      final_response = Response("Internal server error", status=500)
 
-  if loki_enabled:
-    promise = build_loki_fetch_promise(
-      request_timestamp_ms,
-      endpoint,
-      question,
-      response_from,
-      results,
-      env,
-      loki_url,
-      client_ip=client_ip,
-      config_blocked=config_blocked,
-      config_allowed=config_allowed,
-      error=error,
-    )
+        final_response = Response(
+            _to_js_body(body),
+            status=200,
+            headers=_build_response_headers(
+                content_type,
+                "config",
+                config_blocked=True,
+                ecs_truncated=ecs_truncated,
+            ),
+        )
 
-    if promise is not None:
-      ctx.waitUntil(promise)
+        config_blocked = True
+        response_from = "config"
+    else:
+        results = await send_doh_requests_fanout(
+            doh_providers,
+            method,
+            accept,
+            body_bytes,
+            query,
+        )
 
-  return final_response
+        try:
+            rebind_response = _make_rebind_blocked_response(
+                results,
+                question,
+                accept,
+                request_wire,
+                ecs_truncated,
+                parsed_request,
+            )
+
+            if rebind_response is not None:
+                response_from = "rebind-protection"
+                error = True
+                final_response = rebind_response
+            elif winner := _select_winner(results):
+                response_from = winner.provider_id
+                final_response = _build_winner_response(
+                    winner,
+                    results,
+                    config_allowed,
+                    ecs_truncated,
+                    endpoint,
+                )
+            else:
+                error = True
+                final_response = Response(
+                    "All providers responded with an error",
+                    status=500,
+                )
+        except Exception:
+            logger.exception("Failed to process provider results")
+            error = True
+            final_response = Response("Internal server error", status=500)
+
+    if loki_enabled:
+        promise = build_loki_fetch_promise(
+            request_timestamp_ms,
+            endpoint,
+            question,
+            response_from,
+            results,
+            env,
+            loki_url,
+            client_ip=client_ip,
+            config_blocked=config_blocked,
+            config_allowed=config_allowed,
+            error=error,
+        )
+
+        if promise is not None:
+            ctx.waitUntil(promise)
+
+    return final_response

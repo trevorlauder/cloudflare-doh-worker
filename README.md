@@ -119,7 +119,7 @@ HEALTH_ENDPOINT = "/doh/health"
 TIMEOUT_MS = 5000
 
 ECS_TRUNCATION = {
-  "enabled": False,
+    "enabled": False,
 }
 
 REBIND_PROTECTION = True
@@ -129,8 +129,8 @@ BLOCKED_DOMAINS = []
 ALLOWED_DOMAINS = []
 
 BYPASS_PROVIDER = {
-  "host": "cloudflare-dns.com",
-  "path": "/dns-query",
+    "host": "cloudflare-dns.com",
+    "path": "/dns-query",
 }
 
 LOKI_URL = ""
@@ -138,26 +138,26 @@ LOKI_URL = ""
 LOKI_TIMEOUT_MS = 5000
 
 ENDPOINTS = {
-  "/doh/my-device": {
-    "main_provider": {
-      "host": "dns.nextdns.io",
-      "path": "/abc123",
-      "headers": {
-        "X-Device-Name": "My Device",
-        "X-Device-Model": "My Device Model",
-      },
+    "/doh/my-device": {
+        "main_provider": {
+            "host": "dns.nextdns.io",
+            "path": "/abc123",
+            "headers": {
+                "X-Device-Name": "My Device",
+                "X-Device-Model": "My Device Model",
+            },
+        },
+        "additional_providers": [
+            {
+                "host": "dns11.quad9.net",
+                "path": "/dns-query",
+            },
+            {
+                "host": "security.cloudflare-dns.com",
+                "path": "/dns-query",
+            },
+        ],
     },
-    "additional_providers": [
-      {
-        "host": "dns11.quad9.net",
-        "path": "/dns-query",
-      },
-      {
-        "host": "security.cloudflare-dns.com",
-        "path": "/dns-query",
-      },
-    ],
-  },
 }
 ```
 
