@@ -361,22 +361,22 @@ def _failed_result(provider: dict, main: bool, exc) -> ProviderResult:
 
 def _build_provider_result(
   resp_body: bytes | str,
-  content_type: str,
   ok: bool,
   status: int,
   provider: dict,
   main: bool,
+  accept: str,
 ) -> ProviderResult:
   """Build a ProviderResult from pre-read response data (no async)."""
 
-  is_json = "dns-json" in content_type or "application/json" in content_type
+  is_json = accept == "application/dns-json"
 
   result = ProviderResult(
     host=provider["host"],
     path=provider["path"],
     provider_id=_get_provider_id(provider),
     response_status=status,
-    response_content_type=content_type,
+    response_content_type=accept,
     response_body=resp_body,
     main=main,
     failed=not ok,
@@ -397,7 +397,7 @@ def _build_provider_result(
       logger.debug(
         "Failed to parse JSON DNS response from %s", provider["host"], exc_info=True
       )
-  elif "dns-message" in content_type:
+  else:
     try:
       packet = dns.message.from_wire(resp_body)
 
@@ -447,7 +447,6 @@ class _FanoutBodyEntry(NamedTuple):
   promise: object
   global_idx: int
   attempt: int
-  content_type: str
   ok: bool
   response_status: int
 
@@ -538,7 +537,6 @@ def _process_fanout_round(
     if isinstance(entry, _FanoutFetchEntry):
       resp = item.value
       status = int(resp.status)
-      content_type = str(resp.headers.get("content-type") or "application/dns-message")
       ok = bool(resp.ok)
 
       if status in _RETRY_STATUS_CODES and can_retry:
@@ -572,10 +570,11 @@ def _process_fanout_round(
           )
         next_pending.append(
           _FanoutBodyEntry(
-            promise=resp.text() if "json" in content_type else resp.arrayBuffer(),
+            promise=resp.text()
+            if accept == "application/dns-json"
+            else resp.arrayBuffer(),
             global_idx=entry.global_idx,
             attempt=entry.attempt,
-            content_type=content_type,
             ok=ok,
             response_status=status,
           )
@@ -585,12 +584,12 @@ def _process_fanout_round(
       raw = item.value
       resp_body = (
         str(raw)
-        if "json" in entry.content_type
+        if accept == "application/dns-json"
         else bytes(ctx.Uint8Array.new(raw).to_py())
       )
       try:
         result = _build_provider_result(
-          resp_body, entry.content_type, entry.ok, entry.response_status, provider, main
+          resp_body, entry.ok, entry.response_status, provider, main, accept
         )
       except Exception as exc:
         logger.error(
