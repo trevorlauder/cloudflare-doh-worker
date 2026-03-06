@@ -504,7 +504,7 @@ def _process_fanout_round(
     if str(getattr(item, "status", "")) != "fulfilled":
       reason = getattr(item, "reason", "rejected")
       if can_retry:
-        logger.warning(
+        logger.debug(
           "Retrying %s (attempt %d/%d, rejected: %s)",
           host,
           entry.attempt + 1,
@@ -542,7 +542,7 @@ def _process_fanout_round(
       ok = bool(resp.ok)
 
       if status in _RETRY_STATUS_CODES and can_retry:
-        logger.warning(
+        logger.debug(
           "Retrying %s (attempt %d/%d, status %d)",
           host,
           entry.attempt + 1,
