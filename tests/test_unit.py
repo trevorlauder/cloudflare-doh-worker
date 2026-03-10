@@ -30,13 +30,11 @@ def _result(
     blocked: bool = False,
     possibly_blocked: bool = False,
     rebind: bool = False,
-    host: str = "dns.example.com",
-    path: str = "/dns-query",
+    url: str = "https://dns.example.com/dns-query",
 ) -> ProviderResult:
     return ProviderResult(
-        host=host,
-        path=path,
-        provider_id=f"{host}{path}",
+        url=url,
+        provider_id=url,
         response_status=200,
         response_content_type="application/dns-message",
         response_body=b"",
@@ -121,7 +119,11 @@ def test_select_winner_prefers_non_rebind_main_over_additional(
     monkeypatch.setattr(config, "REBIND_PROTECTION", True)
     rebind_main = _result(main=True, rebind=True)
     clean_additional = _result(main=False, rebind=False)
-    clean_main = _result(main=True, rebind=False, host="other.example.com")
+    clean_main = _result(
+        main=True,
+        rebind=False,
+        url="https://other.example.com/dns-query",
+    )
     assert _select_winner([rebind_main, clean_additional, clean_main]) is clean_main
 
 
@@ -205,29 +207,22 @@ def test_validate_config_valid(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         config,
         "BYPASS_PROVIDER",
-        {"host": "dns.example.com", "path": "/dns-query"},
+        {"url": "https://dns.example.com/dns-query"},
     )
     _validate_config()
 
 
-def test_validate_config_bypass_missing_host(monkeypatch: pytest.MonkeyPatch):
+def test_validate_config_bypass_missing_url(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(config, "ALLOWED_DOMAINS", ["example.com"])
-    monkeypatch.setattr(config, "BYPASS_PROVIDER", {"path": "/dns-query"})
-    with pytest.raises(ValueError, match="host"):
+    monkeypatch.setattr(config, "BYPASS_PROVIDER", {})
+    with pytest.raises(ValueError, match="url"):
         _validate_config()
 
 
-def test_validate_config_bypass_missing_path(monkeypatch: pytest.MonkeyPatch):
+def test_validate_config_bypass_empty_url(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(config, "ALLOWED_DOMAINS", ["example.com"])
-    monkeypatch.setattr(config, "BYPASS_PROVIDER", {"host": "dns.example.com"})
-    with pytest.raises(ValueError, match="path"):
-        _validate_config()
-
-
-def test_validate_config_bypass_empty_host(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(config, "ALLOWED_DOMAINS", ["example.com"])
-    monkeypatch.setattr(config, "BYPASS_PROVIDER", {"host": "", "path": "/dns-query"})
-    with pytest.raises(ValueError, match="host"):
+    monkeypatch.setattr(config, "BYPASS_PROVIDER", {"url": ""})
+    with pytest.raises(ValueError, match="url"):
         _validate_config()
 
 
