@@ -524,6 +524,7 @@ async def send_doh_requests_fanout(
                     item.main,
                     accept,
                 )
+
                 result.retry_count = attempt
             except Exception as e:
                 logger.error(
@@ -532,11 +533,13 @@ async def send_doh_requests_fanout(
                     type(e).__name__,
                     e,
                 )
+
                 result = _failed_result(item.provider, item.main, e)
 
             done.append(result)
 
         pending = next_pending
+
         if not pending:
             break
 
@@ -546,6 +549,7 @@ async def send_doh_requests_fanout(
             item.main,
             Exception("retries exhausted"),
         )
+
         result.retry_count = config.RETRY_MAX_ATTEMPTS
         done.append(result)
 
