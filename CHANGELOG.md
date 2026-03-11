@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.0-rc10] - 2026-03-11
+
+### Refactoring
+
+- Use workers.fetch and Promise.allSettled for upstream requests ([#74](https://github.com/trevorlauder/cloudflare-doh-worker/pull/74))
+
 ## [1.0.0-rc9] - 2026-03-11
 
 ### Bug Fixes
