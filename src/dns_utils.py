@@ -414,119 +414,12 @@ def get_response_min_ttl(result: ProviderResult) -> int | None:
     return result.min_ttl
 
 
-@dataclass
-class _PendingFetch:
-    """Work item carrying provider context through the two-gather loop."""
+class _FetchItem(NamedTuple):
+    """Provider context for the fetch retry loop."""
 
     provider: dict
     main: bool
     request: _ProviderFetchRequest
-    response: object = None
-
-
-def _partition_fetch_responses(
-    pending: list[_PendingFetch],
-    responses: list,
-) -> tuple[list[_PendingFetch], list[ProviderResult]]:
-    """Split fetch gather results into succeeded items and failed results.
-
-    Parameters:
-    pending (list[_PendingFetch]): Work items from the current retry round.
-    responses (list): Gather results, positionally aligned with pending.
-
-    Returns:
-    tuple[list[_PendingFetch], list[ProviderResult]]: Succeeded items with
-        their response attached, and ProviderResult failures.
-    """
-    succeeded: list[_PendingFetch] = []
-    failed: list[ProviderResult] = []
-
-    for item, resp in zip(pending, responses, strict=True):
-        if isinstance(resp, BaseException):
-            logger.error(
-                "send_doh_requests fetch rejected for %s: %s",
-                item.provider.get("url", ""),
-                resp,
-            )
-
-            failed.append(_failed_result(item.provider, item.main, resp))
-        else:
-            item.response = resp
-            succeeded.append(item)
-
-    return succeeded, failed
-
-
-def _process_bodies(
-    succeeded: list[_PendingFetch],
-    bodies: list,
-    is_json: bool,
-    accept: str,
-    attempt: int,
-    uint8array_cls: type,
-) -> tuple[list[_PendingFetch], list[ProviderResult]]:
-    """Decode response bodies and decide which providers to retry.
-
-    Parameters:
-    succeeded (list[_PendingFetch]): Items whose fetch succeeded.
-    bodies (list): Body-read gather results, aligned with succeeded.
-    is_json (bool): True when accept type is application/dns-json.
-    accept (str): Accept header value passed to _build_provider_result.
-    attempt (int): Current retry attempt (0-based).
-    uint8array_cls (type): JS Uint8Array class for ArrayBuffer conversion.
-
-    Returns:
-    tuple[list[_PendingFetch], list[ProviderResult]]: Items to re-fetch
-        and finalised ProviderResult objects.
-    """
-    retryable: list[_PendingFetch] = []
-    done: list[ProviderResult] = []
-
-    for item, body in zip(succeeded, bodies, strict=True):
-        if isinstance(body, BaseException):
-            logger.error(
-                "send_doh_requests body read failed for %s: %s",
-                item.provider.get("url", ""),
-                body,
-            )
-
-            done.append(_failed_result(item.provider, item.main, body))
-            continue
-
-        status = item.response.status
-
-        if status in _RETRY_STATUS_CODES and attempt < config.RETRY_MAX_ATTEMPTS:
-            retryable.append(item)
-            continue
-
-        try:
-            resp_body = (
-                str(body) if is_json else bytes(uint8array_cls.new(body).to_py())
-            )
-
-            result = _build_provider_result(
-                resp_body,
-                item.response.ok,
-                status,
-                item.provider,
-                item.main,
-                accept,
-            )
-
-            result.retry_count = attempt
-        except Exception as e:
-            logger.error(
-                "send_doh_requests processing failed for %s: %s: %s",
-                item.provider.get("url", ""),
-                type(e).__name__,
-                e,
-            )
-
-            result = _failed_result(item.provider, item.main, e)
-
-        done.append(result)
-
-    return retryable, done
 
 
 async def send_doh_requests_fanout(
@@ -538,8 +431,7 @@ async def send_doh_requests_fanout(
 ) -> list:
     """Fan out DNS queries to multiple providers and collect results.
 
-    Uses two asyncio.gather calls per attempt (fetch, then body read)
-    to minimise Python-JS await crossings.
+    Uses asyncio.gather with workers.fetch for concurrent upstream requests.
 
     Parameters:
     doh_providers (list): Provider config dicts, each with url, etc.
@@ -553,10 +445,9 @@ async def send_doh_requests_fanout(
     """
     import asyncio
 
-    # Deferred imports: only available in the Pyodide runtime.
-    from js import AbortSignal, Object, Uint8Array
-    from js import fetch as js_fetch
-    from pyodide.ffi import to_js
+    # Deferred imports: only available in the Pyodide/Workers runtime.
+    from js import AbortSignal
+    from workers import fetch as workers_fetch
 
     if not doh_providers:
         return []
@@ -565,13 +456,14 @@ async def send_doh_requests_fanout(
     is_json = accept == "application/dns-json"
     is_json_query = is_json and body_bytes is None
 
-    pending: list[_PendingFetch] = []
+    pending: list[_FetchItem] = []
+
     for provider in doh_providers:
         if is_json_query and not provider.get("dns_json", False):
             continue
 
         pending.append(
-            _PendingFetch(
+            _FetchItem(
                 provider=provider,
                 main=provider.get("main", False),
                 request=_build_provider_fetch_request(
@@ -591,41 +483,60 @@ async def send_doh_requests_fanout(
     done: list[ProviderResult] = []
 
     for attempt in range(1 + config.RETRY_MAX_ATTEMPTS):
-        fetch_requests = [
-            js_fetch(
-                item.request.url,
-                to_js(item.request.options, dict_converter=Object.fromEntries),
-            )
-            for item in pending
-        ]
-
-        responses = await asyncio.gather(*fetch_requests, return_exceptions=True)
-
-        succeeded, fetch_failures = _partition_fetch_responses(pending, responses)
-        done.extend(fetch_failures)
-
-        if succeeded:
-            bodies = await asyncio.gather(
-                *[
-                    item.response.text() if is_json else item.response.arrayBuffer()
-                    for item in succeeded
-                ],
-                return_exceptions=True,
-            )
-        else:
-            bodies = []
-
-        pending, body_results = _process_bodies(
-            succeeded,
-            bodies,
-            is_json,
-            accept,
-            attempt,
-            Uint8Array,
+        responses = await asyncio.gather(
+            *[
+                workers_fetch(item.request.url, **item.request.options)
+                for item in pending
+            ],
+            return_exceptions=True,
         )
 
-        done.extend(body_results)
+        next_pending: list[_FetchItem] = []
 
+        for item, resp in zip(pending, responses, strict=True):
+            if isinstance(resp, BaseException):
+                logger.error(
+                    "send_doh_requests fetch rejected for %s: %s",
+                    item.provider.get("url", ""),
+                    resp,
+                )
+
+                done.append(_failed_result(item.provider, item.main, resp))
+                continue
+
+            status = resp.status
+
+            if status in _RETRY_STATUS_CODES and attempt < config.RETRY_MAX_ATTEMPTS:
+                next_pending.append(item)
+                continue
+
+            try:
+                if is_json:
+                    resp_body = await resp.text()
+                else:
+                    resp_body = await resp.bytes()
+
+                result = _build_provider_result(
+                    resp_body,
+                    resp.ok,
+                    status,
+                    item.provider,
+                    item.main,
+                    accept,
+                )
+                result.retry_count = attempt
+            except Exception as e:
+                logger.error(
+                    "send_doh_requests processing failed for %s: %s: %s",
+                    item.provider.get("url", ""),
+                    type(e).__name__,
+                    e,
+                )
+                result = _failed_result(item.provider, item.main, e)
+
+            done.append(result)
+
+        pending = next_pending
         if not pending:
             break
 
@@ -635,7 +546,6 @@ async def send_doh_requests_fanout(
             item.main,
             Exception("retries exhausted"),
         )
-
         result.retry_count = config.RETRY_MAX_ATTEMPTS
         done.append(result)
 
