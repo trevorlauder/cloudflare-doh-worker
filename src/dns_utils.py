@@ -431,8 +431,7 @@ async def send_doh_requests_fanout(
 ) -> list:
     """Fan out DNS queries to multiple providers and collect results.
 
-    Uses Promise.allSettled to keep concurrency in the JS event loop,
-    avoiding asyncio-to-JS promise bridge overhead.
+    Uses asyncio.gather with workers.fetch for concurrent upstream requests.
 
     Parameters:
     doh_providers (list): Provider config dicts, each with url, etc.
