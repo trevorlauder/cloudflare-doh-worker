@@ -24,8 +24,7 @@ BLOCKED_DOMAINS = []
 ALLOWED_DOMAINS = []
 
 BYPASS_PROVIDER = {
-    "host": "cloudflare-dns.com",
-    "path": "/dns-query",
+    "url": "https://cloudflare-dns.com/dns-query",
     "dns_json": True,
 }
 
@@ -38,8 +37,7 @@ RETRY_MAX_ATTEMPTS = 2
 ENDPOINTS = {
     "/doh/my-device": {
         "main_provider": {
-            "host": "nginx",
-            "path": "/mock-doh/dns-query",
+            "url": "http://mock-doh:8080/dns-query",
         },
     },
 }

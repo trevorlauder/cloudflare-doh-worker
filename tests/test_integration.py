@@ -35,10 +35,11 @@ from config import (
     REBIND_PROTECTION,
 )
 
-_provider_paths = (
-    cfg.get("main_provider", {}).get("path", "") for cfg in ENDPOINTS.values()
+_provider_urls = (
+    cfg.get("main_provider", {}).get("url", "") for cfg in ENDPOINTS.values()
 )
-MOCK_DOH_ENABLED = any("/mock-doh/" in path for path in _provider_paths)
+
+MOCK_DOH_ENABLED = any("mock-doh" in url for url in _provider_urls)
 
 TEST_ENDPOINTS = [resolve_env(e) for e in ENDPOINTS]
 HEALTH_ENDPOINT = resolve_env(HEALTH_ENDPOINT)
@@ -338,8 +339,8 @@ def test_allowed_domain_uses_bypass_provider():
     assert status == 200
     if DEBUG:
         response_from = headers.get("cloudflare-doh-worker-response-from", "")
-        assert BYPASS_PROVIDER["host"] in response_from, (
-            f"expected bypass provider {BYPASS_PROVIDER['host']!r} in response-from, got {response_from!r}"
+        assert BYPASS_PROVIDER["url"] in response_from, (
+            f"expected bypass provider {BYPASS_PROVIDER['url']!r} in response-from, got {response_from!r}"
         )
     _assert_worker_headers(headers)
 
@@ -799,8 +800,8 @@ def test_allowed_domain_via_post_wire():
     assert status == 200
     if DEBUG:
         response_from = headers.get("cloudflare-doh-worker-response-from", "")
-        assert BYPASS_PROVIDER["host"] in response_from, (
-            f"expected bypass provider {BYPASS_PROVIDER['host']!r} in response-from, got {response_from!r}"
+        assert BYPASS_PROVIDER["url"] in response_from, (
+            f"expected bypass provider {BYPASS_PROVIDER['url']!r} in response-from, got {response_from!r}"
         )
 
 

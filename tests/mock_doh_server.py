@@ -17,7 +17,7 @@ import json
 import logging
 import threading
 import urllib.parse
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import dns.edns
 import dns.message
@@ -132,6 +132,6 @@ class _Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    server = HTTPServer(("0.0.0.0", 8080), _Handler)
+    server = ThreadingHTTPServer(("0.0.0.0", 8080), _Handler)
     logging.info("Mock DoH server listening on :8080")
     server.serve_forever()

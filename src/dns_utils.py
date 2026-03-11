@@ -149,8 +149,7 @@ class DnsParseResult(NamedTuple):
 class ProviderResult:
     """Result of querying an upstream DoH provider."""
 
-    host: str
-    path: str
+    url: str
     provider_id: str
     response_status: int
     response_content_type: str
@@ -171,7 +170,6 @@ class _ProviderFetchRequest(NamedTuple):
 
     url: str
     options: dict
-    main: bool
 
 
 def _extract_question(packet: dns.message.Message) -> Question:
@@ -269,6 +267,8 @@ def make_blocked_response(
 
 _BLOCKED_ADDRS = frozenset({"0.0.0.0", "::"})  # noqa: S104
 
+_RETRY_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
+
 
 def _classify_answers(
     result: ProviderResult,
@@ -285,8 +285,6 @@ def _classify_answers(
 
 MAX_DNS_BODY_SIZE = 65535
 
-_RETRY_STATUS_CODES = frozenset(range(500, 600))
-
 
 def _build_provider_fetch_request(
     provider: dict,
@@ -297,15 +295,13 @@ def _build_provider_fetch_request(
     query: str = "",
 ) -> _ProviderFetchRequest:
     """Build a URL, headers, and fetch options for an upstream DoH provider."""
-    target_url = f"https://{provider['host']}{provider['path']}"
+    target_url = provider["url"]
 
     if method == "GET" and body_bytes is not None:
         encoded = base64.urlsafe_b64encode(body_bytes).rstrip(b"=").decode("ascii")
         target_url += "?dns=" + encoded
     elif method == "GET" and query:
         target_url += query
-
-    main = provider.get("main", False)
 
     headers = {}
 
@@ -326,12 +322,12 @@ def _build_provider_fetch_request(
     if body_bytes is not None and method == "POST":
         fetch_options["body"] = body_bytes
 
-    return _ProviderFetchRequest(target_url, fetch_options, main)
+    return _ProviderFetchRequest(target_url, fetch_options)
 
 
 def _get_provider_id(provider: dict) -> str:
-    """Return the provider_id from config, falling back to host+path."""
-    return provider.get("provider_id") or f"{provider['host']}{provider['path']}"
+    """Return the provider_id from config, falling back to url."""
+    return provider.get("provider_id") or provider["url"]
 
 
 def _failed_result(provider: dict, main: bool, exc: object) -> ProviderResult:
@@ -340,8 +336,7 @@ def _failed_result(provider: dict, main: bool, exc: object) -> ProviderResult:
     timed_out = "timeout" in exc_str or "abort" in exc_str
 
     return ProviderResult(
-        host=provider["host"],
-        path=provider["path"],
+        url=provider["url"],
         provider_id=_get_provider_id(provider),
         response_status=504 if timed_out else 502,
         response_content_type="application/dns-message",
@@ -365,8 +360,7 @@ def _build_provider_result(
     is_json = accept == "application/dns-json"
 
     result = ProviderResult(
-        host=provider["host"],
-        path=provider["path"],
+        url=provider["url"],
         provider_id=_get_provider_id(provider),
         response_status=status,
         response_content_type=accept,
@@ -389,7 +383,7 @@ def _build_provider_result(
         except Exception:
             logger.debug(
                 "Failed to parse JSON DNS response from %s",
-                provider["host"],
+                provider["url"],
                 exc_info=True,
             )
     else:
@@ -408,7 +402,7 @@ def _build_provider_result(
         except Exception:
             logger.debug(
                 "Failed to parse binary DNS response from %s",
-                provider["host"],
+                provider["url"],
                 exc_info=True,
             )
 
@@ -420,198 +414,119 @@ def get_response_min_ttl(result: ProviderResult) -> int | None:
     return result.min_ttl
 
 
-class _FanoutContext(NamedTuple):
-    """JS/FFI references threaded through the fanout helpers."""
+@dataclass
+class _PendingFetch:
+    """Work item carrying provider context through the two-gather loop."""
 
-    fetch: object
-    to_js: object
-    Object: object
-    Uint8Array: object
-
-
-class _FanoutFetchEntry(NamedTuple):
-    """A queued upstream fetch promise."""
-
-    promise: object
-    global_idx: int
-    attempt: int
+    provider: dict
+    main: bool
+    request: _ProviderFetchRequest
+    response: object = None
 
 
-class _FanoutBodyEntry(NamedTuple):
-    """A queued body-read promise for an already-settled fetch."""
+def _partition_fetch_responses(
+    pending: list[_PendingFetch],
+    responses: list,
+) -> tuple[list[_PendingFetch], list[ProviderResult]]:
+    """Split fetch gather results into succeeded items and failed results.
 
-    promise: object
-    global_idx: int
-    attempt: int
-    ok: bool
-    response_status: int
+    Parameters:
+    pending (list[_PendingFetch]): Work items from the current retry round.
+    responses (list): Gather results, positionally aligned with pending.
+
+    Returns:
+    tuple[list[_PendingFetch], list[ProviderResult]]: Succeeded items with
+        their response attached, and ProviderResult failures.
+    """
+    succeeded: list[_PendingFetch] = []
+    failed: list[ProviderResult] = []
+
+    for item, resp in zip(pending, responses, strict=True):
+        if isinstance(resp, BaseException):
+            logger.error(
+                "send_doh_requests fetch rejected for %s: %s",
+                item.provider.get("url", ""),
+                resp,
+            )
+
+            failed.append(_failed_result(item.provider, item.main, resp))
+        else:
+            item.response = resp
+            succeeded.append(item)
+
+    return succeeded, failed
 
 
-def _fanout_fetch_entry(
-    ctx: "_FanoutContext",
-    provider: dict,
-    method: str,
+def _process_bodies(
+    succeeded: list[_PendingFetch],
+    bodies: list,
+    is_json: bool,
     accept: str,
-    abort_signal: object,
-    body_bytes: bytes | None,
-    query: str,
-    global_idx: int,
     attempt: int,
-) -> _FanoutFetchEntry:
-    """Create a _FanoutFetchEntry by issuing a JS fetch promise."""
-    target_url, fetch_options, _ = _build_provider_fetch_request(
-        provider,
-        method,
-        accept,
-        abort_signal,
-        body_bytes,
-        query,
-    )
-    return _FanoutFetchEntry(
-        promise=ctx.fetch(
-            target_url,
-            ctx.to_js(fetch_options, dict_converter=ctx.Object.fromEntries),
-        ),
-        global_idx=global_idx,
-        attempt=attempt,
-    )
+    uint8array_cls: type,
+) -> tuple[list[_PendingFetch], list[ProviderResult]]:
+    """Decode response bodies and decide which providers to retry.
 
+    Parameters:
+    succeeded (list[_PendingFetch]): Items whose fetch succeeded.
+    bodies (list): Body-read gather results, aligned with succeeded.
+    is_json (bool): True when accept type is application/dns-json.
+    accept (str): Accept header value passed to _build_provider_result.
+    attempt (int): Current retry attempt (0-based).
+    uint8array_cls (type): JS Uint8Array class for ArrayBuffer conversion.
 
-def _process_fanout_round(
-    round_settled: object,
-    pending: list,
-    provider_meta: list[tuple],
-    results: list,
-    method: str,
-    accept: str,
-    abort_signal: object,
-    body_bytes: bytes | None,
-    query: str,
-    ctx: "_FanoutContext",
-) -> list:
-    """Process one allSettled round and return the next pending list."""
-    next_pending: list = []
+    Returns:
+    tuple[list[_PendingFetch], list[ProviderResult]]: Items to re-fetch
+        and finalised ProviderResult objects.
+    """
+    retryable: list[_PendingFetch] = []
+    done: list[ProviderResult] = []
 
-    for item, entry in zip(round_settled, pending, strict=True):
-        provider, main = provider_meta[entry.global_idx]
-        host = provider.get("host", "")
+    for item, body in zip(succeeded, bodies, strict=True):
+        if isinstance(body, BaseException):
+            logger.error(
+                "send_doh_requests body read failed for %s: %s",
+                item.provider.get("url", ""),
+                body,
+            )
 
-        can_retry = (
-            isinstance(entry, _FanoutFetchEntry)
-            and entry.attempt < config.RETRY_MAX_ATTEMPTS
-        )
-
-        if str(getattr(item, "status", "")) != "fulfilled":
-            reason = getattr(item, "reason", "rejected")
-            if can_retry:
-                logger.debug(
-                    "Retrying %s (attempt %d/%d, rejected: %s)",
-                    host,
-                    entry.attempt + 1,
-                    config.RETRY_MAX_ATTEMPTS,
-                    reason,
-                )
-
-                next_pending.append(
-                    _fanout_fetch_entry(
-                        ctx,
-                        provider,
-                        method,
-                        accept,
-                        abort_signal,
-                        body_bytes,
-                        query,
-                        entry.global_idx,
-                        entry.attempt + 1,
-                    ),
-                )
-            else:
-                logger.error(
-                    "send_doh_requests %s for %s: %s",
-                    type(entry).__name__,
-                    host,
-                    reason,
-                )
-
-                result = _failed_result(provider, main, reason)
-                result.retry_count = entry.attempt
-                results[entry.global_idx] = result
+            done.append(_failed_result(item.provider, item.main, body))
             continue
 
-        if isinstance(entry, _FanoutFetchEntry):
-            resp = item.value
-            status = int(resp.status)
-            ok = bool(resp.ok)
+        status = item.response.status
 
-            if status in _RETRY_STATUS_CODES and can_retry:
-                logger.debug(
-                    "Retrying %s (attempt %d/%d, status %d)",
-                    host,
-                    entry.attempt + 1,
-                    config.RETRY_MAX_ATTEMPTS,
-                    status,
-                )
-                next_pending.append(
-                    _fanout_fetch_entry(
-                        ctx,
-                        provider,
-                        method,
-                        accept,
-                        abort_signal,
-                        body_bytes,
-                        query,
-                        entry.global_idx,
-                        entry.attempt + 1,
-                    ),
-                )
-            else:
-                if status in _RETRY_STATUS_CODES:
-                    logger.error(
-                        "All %d retries exhausted for %s (status %d)",
-                        config.RETRY_MAX_ATTEMPTS,
-                        host,
-                        status,
-                    )
-                next_pending.append(
-                    _FanoutBodyEntry(
-                        promise=resp.text()
-                        if accept == "application/dns-json"
-                        else resp.arrayBuffer(),
-                        global_idx=entry.global_idx,
-                        attempt=entry.attempt,
-                        ok=ok,
-                        response_status=status,
-                    ),
-                )
+        if status in _RETRY_STATUS_CODES and attempt < config.RETRY_MAX_ATTEMPTS:
+            retryable.append(item)
+            continue
 
-        else:
-            raw = item.value
+        try:
             resp_body = (
-                str(raw)
-                if accept == "application/dns-json"
-                else bytes(ctx.Uint8Array.new(raw).to_py())
+                str(body) if is_json else bytes(uint8array_cls.new(body).to_py())
             )
-            try:
-                result = _build_provider_result(
-                    resp_body,
-                    entry.ok,
-                    entry.response_status,
-                    provider,
-                    main,
-                    accept,
-                )
-            except Exception as exc:
-                logger.error(
-                    "send_doh_requests failed for %s: %s: %s",
-                    host,
-                    type(exc).__name__,
-                    exc,
-                )
-                result = _failed_result(provider, main, exc)
-            result.retry_count = entry.attempt
-            results[entry.global_idx] = result
 
-    return next_pending
+            result = _build_provider_result(
+                resp_body,
+                item.response.ok,
+                status,
+                item.provider,
+                item.main,
+                accept,
+            )
+
+            result.retry_count = attempt
+        except Exception as e:
+            logger.error(
+                "send_doh_requests processing failed for %s: %s: %s",
+                item.provider.get("url", ""),
+                type(e).__name__,
+                e,
+            )
+
+            result = _failed_result(item.provider, item.main, e)
+
+        done.append(result)
+
+    return retryable, done
 
 
 async def send_doh_requests_fanout(
@@ -621,8 +536,25 @@ async def send_doh_requests_fanout(
     body_bytes: bytes | None = None,
     query: str = "",
 ) -> list:
-    """Query providers with JS Promise fan-out to avoid Python task re-entrancy."""
-    from js import AbortSignal, Object, Promise, Uint8Array
+    """Fan out DNS queries to multiple providers and collect results.
+
+    Uses two asyncio.gather calls per attempt (fetch, then body read)
+    to minimise Python-JS await crossings.
+
+    Parameters:
+    doh_providers (list): Provider config dicts, each with url, etc.
+    method (str): HTTP method ("GET" or "POST").
+    accept (str): Accept header value.
+    body_bytes (bytes | None): DNS wire-format body for POST requests.
+    query (str): Query string for GET JSON requests.
+
+    Returns:
+    list[ProviderResult]: One result per queried provider.
+    """
+    import asyncio
+
+    # Deferred imports: only available in the Pyodide runtime.
+    from js import AbortSignal, Object, Uint8Array
     from js import fetch as js_fetch
     from pyodide.ffi import to_js
 
@@ -630,51 +562,81 @@ async def send_doh_requests_fanout(
         return []
 
     abort_signal = AbortSignal.timeout(config.TIMEOUT_MS)
-    is_json_query = accept == "application/dns-json" and body_bytes is None
-    ctx = _FanoutContext(js_fetch, to_js, Object, Uint8Array)
+    is_json = accept == "application/dns-json"
+    is_json_query = is_json and body_bytes is None
 
-    provider_meta: list[tuple] = []
-    pending: list = []
-
+    pending: list[_PendingFetch] = []
     for provider in doh_providers:
         if is_json_query and not provider.get("dns_json", False):
             continue
 
-        idx = len(provider_meta)
-        main = provider.get("main", False)
-        provider_meta.append((provider, main))
         pending.append(
-            _fanout_fetch_entry(
-                ctx,
-                provider,
-                method,
-                accept,
-                abort_signal,
-                body_bytes,
-                query,
-                idx,
-                0,
+            _PendingFetch(
+                provider=provider,
+                main=provider.get("main", False),
+                request=_build_provider_fetch_request(
+                    provider,
+                    method,
+                    accept,
+                    abort_signal,
+                    body_bytes,
+                    query,
+                ),
             ),
         )
 
-    results: list = [None] * len(provider_meta)
+    if not pending:
+        return []
 
-    while pending:
-        round_settled = await Promise.allSettled(
-            to_js([entry.promise for entry in pending]),
-        )
+    done: list[ProviderResult] = []
 
-        pending = _process_fanout_round(
-            round_settled,
-            pending,
-            provider_meta,
-            results,
-            method,
+    for attempt in range(1 + config.RETRY_MAX_ATTEMPTS):
+        fetch_requests = [
+            js_fetch(
+                item.request.url,
+                to_js(item.request.options, dict_converter=Object.fromEntries),
+            )
+            for item in pending
+        ]
+
+        responses = await asyncio.gather(*fetch_requests, return_exceptions=True)
+
+        succeeded, fetch_failures = _partition_fetch_responses(pending, responses)
+        done.extend(fetch_failures)
+
+        if succeeded:
+            bodies = await asyncio.gather(
+                *[
+                    item.response.text() if is_json else item.response.arrayBuffer()
+                    for item in succeeded
+                ],
+                return_exceptions=True,
+            )
+        else:
+            bodies = []
+
+        pending, body_results = _process_bodies(
+            succeeded,
+            bodies,
+            is_json,
             accept,
-            abort_signal,
-            body_bytes,
-            query,
-            ctx,
+            attempt,
+            Uint8Array,
         )
 
-    return [r for r in results if r is not None]
+        done.extend(body_results)
+
+        if not pending:
+            break
+
+    for item in pending:
+        result = _failed_result(
+            item.provider,
+            item.main,
+            Exception("retries exhausted"),
+        )
+
+        result.retry_count = config.RETRY_MAX_ATTEMPTS
+        done.append(result)
+
+    return done

@@ -33,10 +33,35 @@ from dns_utils import (
 )
 from loki_utils import build_loki_fetch_promise
 
-logging.basicConfig(
-    level=logging.DEBUG if config.DEBUG else logging.WARNING,
-    format="%(name)s %(levelname)s %(message)s",
-)
+
+class _JsonFormatter(logging.Formatter):
+    """Emit log records as single-line JSON for Workers Observability."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Format a log record as a single-line JSON string.
+
+        Parameters:
+        record (logging.LogRecord): The log record to format.
+
+        Returns:
+        str: JSON with level, logger, message, and an optional exception field.
+        """
+        entry: dict[str, object] = {
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+
+        if record.exc_info and record.exc_info[1] is not None:
+            entry["exception"] = self.formatException(record.exc_info)
+
+        return json.dumps(entry, separators=(",", ":"))
+
+
+_handler = logging.StreamHandler()
+_handler.setFormatter(_JsonFormatter())
+logging.root.addHandler(_handler)
+logging.root.setLevel(logging.DEBUG if config.DEBUG else logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
@@ -77,12 +102,12 @@ def _validate_config() -> None:
     if not config.ALLOWED_DOMAINS:
         return
 
-    for key in ("host", "path"):
-        value = config.BYPASS_PROVIDER.get(key)
-        if not isinstance(value, str) or not value:
-            raise ValueError(
-                f"BYPASS_PROVIDER '{key}' must be a non-empty string when ALLOWED_DOMAINS is set",
-            )
+    value = config.BYPASS_PROVIDER.get("url")
+
+    if not isinstance(value, str) or not value:
+        raise ValueError(
+            "BYPASS_PROVIDER 'url' must be a non-empty string when ALLOWED_DOMAINS is set",
+        )
 
 
 _validate_types()
@@ -91,7 +116,7 @@ _validate_config()
 
 def _with_provider_id(provider: dict) -> dict:
     """Return a copy of *provider* with a pre-computed provider_id key."""
-    return {**provider, "provider_id": f"{provider['host']}{provider['path']}"}
+    return {**provider, "provider_id": provider["url"]}
 
 
 _SECRET_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
@@ -136,7 +161,7 @@ def _resolve_providers(providers: list[dict], env: object) -> list[dict]:
     resolved = _resolve_secrets(providers, env)
 
     for provider in resolved:
-        provider["provider_id"] = f"{provider['host']}{provider['path']}"
+        provider["provider_id"] = provider["url"]
 
     return resolved
 
@@ -231,7 +256,16 @@ class Default(WorkerEntrypoint):
         """Top-level request handler with global exception guard."""
         try:
             return await self._handle(request)
-        except Exception:
+        except Exception as e:
+            if isinstance(e, RuntimeError) and "Cannot enter into task" in str(e):
+                logger.warning("Pyodide task re-entrancy: %s", e)
+
+                return Response(
+                    "Service Unavailable",
+                    status=503,
+                    headers={"Retry-After": "1"},
+                )
+
             logger.exception("Unhandled exception in fetch")
             return Response("Internal server error", status=500)
 
@@ -623,8 +657,8 @@ def _build_winner_response(
     possibly_blocked_ids = []
     timed_out_ids = []
     connection_error_ids = []
-    retried_count = 0
     failed_count = 0
+    retried_count = 0
     failed_status_count = 0
 
     for result in results:

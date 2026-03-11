@@ -28,8 +28,7 @@ ALLOWED_DOMAINS = [
 ]
 
 BYPASS_PROVIDER = {
-    "host": "cloudflare-dns.com",
-    "path": "/dns-query",
+    "url": "https://cloudflare-dns.com/dns-query",
     "dns_json": True,
 }
 
@@ -42,18 +41,15 @@ RETRY_MAX_ATTEMPTS = 2
 ENDPOINTS = {
     "/my/doh/path": {
         "main_provider": {
-            "host": "cloudflare-dns.com",
-            "path": "/dns-query",
+            "url": "https://cloudflare-dns.com/dns-query",
             "dns_json": True,
         },
         "additional_providers": [
             {
-                "host": "dns11.quad9.net",
-                "path": "/dns-query",
+                "url": "https://dns11.quad9.net/dns-query",
             },
             {
-                "host": "security.cloudflare-dns.com",
-                "path": "/dns-query",
+                "url": "https://security.cloudflare-dns.com/dns-query",
                 "dns_json": True,
             },
         ],
