@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.0-rc9] - 2026-03-11
+
+### Bug Fixes
+
+- Mitigate Pyodide task re-entrancy under concurrent load ([#73](https://github.com/trevorlauder/cloudflare-doh-worker/pull/73))
+
+### Dependencies
+
+- **deps**: Update mise ([#71](https://github.com/trevorlauder/cloudflare-doh-worker/pull/71))
+- **deps**: Update jdx/mise-action action to v3.6.3 ([#70](https://github.com/trevorlauder/cloudflare-doh-worker/pull/70))
+- **deps**: Update dependency jdx/mise to v2026.3.4 ([#69](https://github.com/trevorlauder/cloudflare-doh-worker/pull/69))
+- **deps**: Update dependency jdx/mise to v2026.3.5 ([#72](https://github.com/trevorlauder/cloudflare-doh-worker/pull/72))
+
 ## [1.0.0-rc8] - 2026-03-06
 
 ### Bug Fixes
