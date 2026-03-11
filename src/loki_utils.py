@@ -28,8 +28,8 @@ def build_loki_fetch_promise(
 ) -> object | None:
     """Build a Loki log entry and return a JS fetch Promise, or None on failure."""
     try:
-        from js import AbortSignal, Object, fetch
-        from pyodide.ffi import to_js
+        from js import AbortSignal
+        from workers import fetch
 
         loki_username = getattr(env, "LOKI_USERNAME", None)
         loki_password = getattr(env, "LOKI_PASSWORD", None)
@@ -127,7 +127,7 @@ def build_loki_fetch_promise(
             "signal": AbortSignal.timeout(LOKI_TIMEOUT_MS),
         }
 
-        return fetch(loki_url, to_js(fetch_options, dict_converter=Object.fromEntries))
+        return fetch(loki_url, **fetch_options)
     except Exception as e:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("build_loki_fetch_promise failed: %s", e)
