@@ -5,7 +5,6 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates curl make tini && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install mise - pinned version with checksum verification
 ARG MISE_VERSION=v2026.3.5
 ARG TARGETARCH
 SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
