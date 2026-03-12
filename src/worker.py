@@ -3,6 +3,7 @@
 
 """Cloudflare Worker entrypoint for the DNS-over-HTTPS proxy."""
 
+import asyncio
 import base64
 import hmac
 import json
@@ -256,16 +257,7 @@ class Default(WorkerEntrypoint):
         """Top-level request handler with global exception guard."""
         try:
             return await self._handle(request)
-        except Exception as e:
-            if isinstance(e, RuntimeError) and "Cannot enter into task" in str(e):
-                logger.warning("Pyodide task re-entrancy: %s", e)
-
-                return Response(
-                    "Service Unavailable",
-                    status=503,
-                    headers={"Retry-After": "1"},
-                )
-
+        except Exception:
             logger.exception("Unhandled exception in fetch")
             return Response("Internal server error", status=500)
 
@@ -792,13 +784,30 @@ async def _handle_request(
         config_blocked = True
         response_from = "config"
     else:
-        results = await send_doh_requests_fanout(
-            doh_providers,
-            method,
-            accept,
-            body_bytes,
-            query,
-        )
+        safety_seconds = config.TIMEOUT_MS / 1000 + 2
+
+        try:
+            results = await asyncio.wait_for(
+                send_doh_requests_fanout(
+                    doh_providers,
+                    method,
+                    accept,
+                    body_bytes,
+                    query,
+                ),
+                timeout=safety_seconds,
+            )
+        except TimeoutError:
+            logger.warning(
+                "send_doh_requests_fanout safety timeout (%.0fs)",
+                safety_seconds,
+            )
+
+            return Response(
+                "Service Unavailable",
+                status=503,
+                headers={"Retry-After": "1"},
+            )
 
         try:
             rebind_response = _make_rebind_blocked_response(
