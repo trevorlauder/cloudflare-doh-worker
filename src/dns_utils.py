@@ -1,0 +1,722 @@
+# Copyright 2025-2026 Trevor Lauder.
+# SPDX-License-Identifier: MIT
+
+"""DNS wire-format helpers, ECS truncation, and upstream provider fan-out."""
+
+import base64
+from dataclasses import dataclass
+import ipaddress
+import json
+import logging
+from typing import NamedTuple
+
+import dns.edns
+import dns.exception
+import dns.flags
+import dns.message
+import dns.name
+import dns.rcode
+import dns.rdatatype
+
+import config
+
+logger = logging.getLogger(__name__)
+
+
+SUPPORTED_ACCEPT_HEADERS = frozenset(
+    {"application/dns-json", "application/dns-message"},
+)
+
+
+def _build_servfail_wire() -> bytes:
+    """
+    Build a pre-computed SERVFAIL wire response for error fallback.
+
+    Returns:
+    bytes: SERVFAIL DNS wire-format response.
+    """
+    msg = dns.message.Message(id=0)
+    msg.flags = dns.flags.QR | dns.flags.RD | dns.flags.RA
+    msg.set_rcode(dns.rcode.SERVFAIL)
+    return msg.to_wire()
+
+
+_SERVFAIL_WIRE = _build_servfail_wire()
+
+
+_PRIVATE_NETWORKS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("100.64.0.0/10"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+)
+
+
+def _is_private_ip(addr: str) -> bool:
+    """
+    Return True if addr belongs to a private or reserved network.
+
+    Parameters:
+    addr (str): IP address to check.
+
+    Returns:
+    bool: True if private/reserved, False otherwise.
+    """
+    try:
+        ip = ipaddress.ip_address(addr)
+        return any(ip in net for net in _PRIVATE_NETWORKS)
+    except ValueError:
+        return False
+
+
+def has_private_answers(addresses: list[str]) -> bool:
+    """
+    Return True if any address in the list is a private IP.
+
+    Parameters:
+    addresses (list[str]): List of IP addresses.
+
+    Returns:
+    bool: True if any address is private.
+    """
+    return any(_is_private_ip(addr) for addr in addresses)
+
+
+def truncate_ecs(
+    data: bytes,
+    *,
+    msg: dns.message.Message | None = None,
+) -> tuple[bytes, str]:
+    """
+    Truncate ECS prefix lengths in a DNS wire message.
+
+    Parameters:
+    data (bytes): DNS wire-format message.
+    msg (dns.message.Message | None): Parsed DNS message (optional).
+
+    Returns:
+    tuple[bytes, str]: (truncated wire, description string)
+    """
+    if not (config.ECS_TRUNCATION and config.ECS_TRUNCATION.get("enabled")):
+        return data, ""
+
+    if len(data) >= 12 and int.from_bytes(data[10:12], "big") == 0:
+        return data, ""
+
+    if msg is None:
+        try:
+            msg = dns.message.from_wire(data)
+        except Exception:
+            return data, ""
+
+    if msg.edns < 0:
+        return data, ""
+
+    ipv4_prefix = config.ECS_TRUNCATION.get("ipv4_prefix", 24)
+    ipv6_prefix = config.ECS_TRUNCATION.get("ipv6_prefix", 64)
+
+    new_options = []
+    descriptions = []
+    changed = False
+
+    for opt in msg.options:
+        if isinstance(opt, dns.edns.ECSOption):
+            target = ipv4_prefix if opt.family == 1 else ipv6_prefix
+
+            if opt.srclen > target:
+                truncated_opt = dns.edns.ECSOption(
+                    opt.address,
+                    srclen=target,
+                    scopelen=0,
+                )
+                new_options.append(truncated_opt)
+                descriptions.append(
+                    f"{opt.address}/{opt.srclen} -> {truncated_opt.address}/{target}",
+                )
+                changed = True
+            else:
+                new_options.append(opt)
+        else:
+            new_options.append(opt)
+
+    if not changed:
+        return data, ""
+
+    msg.use_edns(
+        edns=msg.edns,
+        ednsflags=msg.ednsflags,
+        payload=msg.payload,
+        options=new_options,
+        pad=msg.pad,
+    )
+
+    return msg.to_wire(), ", ".join(descriptions)
+
+
+class Question(NamedTuple):
+    """DNS question with name and type."""
+
+    name: str
+    type: str
+
+
+class DnsParseResult(NamedTuple):
+    """Result of parsing a DNS request from wire or query parameters."""
+
+    question: Question
+    body_bytes: bytes | None
+    ecs_description: str
+    request_wire: bytes | None
+    parsed_request: dns.message.Message | None = None
+
+
+@dataclass
+class ProviderResult:
+    """Result of querying an upstream DoH provider."""
+
+    url: str
+    provider_id: str
+    response_status: int
+    response_content_type: str
+    response_body: bytes | str
+    main: bool
+    failed: bool
+    blocked: bool = False
+    possibly_blocked: bool = False
+    rebind: bool = False
+    timed_out: bool = False
+    connection_error: bool = False
+    retry_count: int = 0
+    min_ttl: int | None = None
+
+
+class _ProviderFetchRequest(NamedTuple):
+    """Pre-built fetch request for an upstream provider."""
+
+    url: str
+    options: dict
+
+
+def _extract_question(packet: dns.message.Message) -> Question:
+    """
+    Extract the first question from a parsed DNS message.
+
+    Parameters:
+    packet (dns.message.Message): Parsed DNS message.
+
+    Returns:
+    Question: DNS question tuple.
+    """
+    question = packet.question[0]
+    return Question(
+        name=str(question.name).rstrip("."),
+        type=dns.rdatatype.to_text(question.rdtype),
+    )
+
+
+def parse_dns_wire_request(data: bytes) -> DnsParseResult:
+    """
+    Decode, ECS-truncate, and parse a DNS wire message in one step.
+
+    Parameters:
+    data (bytes): DNS wire-format message.
+
+    Returns:
+    DnsParseResult: Parsed DNS request result.
+    """
+    packet = dns.message.from_wire(data)
+    question = _extract_question(packet)
+    truncated, ecs_desc = truncate_ecs(data, msg=packet)
+    return DnsParseResult(question, truncated, ecs_desc, data, packet)
+
+
+def compile_domain_set(domains: list) -> tuple[frozenset, tuple]:
+    """
+    Split a domain set into (exact_set, suffix_tuple) for fast matching.
+
+    Parameters:
+    domains (list): List of domain strings.
+
+    Returns:
+    tuple[frozenset, tuple]: (exact matches, suffix matches)
+    """
+    exact = set()
+    suffixes = []
+    for domain in domains:
+        if domain.startswith("*."):
+            suffixes.append("." + domain[2:])
+        else:
+            exact.add(domain)
+    return frozenset(exact), tuple(suffixes)
+
+
+def domain_matches(name: str, compiled: tuple[frozenset, tuple]) -> bool:
+    """
+    Check if a domain matches a pre-compiled (exact, suffixes) pair.
+
+    Parameters:
+    name (str): Domain name to check.
+    compiled (tuple[frozenset, tuple]): Compiled domain set.
+
+    Returns:
+    bool: True if match found.
+    """
+    exact, suffixes = compiled
+    name = name.rstrip(".").lower()
+    if name in exact:
+        return True
+
+    return any(name.endswith(suffix) for suffix in suffixes)
+
+
+def make_blocked_response(
+    question: Question,
+    accept: str,
+    request_wire: bytes | None = None,
+    parsed_request: dns.message.Message | None = None,
+) -> tuple:
+    """
+    Build a synthetic NXDOMAIN DNS response for a blocked domain.
+
+    Parameters:
+    question (Question): DNS question tuple.
+    accept (str): Accept header value.
+    request_wire (bytes | None): Original DNS wire message (optional).
+    parsed_request (dns.message.Message | None): Parsed DNS message (optional).
+
+    Returns:
+    tuple: (response body, content type)
+    """
+    try:
+        rdtype = dns.rdatatype.from_text(question.type or "A")
+    except (dns.exception.SyntaxError, ValueError):
+        rdtype = dns.rdatatype.A
+
+    try:
+        qname = dns.name.from_text(question.name or ".")
+    except (
+        dns.exception.SyntaxError,
+        dns.name.LabelTooLong,
+        dns.name.EmptyLabel,
+        ValueError,
+    ):
+        qname = dns.name.from_text(".")
+
+    if "dns-json" in accept:
+        body = json.dumps(
+            {
+                "Status": 3,
+                "Question": [{"name": question.name or ".", "type": int(rdtype)}],
+                "Answer": [],
+            },
+        )
+
+        return body, "application/dns-json"
+
+    if parsed_request is not None:
+        req = parsed_request
+    elif request_wire is not None:
+        try:
+            req = dns.message.from_wire(request_wire)
+        except Exception:
+            req = dns.message.make_query(qname, rdtype)
+    else:
+        req = dns.message.make_query(qname, rdtype)
+
+    try:
+        resp = dns.message.make_response(req)
+        resp.set_rcode(dns.rcode.NXDOMAIN)
+        return resp.to_wire(), "application/dns-message"
+    except Exception:
+        logger.exception("Failed to build blocked DNS wire response")
+        if request_wire and len(request_wire) >= 2:
+            return request_wire[:2] + _SERVFAIL_WIRE[2:], "application/dns-message"
+        return _SERVFAIL_WIRE, "application/dns-message"
+
+
+_BLOCKED_ADDRS = frozenset({"0.0.0.0", "::"})  # noqa: S104
+
+_RETRY_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
+
+
+def _classify_answers(
+    result: ProviderResult,
+    status: int,
+    addresses: list[str],
+) -> None:
+    """
+    Set blocked/possibly_blocked/rebind directly on result.
+
+    Parameters:
+    result (ProviderResult): Provider result object.
+    status (int): DNS status code.
+    addresses (list[str]): List of IP addresses.
+
+    Returns:
+    None
+    """
+    blocked = any(addr in _BLOCKED_ADDRS for addr in addresses)
+    result.blocked = blocked
+    result.possibly_blocked = status == dns.rcode.NXDOMAIN
+    if config.REBIND_PROTECTION and not blocked:
+        result.rebind = has_private_answers(addresses)
+
+
+MAX_DNS_BODY_SIZE = 65535
+
+
+def _build_provider_fetch_request(
+    provider: dict,
+    method: str,
+    accept: str,
+    abort_signal: object,
+    body_bytes: bytes | None = None,
+    query: str = "",
+) -> _ProviderFetchRequest:
+    """
+    Build a URL, headers, and fetch options for an upstream DoH provider.
+
+    Parameters:
+    provider (dict): Provider config dict.
+    method (str): HTTP method.
+    accept (str): Accept header value.
+    abort_signal (object): Abort signal object.
+    body_bytes (bytes | None): DNS wire-format body (optional).
+    query (str): Query string (optional).
+
+    Returns:
+    _ProviderFetchRequest: Fetch request tuple.
+    """
+    target_url = provider["url"]
+
+    if method == "GET" and body_bytes is not None:
+        encoded = base64.urlsafe_b64encode(body_bytes).rstrip(b"=").decode("ascii")
+        target_url += "?dns=" + encoded
+    elif method == "GET" and query:
+        target_url += query
+
+    headers = {}
+
+    if accept:
+        headers["accept"] = accept
+
+    if method == "POST":
+        headers["content-type"] = "application/dns-message"
+
+    headers.update(provider.get("headers", {}))
+
+    fetch_options: dict = {
+        "method": method,
+        "headers": headers,
+        "signal": abort_signal,
+    }
+
+    if body_bytes is not None and method == "POST":
+        fetch_options["body"] = body_bytes
+
+    return _ProviderFetchRequest(target_url, fetch_options)
+
+
+def _get_provider_id(provider: dict) -> str:
+    """
+    Return the provider_id from config, falling back to url.
+
+    Parameters:
+    provider (dict): Provider config dict.
+
+    Returns:
+    str: Provider ID.
+    """
+    return provider.get("provider_id") or provider["url"]
+
+
+def _failed_result(
+    provider: dict,
+    main: bool,
+    exception: BaseException,
+) -> ProviderResult:
+    """
+    Build a ProviderResult representing a failed upstream fetch.
+
+    Parameters:
+    provider (dict): Provider config dict.
+    main (bool): Is main provider.
+    exception (BaseException): The exception that caused the failure.
+
+    Returns:
+    ProviderResult: Failed provider result.
+    """
+    exc_str = f"{type(exception).__name__} {exception}".lower()
+    timed_out = "timeout" in exc_str or "abort" in exc_str
+
+    return ProviderResult(
+        url=provider["url"],
+        provider_id=_get_provider_id(provider),
+        response_status=504 if timed_out else 502,
+        response_content_type="application/dns-message",
+        response_body=b"",
+        main=main,
+        failed=True,
+        timed_out=timed_out,
+        connection_error=not timed_out,
+    )
+
+
+def _build_provider_result(
+    resp_body: bytes | str,
+    response_ok: bool,
+    status: int,
+    provider: dict,
+    main: bool,
+    accept: str,
+) -> ProviderResult:
+    """
+    Build a ProviderResult from pre-read response data (no async).
+
+    Parameters:
+    resp_body (bytes | str): Response body.
+    response_ok (bool): Whether the HTTP response indicated success.
+    status (int): HTTP status code.
+    provider (dict): Provider config dict.
+    main (bool): Is main provider.
+    accept (str): Accept header value.
+
+    Returns:
+    ProviderResult: Provider result object.
+    """
+    is_json = accept == "application/dns-json"
+
+    result = ProviderResult(
+        url=provider["url"],
+        provider_id=_get_provider_id(provider),
+        response_status=status,
+        response_content_type=accept,
+        response_body=resp_body,
+        main=main,
+        failed=not response_ok,
+    )
+
+    if not response_ok:
+        return result
+
+    if is_json:
+        try:
+            resp_json = json.loads(resp_body)
+            answers = resp_json.get("Answer", [])
+            addresses = [a.get("data", "") for a in answers if a.get("data")]
+            _classify_answers(
+                result=result,
+                status=resp_json.get("Status", 0),
+                addresses=addresses,
+            )
+            ttls = [a["TTL"] for a in answers if "TTL" in a]
+            result.min_ttl = min(ttls) if ttls else None
+        except Exception:
+            logger.debug(
+                "Failed to parse JSON DNS response from %s",
+                provider["url"],
+                exc_info=True,
+            )
+    else:
+        try:
+            packet = dns.message.from_wire(resp_body)
+
+            addresses = [
+                str(rr)
+                for rrset in packet.answer
+                for rr in rrset
+                if rr.rdtype in (dns.rdatatype.A, dns.rdatatype.AAAA)
+            ]
+            _classify_answers(
+                result=result,
+                status=int(packet.rcode()),
+                addresses=addresses,
+            )
+            ttls = [rrset.ttl for rrset in packet.answer]
+            result.min_ttl = min(ttls) if ttls else None
+        except Exception:
+            logger.debug(
+                "Failed to parse binary DNS response from %s",
+                provider["url"],
+                exc_info=True,
+            )
+
+    return result
+
+
+def get_response_min_ttl(result: ProviderResult) -> int | None:
+    """
+    Return the minimum TTL from the provider result, or None.
+
+    Parameters:
+    result (ProviderResult): Provider result object.
+
+    Returns:
+    int | None: Minimum TTL or None.
+    """
+    return result.min_ttl
+
+
+class _FetchItem(NamedTuple):
+    """
+    Provider context for the fetch retry loop.
+
+    Attributes:
+    provider (dict): Provider config dict.
+    main (bool): Is main provider.
+    request (_ProviderFetchRequest): Fetch request tuple.
+    """
+
+    provider: dict
+    main: bool
+    request: _ProviderFetchRequest
+
+
+async def send_doh_requests_fanout(
+    doh_providers: list,
+    method: str,
+    accept: str,
+    body_bytes: bytes | None = None,
+    query: str = "",
+) -> list:
+    """
+    Fan out DNS queries to multiple providers and collect results.
+
+    Uses asyncio.gather with workers.fetch for concurrent upstream requests.
+
+    Parameters:
+    doh_providers (list): Provider config dicts, each with url, etc.
+    method (str): HTTP method ("GET" or "POST").
+    accept (str): Accept header value.
+    body_bytes (bytes | None): DNS wire-format body for POST requests.
+    query (str): Query string for GET JSON requests.
+
+    Returns:
+    list[ProviderResult]: One result per queried provider.
+    """
+    import asyncio
+
+    # Deferred imports: only available in the Pyodide/Workers runtime.
+    from js import AbortSignal
+    from workers import fetch as workers_fetch
+
+    if not doh_providers:
+        return []
+
+    abort_signal = AbortSignal.timeout(config.TIMEOUT_MS)
+    is_json = accept == "application/dns-json"
+    is_json_query = is_json and body_bytes is None
+
+    pending: list[_FetchItem] = []
+
+    for provider in doh_providers:
+        if is_json_query and not provider.get("dns_json", False):
+            continue
+
+        pending.append(
+            _FetchItem(
+                provider=provider,
+                main=provider.get("main", False),
+                request=_build_provider_fetch_request(
+                    provider=provider,
+                    method=method,
+                    accept=accept,
+                    abort_signal=abort_signal,
+                    body_bytes=body_bytes,
+                    query=query,
+                ),
+            ),
+        )
+
+    if not pending:
+        return []
+
+    done: list[ProviderResult] = []
+
+    for attempt in range(1 + config.RETRY_MAX_ATTEMPTS):
+        responses = await asyncio.gather(
+            *[
+                workers_fetch(item.request.url, **item.request.options)
+                for item in pending
+            ],
+            return_exceptions=True,
+        )
+
+        next_pending: list[_FetchItem] = []
+
+        for item, resp in zip(pending, responses, strict=True):
+            if isinstance(resp, BaseException):
+                logger.error(
+                    "send_doh_requests fetch rejected for %s: %s",
+                    item.provider.get("url", ""),
+                    resp,
+                )
+
+                done.append(
+                    _failed_result(
+                        provider=item.provider,
+                        main=item.main,
+                        exception=resp,
+                    ),
+                )
+                continue
+
+            status = resp.status
+
+            if status in _RETRY_STATUS_CODES and attempt < config.RETRY_MAX_ATTEMPTS:
+                next_pending.append(item)
+                continue
+
+            try:
+                if is_json:
+                    resp_body = await resp.text()
+                else:
+                    resp_body = await resp.bytes()
+
+                result = _build_provider_result(
+                    resp_body=resp_body,
+                    response_ok=resp.ok,
+                    status=status,
+                    provider=item.provider,
+                    main=item.main,
+                    accept=accept,
+                )
+
+                result.retry_count = attempt
+            except Exception as e:
+                logger.error(
+                    "send_doh_requests processing failed for %s: %s: %s",
+                    item.provider.get("url", ""),
+                    type(e).__name__,
+                    e,
+                )
+
+                result = _failed_result(
+                    provider=item.provider,
+                    main=item.main,
+                    exception=e,
+                )
+
+            done.append(result)
+
+        pending = next_pending
+
+        if not pending:
+            break
+
+    for item in pending:
+        result = _failed_result(
+            provider=item.provider,
+            main=item.main,
+            exception=Exception("retries exhausted"),
+        )
+
+        result.retry_count = config.RETRY_MAX_ATTEMPTS
+        done.append(result)
+
+    return done
