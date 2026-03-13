@@ -3,7 +3,7 @@
 [![CI](https://github.com/trevorlauder/cloudflare-doh-worker/actions/workflows/ci.yml/badge.svg)](https://github.com/trevorlauder/cloudflare-doh-worker/actions/workflows/ci.yml)
 
 > [!IMPORTANT]
-> This is a complete rewrite in Python and is currently in release candidate. If you want the previous JavaScript version, use the [0.9.0 release](https://github.com/trevorlauder/cloudflare-doh-worker/tree/0.9.0). The JavaScript version will no longer receive updates.
+> This is a complete rewrite in Python. If you want the previous JavaScript version, use the [0.9.0 release](https://github.com/trevorlauder/cloudflare-doh-worker/tree/0.9.0). The JavaScript version will no longer receive updates.
 
 A Cloudflare Worker that fans out DNS-over-HTTPS queries to multiple upstream providers in parallel and returns the most restrictive result. If **any** provider blocks a domain, it's blocked.
 
