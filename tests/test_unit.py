@@ -3,6 +3,7 @@
 
 """Unit tests for worker internals (select_winner, secret resolution, validation)."""
 
+import json
 import sys
 from unittest.mock import MagicMock
 
@@ -15,8 +16,10 @@ import pytest  # noqa: E402
 import config  # noqa: E402
 from dns_utils import ProviderResult  # noqa: E402
 from worker import (  # noqa: E402
+    _handle_health,
     _negotiate_accept,
     _resolve_secrets,
+    _ResolvedConfig,
     _select_winner,
     _validate_config,
     _validate_types,
@@ -119,11 +122,13 @@ def test_select_winner_prefers_non_rebind_main_over_additional(
     monkeypatch.setattr(config, "REBIND_PROTECTION", True)
     rebind_main = _result(main=True, rebind=True)
     clean_additional = _result(main=False, rebind=False)
+
     clean_main = _result(
         main=True,
         rebind=False,
         url="https://other.example.com/dns-query",
     )
+
     assert _select_winner([rebind_main, clean_additional, clean_main]) is clean_main
 
 
@@ -133,6 +138,7 @@ def test_resolve_secrets_plain_string():
 
 def test_resolve_secrets_substitutes():
     env = _Env(MY_SECRET="secret_value")  # noqa: S106
+
     assert (
         _resolve_secrets("prefix-${MY_SECRET}-suffix", env)
         == "prefix-secret_value-suffix"
@@ -147,11 +153,13 @@ def test_resolve_secrets_missing_raises():
 def test_resolve_secrets_multiple_missing_reported():
     with pytest.raises(ValueError, match="AAA") as exc:
         _resolve_secrets("${AAA} ${BBB}", _Env())
+
     assert "BBB" in str(exc.value)
 
 
 def test_resolve_secrets_dict():
     env = _Env(TOKEN="abc123")  # noqa: S106
+
     assert _resolve_secrets({"key": "${TOKEN}", "other": "plain"}, env) == {
         "key": "abc123",
         "other": "plain",
@@ -209,6 +217,7 @@ def test_validate_config_valid(monkeypatch: pytest.MonkeyPatch):
         "BYPASS_PROVIDER",
         {"url": "https://dns.example.com/dns-query"},
     )
+
     _validate_config()
 
 
@@ -258,3 +267,78 @@ def test_negotiate_accept_wildcard_not_matched():
 
 def test_negotiate_accept_case_insensitive():
     assert _negotiate_accept("APPLICATION/DNS-JSON") == "application/dns-json"
+
+
+def _make_cfg(
+    *,
+    provider_lists: dict | None = None,
+    bypass_provider_list: list | None = None,
+) -> _ResolvedConfig:
+    """
+    Build a minimal _ResolvedConfig for health tests.
+
+    Parameters:
+    provider_lists (dict | None): Endpoint provider lists.
+    bypass_provider_list (list | None): Bypass provider list.
+
+    Returns:
+    _ResolvedConfig: Minimal config for health handler tests.
+    """
+    return _ResolvedConfig(
+        health_endpoint="/health",
+        config_endpoint=None,
+        loki_url="",
+        provider_lists=provider_lists or {},
+        bypass_provider_list=bypass_provider_list or [],
+    )
+
+
+def test_handle_health_returns_ok():
+    """
+    Test that _handle_health returns status 'ok' and correct endpoint count.
+
+    Returns:
+    None
+    """
+    cfg = _make_cfg(
+        provider_lists={"/doh/test": [{"url": "https://dns.example.com/dns-query"}]},
+    )
+    _handle_health(cfg)
+    resp_call = _workers_stub.Response.call_args
+    body_json = json.loads(resp_call[0][0])
+    assert body_json["status"] == "ok"
+    assert body_json["endpoints"] == 1
+    assert resp_call[1]["status"] == 200
+
+
+def test_handle_health_reports_endpoint_count():
+    """
+    Test that _handle_health returns correct endpoint count for multiple endpoints.
+
+    Returns:
+    None
+    """
+    cfg = _make_cfg(
+        provider_lists={
+            "/doh/a": [{"url": "https://a.example.com"}],
+            "/doh/b": [{"url": "https://b.example.com"}],
+            "/doh/c": [{"url": "https://c.example.com"}],
+        },
+    )
+    _handle_health(cfg)
+    body_json = json.loads(_workers_stub.Response.call_args[0][0])
+    assert body_json["endpoints"] == 3
+
+
+def test_handle_health_zero_endpoints():
+    """
+    Test that _handle_health returns 'ok' and zero endpoints when none are configured.
+
+    Returns:
+    None
+    """
+    cfg = _make_cfg(provider_lists={})
+    _handle_health(cfg)
+    body_json = json.loads(_workers_stub.Response.call_args[0][0])
+    assert body_json["status"] == "ok"
+    assert body_json["endpoints"] == 0

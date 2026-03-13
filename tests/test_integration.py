@@ -6,22 +6,22 @@
 import base64
 import json
 import os
+from pathlib import Path
 import random
 import string
 import tomllib
 import urllib.error
-import urllib.request
-from pathlib import Path
 from urllib.parse import urlparse
+import urllib.request
 
+from conftest import BASE_URL, IS_HTTPS, IS_LOCAL, SKIP_TLS, resolve_env
+from curl_cffi import requests as cffi_requests
+from curl_cffi.const import CurlHttpVersion
 import dns.edns
 import dns.message
 import dns.rcode
 import dns.rdatatype
 import pytest
-from conftest import BASE_URL, IS_HTTPS, IS_LOCAL, SKIP_TLS, resolve_env
-from curl_cffi import requests as cffi_requests
-from curl_cffi.const import CurlHttpVersion
 
 from config import (
     ALLOWED_DOMAINS,
@@ -443,7 +443,10 @@ def test_health_returns_ok():
         timeout=TIMEOUT,
     ) as resp:
         assert resp.status == 200
-        assert resp.read().decode() == "ok"
+        body = json.loads(resp.read().decode())
+        assert body["status"] == "ok"
+        assert isinstance(body["endpoints"], int)
+        assert body["endpoints"] > 0
 
 
 @pytest.mark.skipif(

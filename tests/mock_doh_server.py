@@ -13,11 +13,11 @@ Endpoints:
 """
 
 import base64
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
 import threading
 import urllib.parse
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import dns.edns
 import dns.message

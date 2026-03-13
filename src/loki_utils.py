@@ -26,7 +26,25 @@ def build_loki_fetch_promise(
     config_allowed: bool = False,
     error: bool = False,
 ) -> object | None:
-    """Build a Loki log entry and return a JS fetch Promise, or None on failure."""
+    """
+    Build a Loki log entry and return a JS fetch Promise, or None on failure.
+
+    Parameters:
+    request_timestamp_ms (int): Request timestamp in milliseconds.
+    endpoint (str): Endpoint path.
+    question (Question): DNS question tuple.
+    response_from (str): Provider ID that served the response.
+    results (list): List of ProviderResult objects.
+    env (object): Environment with secrets.
+    loki_url (str): Loki push URL.
+    client_ip (str): Client IP address.
+    config_blocked (bool): Whether the request was blocked by config.
+    config_allowed (bool): Whether the request was allowed by config bypass.
+    error (bool): Whether the request resulted in an error.
+
+    Returns:
+    object | None: JS fetch Promise or None on failure.
+    """
     try:
         from js import AbortSignal
         from workers import fetch
