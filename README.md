@@ -91,7 +91,7 @@ git fetch upstream
 git merge --allow-unrelated-histories deploy-1.0.1  # replace with the new version tag
 ```
 
-Resolve any conflicts in `src/config.py`, `wrangler.toml`, and `package.json` to preserve your customizations (the `name` field in `wrangler.toml` and `package.json` will always conflict), then redeploy.
+Resolve any conflicts to merge in the changes while perserving your customizations (the `version` field in `uv.lock` and `pyproject.toml` will always conflict), then redeploy.
 
 ## Requirements
 
@@ -105,7 +105,7 @@ All config lives in `src/config.py`. You can define as many endpoint paths as yo
 
 Each endpoint has one `main_provider` (whose answer is used when nothing is blocked) and optional `additional_providers`.
 
-Each provider dict accepts `host`, `path`, and optional `headers`. If your clients use `application/dns-json`, add `"dns_json": True` to the providers that support it so they aren't skipped for those requests.
+Each provider dict accepts `url`, and optionally `headers` and `dns_json`. Add `"dns_json": True` to providers that support `application/dns-json` so they aren't skipped for those requests.
 
 If your repo is public, use `${SECRET_NAME}` placeholders for sensitive values like endpoint paths and provider paths. They're resolved from Cloudflare Worker secrets at runtime. Setting your endpoint paths to include random strings keeps them from being discovered.
 
@@ -129,8 +129,8 @@ BLOCKED_DOMAINS = []
 ALLOWED_DOMAINS = []
 
 BYPASS_PROVIDER = {
-    "host": "cloudflare-dns.com",
-    "path": "/dns-query",
+    "url": "https://cloudflare-dns.com/dns-query",
+    "dns_json": True,
 }
 
 LOKI_URL = ""
@@ -140,8 +140,8 @@ LOKI_TIMEOUT_MS = 5000
 ENDPOINTS = {
     "/doh/my-device": {
         "main_provider": {
-            "host": "dns.nextdns.io",
-            "path": "/abc123",
+            "url": "https://dns.nextdns.io/abc123",
+            "dns_json": True,
             "headers": {
                 "X-Device-Name": "My Device",
                 "X-Device-Model": "My Device Model",
@@ -149,12 +149,11 @@ ENDPOINTS = {
         },
         "additional_providers": [
             {
-                "host": "dns11.quad9.net",
-                "path": "/dns-query",
+                "url": "https://dns11.quad9.net/dns-query",
             },
             {
-                "host": "security.cloudflare-dns.com",
-                "path": "/dns-query",
+                "url": "https://security.cloudflare-dns.com/dns-query",
+                "dns_json": True,
             },
         ],
     },
@@ -166,20 +165,20 @@ See the full set of options with defaults in `src/config.py`.
 <details>
 <summary>All configuration options</summary>
 
-| Option               | Default                                                | Description                                                                                          |
-| -------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `DEBUG`              | `False`                                                | Enable verbose logging and diagnostic response headers                                               |
-| `CONFIG_ENDPOINT`    | `None`                                                 | Path for the authenticated config endpoint (requires `ADMIN_TOKEN` secret)                           |
-| `HEALTH_ENDPOINT`    | `None`                                                 | Path for the health-check endpoint                                                                   |
-| `TIMEOUT_MS`         | `5000`                                                 | Upstream provider timeout in milliseconds                                                            |
-| `ECS_TRUNCATION`     | `{"enabled": False}`                                   | Truncate EDNS Client Subnet prefixes for privacy                                                     |
-| `REBIND_PROTECTION`  | `True`                                                 | Block responses that resolve to private/internal IPs                                                 |
-| `BLOCKED_DOMAINS`    | `[]`                                                   | Domains to block with synthetic `NXDOMAIN` (supports `*.example.com` wildcards)                      |
-| `ALLOWED_DOMAINS`    | `[]`                                                   | Domains to bypass fan-out and send to `BYPASS_PROVIDER` only                                         |
-| `BYPASS_PROVIDER`    | `{"host": "cloudflare-dns.com", "path": "/dns-query"}` | Non-filtering provider used for allowed domains                                                      |
-| `LOKI_URL`           | `""`                                                   | Grafana Loki push endpoint (also requires `LOKI_USERNAME` and `LOKI_PASSWORD` secrets)               |
-| `LOKI_TIMEOUT_MS`    | `5000`                                                 | Loki push timeout in milliseconds                                                                    |
-| `RETRY_MAX_ATTEMPTS` | `2`                                                    | Number of times to retry a provider on 5xx responses before marking it failed; set to `0` to disable |
+| Option               | Default                                                             | Description                                                                                          |
+| -------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `DEBUG`              | `False`                                                             | Enable verbose logging and diagnostic response headers                                               |
+| `CONFIG_ENDPOINT`    | `None`                                                              | Path for the authenticated config endpoint (requires `ADMIN_TOKEN` secret)                           |
+| `HEALTH_ENDPOINT`    | `None`                                                              | Path for the health-check endpoint                                                                   |
+| `TIMEOUT_MS`         | `5000`                                                              | Upstream provider timeout in milliseconds                                                            |
+| `ECS_TRUNCATION`     | `{"enabled": False}`                                                | Truncate EDNS Client Subnet prefixes for privacy                                                     |
+| `REBIND_PROTECTION`  | `True`                                                              | Block responses that resolve to private/internal IPs                                                 |
+| `BLOCKED_DOMAINS`    | `[]`                                                                | Domains to block with synthetic `NXDOMAIN` (supports `*.example.com` wildcards)                      |
+| `ALLOWED_DOMAINS`    | `[]`                                                                | Domains to bypass fan-out and send to `BYPASS_PROVIDER` only                                         |
+| `BYPASS_PROVIDER`    | `{"url": "https://cloudflare-dns.com/dns-query", "dns_json": True}` | Non-filtering provider used for allowed domains                                                      |
+| `LOKI_URL`           | `""`                                                                | Grafana Loki push endpoint (also requires `LOKI_USERNAME` and `LOKI_PASSWORD` secrets)               |
+| `LOKI_TIMEOUT_MS`    | `5000`                                                              | Loki push timeout in milliseconds                                                                    |
+| `RETRY_MAX_ATTEMPTS` | `2`                                                                 | Number of times to retry a provider on 5xx responses before marking it failed; set to `0` to disable |
 
 </details>
 
