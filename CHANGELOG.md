@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.1] - 2026-03-13
+
+### Dependencies
+
+- **deps**: Update dependency workers-runtime-sdk to v1 ([#82](https://github.com/trevorlauder/cloudflare-doh-worker/pull/82))
+- **deps**: Update dependency ruff to v0.15.6 ([#80](https://github.com/trevorlauder/cloudflare-doh-worker/pull/80))
+- **deps**: Update dependency jdx/mise to v2026.3.8 ([#79](https://github.com/trevorlauder/cloudflare-doh-worker/pull/79))
+- **deps**: Update dependency workers-py to ~=1.9.0 ([#81](https://github.com/trevorlauder/cloudflare-doh-worker/pull/81))
+
 ## [1.0.0] - 2026-03-13
 
 ### Bug Fixes
