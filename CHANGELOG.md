@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.0.0-rc11] - 2026-03-13
+
+### Bug Fixes
+
+- Add safety timeout to prevent hung requests from Pyodide re-entrancy ([#75](https://github.com/trevorlauder/cloudflare-doh-worker/pull/75))
+
+### Documentation
+
+- Update design diagram
+
+### Features
+
+- Add JSON health endpoint ([#76](https://github.com/trevorlauder/cloudflare-doh-worker/pull/76))
+
+### Style
+
+- Cleanup
+
+### Testing
+
+- Prevent tilt config-restart resources from firing on first startup ([#77](https://github.com/trevorlauder/cloudflare-doh-worker/pull/77))
+
 ## [1.0.0-rc10] - 2026-03-11
 
 ### Refactoring
