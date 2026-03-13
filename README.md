@@ -12,7 +12,7 @@ This started as [a workaround](https://www.lauder.family/blog/2021/09/25/Avoidin
 ## Features
 
 - Fan-out to multiple DoH providers, pick the most restrictive answer
-- Per-domain blocklist and allowlist in `src/config.py` to ensure specific domains are always blocked or never blocked, regardless of upstream provider responses (not meant for huge community lists due to Worker resource limits)
+- Domain blocklist and allowlist in `src/config.py` to ensure specific domains are always blocked or never blocked, regardless of upstream provider responses (not meant for huge community lists due to Worker resource limits)
 - Allowed domains skip fan-out and go straight to a non-filtering bypass provider (default: Cloudflare)
 - EDNS Client Subnet prefix truncation for privacy
 - DNS rebind protection (blocks responses resolving to private IPs)
