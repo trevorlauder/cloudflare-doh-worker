@@ -1,20 +1,25 @@
 [project]
 name = "doh"
-version = "1.0.0"
+version = "1.0.1"
 requires-python = ">=3.13"
 dependencies = [
-  "dnspython ~= 2.8.0",
+  "dnspython",
 ]
 
 [dependency-groups]
-dev = [
-  "curl-cffi ~= 0.14.0",
-  "pytest ~= 9.0.2",
-  "pytest-rerunfailures ~= 16.1",
-  "pytest-xdist ~= 3.6",
-  "workers-py ~=1.9.0",
-  "workers-runtime-sdk ~=1.1.0",
+deploy = [
+  "workers-py",
+  "workers-runtime-sdk",
 ]
+dev = [
+  "curl-cffi",
+  "pytest",
+  "pytest-rerunfailures",
+  "pytest-xdist",
+]
+
+[tool.uv]
+default-groups = ["deploy"]
 
 [tool.pywrangler]
 main = "src/worker.py"
