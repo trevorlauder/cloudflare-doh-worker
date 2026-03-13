@@ -97,6 +97,7 @@ if not is_ci:
             cmd = "kubectl rollout restart deployment/worker-" + worker_name,
             deps = [config_file],
             resource_deps = ["worker-" + worker_name],
+            auto_init = False,
             labels = ["app"],
         )
 
