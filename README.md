@@ -5,7 +5,7 @@
 > [!IMPORTANT]
 > This is a complete rewrite in Python. If you want the previous JavaScript version, use the [0.9.0 release](https://github.com/trevorlauder/cloudflare-doh-worker/tree/0.9.0). The JavaScript version will no longer receive updates.
 
-A Cloudflare Worker that fans out DNS-over-HTTPS queries to multiple upstream providers in parallel and returns the most restrictive result. If **any** provider blocks a domain, it's blocked.
+A Cloudflare Worker that proxies DNS-over-HTTPS queries to multiple upstream providers in parallel and returns the most restrictive result. If **any** provider blocks a domain, it's blocked.
 
 This started as [a workaround](https://www.lauder.family/blog/2021/09/25/Avoiding-DoH-Detection-and-Blocking/) when our school division blocked DoH on my kids' devices. It was a simple Cloudflare Worker proxying to NextDNS on a custom domain. This version takes that further, letting you proxy to as many DoH providers as you want and combine their filtering.
 
