@@ -1,7 +1,9 @@
 .PHONY: dev deploy install setup ci test test-ci k3d-create k3d-delete k3d-recreate update-mise-checksums changelog
 
 changelog:
-	@GITHUB_TOKEN=$(shell gh auth token) git cliff --unreleased $(if $(TAG),--tag $(TAG)) -o CHANGELOG.md
+	@GITHUB_TOKEN=$(shell gh auth token) git cliff \
+	  $(if $(TAG),$(if $(findstring rc,$(TAG)),,--ignore-tags "rc") --unreleased --tag $(TAG),--latest) \
+	  -o CHANGELOG.md
 
 dev:
 	uv run pywrangler dev
