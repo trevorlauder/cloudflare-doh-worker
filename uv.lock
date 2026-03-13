@@ -136,7 +136,7 @@ dev = [
     { name = "pytest", specifier = "~=9.0.2" },
     { name = "pytest-rerunfailures", specifier = "~=16.1" },
     { name = "pytest-xdist", specifier = "~=3.6" },
-    { name = "workers-py", specifier = "~=1.7.3" },
+    { name = "workers-py", specifier = "~=1.9.0" },
     { name = "workers-runtime-sdk", specifier = "~=1.1.0" },
 ]
 
@@ -362,7 +362,7 @@ wheels = [
 
 [[package]]
 name = "workers-py"
-version = "1.7.3"
+version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -372,9 +372,9 @@ dependencies = [
     { name = "rich" },
     { name = "workers-runtime-sdk" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6d/a3/23d30a15dd1ff38aa9ff4d74ac3d7dc63ab4c856e4a5922e2ab5358408ad/workers_py-1.7.3.tar.gz", hash = "sha256:bf4935fffbd0e84de1f8d16058520cb231c8bea083fa22f3a37a3f6df2d534e3", size = 48155, upload-time = "2026-02-09T06:36:04.79Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/32/5e/bd5944802511557243bae9ca5de12ab84b0ea92ac17b05c589bd72b57a56/workers_py-1.9.0.tar.gz", hash = "sha256:e83b0cc5b101026e9a0e6e2a102d2f945de514adf4a03db51e4950b7badd4a39", size = 60619, upload-time = "2026-03-12T17:09:20.804Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3b/57/77ad00e8ba5c37cd216e49b5d1f4f11eaf8de7a5f07ab8b411f75e96b8d8/workers_py-1.7.3-py3-none-any.whl", hash = "sha256:f5a6b4d4a1edae17f508c7e5db499862b39c7d2360f136013b246acaa0a73737", size = 13352, upload-time = "2026-02-09T06:36:03.579Z" },
+    { url = "https://files.pythonhosted.org/packages/a8/36/72247bb24e9e5b1bf957af399fc0cb6e33e464f801fa29938279d44174d3/workers_py-1.9.0-py3-none-any.whl", hash = "sha256:19a5fce1d111abf9bc0ce7c5498138c092948620668c411b872a7d3e3727fd04", size = 13366, upload-time = "2026-03-12T17:09:18.113Z" },
 ]
 
 [[package]]

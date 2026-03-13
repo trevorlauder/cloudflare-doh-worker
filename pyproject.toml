@@ -12,7 +12,7 @@ dev = [
   "pytest ~= 9.0.2",
   "pytest-rerunfailures ~= 16.1",
   "pytest-xdist ~= 3.6",
-  "workers-py ~= 1.7.3",
+  "workers-py ~=1.9.0",
   "workers-runtime-sdk ~=1.1.0",
 ]
 
