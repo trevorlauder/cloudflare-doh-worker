@@ -10,8 +10,8 @@ import json
 import logging
 import re
 import time
-import urllib.parse
 from typing import NamedTuple
+import urllib.parse
 
 import dns.exception
 import dns.name
@@ -36,10 +36,15 @@ from loki_utils import build_loki_fetch_promise
 
 
 class _JsonFormatter(logging.Formatter):
-    """Emit log records as single-line JSON for Workers Observability."""
+    """
+    Emit log records as single-line JSON for Workers Observability.
+
+    Inherits from logging.Formatter.
+    """
 
     def format(self, record: logging.LogRecord) -> str:
-        """Format a log record as a single-line JSON string.
+        """
+        Format a log record as a single-line JSON string.
 
         Parameters:
         record (logging.LogRecord): The log record to format.
@@ -88,7 +93,12 @@ _CONFIG_TYPE_RULES: list[tuple[str, type | tuple]] = [
 
 
 def _validate_types() -> None:
-    """Raise TypeError if any config value has the wrong type."""
+    """
+    Raise TypeError if any config value has the wrong type.
+
+    Returns:
+    None
+    """
     for name, expected_type in _CONFIG_TYPE_RULES:
         value = getattr(config, name, None)
 
@@ -99,7 +109,12 @@ def _validate_types() -> None:
 
 
 def _validate_config() -> None:
-    """Validate cross-field config constraints at import time."""
+    """
+    Validate cross-field config constraints at import time.
+
+    Returns:
+    None
+    """
     if not config.ALLOWED_DOMAINS:
         return
 
@@ -116,30 +131,65 @@ _validate_config()
 
 
 def _with_provider_id(provider: dict) -> dict:
-    """Return a copy of *provider* with a pre-computed provider_id key."""
+    """
+    Return a copy of provider with a pre-computed provider_id key.
+
+    Parameters:
+    provider (dict): Provider config dict.
+
+    Returns:
+    dict: Provider dict with provider_id.
+    """
     return {**provider, "provider_id": provider["url"]}
 
 
 _SECRET_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
 
 
-def _resolve_secrets(obj: object, env: object) -> object:
-    """Recursively substitute ${SECRET_NAME} placeholders in strings, dicts, and lists."""
+def _resolve_secrets(data: object, env: object) -> object:
+    """
+    Recursively substitute ${SECRET_NAME} placeholders in strings, dicts, and lists.
+
+    Parameters:
+    data (object): Data to resolve placeholders in.
+    env (object): Environment with secrets.
+
+    Returns:
+    object: Resolved object.
+    """
     missing: list[str] = []
 
     def _resolve(value: object) -> object:
+        """
+        Recursively resolve placeholders in a value.
+
+        Parameters:
+        value (object): Value to resolve.
+
+        Returns:
+        object: Resolved value.
+        """
         if isinstance(value, str):
             if "${" not in value:
                 return value
 
-            def _replacer(m: re.Match) -> str:
+            def _replacer(match: re.Match[str]) -> str:
+                """
+                Replace a single ${SECRET_NAME} match with the secret value.
+
+                Parameters:
+                match (re.Match[str]): Regex match object.
+
+                Returns:
+                str: Resolved secret value or original placeholder.
+                """
                 try:
-                    secret = getattr(env, m.group(1), None)
+                    secret = getattr(env, match.group(1), None)
                 except Exception:
                     secret = None
                 if not secret:
-                    missing.append(m.group(1))
-                    return m.group(0)
+                    missing.append(match.group(1))
+                    return match.group(0)
                 return str(secret)
 
             return _SECRET_RE.sub(_replacer, value)
@@ -149,7 +199,7 @@ def _resolve_secrets(obj: object, env: object) -> object:
             return [_resolve(item) for item in value]
         return value
 
-    resolved = _resolve(obj)
+    resolved = _resolve(data)
 
     if missing:
         raise ValueError(f"Missing secret(s): {', '.join(sorted(set(missing)))}")
@@ -158,8 +208,17 @@ def _resolve_secrets(obj: object, env: object) -> object:
 
 
 def _resolve_providers(providers: list[dict], env: object) -> list[dict]:
-    """Resolve secret placeholders in providers and recompute provider_id."""
-    resolved = _resolve_secrets(providers, env)
+    """
+    Resolve secret placeholders in providers and recompute provider_id.
+
+    Parameters:
+    providers (list[dict]): List of provider dicts.
+    env (object): Environment with secrets.
+
+    Returns:
+    list[dict]: List of resolved provider dicts.
+    """
+    resolved = _resolve_secrets(data=providers, env=env)
 
     for provider in resolved:
         provider["provider_id"] = provider["url"]
@@ -168,7 +227,12 @@ def _resolve_providers(providers: list[dict], env: object) -> list[dict]:
 
 
 def _build_provider_lists() -> dict[str, list[dict]]:
-    """Build per-endpoint provider lists from config at import time."""
+    """
+    Build per-endpoint provider lists from config at import time.
+
+    Returns:
+    dict[str, list[dict]]: Mapping of endpoint paths to provider lists.
+    """
     result: dict[str, list[dict]] = {}
     for path, cfg in config.ENDPOINTS.items():
         main = _with_provider_id({**cfg["main_provider"], "main": True})
@@ -195,7 +259,16 @@ _resolved_config_cache: "_ResolvedConfig | None" = None
 
 
 class _ResolvedConfig(NamedTuple):
-    """Runtime configuration with all ${SECRET} placeholders resolved."""
+    """
+    Runtime configuration with all ${SECRET} placeholders resolved.
+
+    Attributes:
+    health_endpoint (str | None): Health endpoint path.
+    config_endpoint (str | None): Config endpoint path.
+    loki_url (str): Loki URL.
+    provider_lists (dict[str, list[dict]]): Endpoint provider lists.
+    bypass_provider_list (list[dict]): Bypass provider list.
+    """
 
     health_endpoint: str | None
     config_endpoint: str | None
@@ -205,24 +278,34 @@ class _ResolvedConfig(NamedTuple):
 
 
 def _resolve_config(env: object) -> _ResolvedConfig:
-    """Resolve all ${SECRET} placeholders in the config."""
+    """
+    Resolve all ${SECRET} placeholders in the config.
+
+    Parameters:
+    env (object): Environment with secrets.
+
+    Returns:
+    _ResolvedConfig: Resolved runtime configuration.
+    """
     global _resolved_config_cache
 
     if _resolved_config_cache is not None:
         return _resolved_config_cache
 
     health = (
-        _resolve_secrets(config.HEALTH_ENDPOINT, env)
+        _resolve_secrets(data=config.HEALTH_ENDPOINT, env=env)
         if config.HEALTH_ENDPOINT
         else None
     )
     config_ep = (
-        _resolve_secrets(config.CONFIG_ENDPOINT, env)
+        _resolve_secrets(data=config.CONFIG_ENDPOINT, env=env)
         if config.CONFIG_ENDPOINT
         else None
     )
     try:
-        loki_url = _resolve_secrets(config.LOKI_URL, env) if config.LOKI_URL else ""
+        loki_url = (
+            _resolve_secrets(data=config.LOKI_URL, env=env) if config.LOKI_URL else ""
+        )
     except ValueError as e:
         logger.warning(
             "Loki logging disabled: failed to resolve LOKI_URL secret(s): %s",
@@ -232,7 +315,10 @@ def _resolve_config(env: object) -> _ResolvedConfig:
         loki_url = ""
 
     provider_lists = {
-        _resolve_secrets(path, env): _resolve_providers(providers, env)
+        _resolve_secrets(data=path, env=env): _resolve_providers(
+            providers=providers,
+            env=env,
+        )
         for path, providers in _PROVIDER_LISTS.items()
     }
 
@@ -241,7 +327,10 @@ def _resolve_config(env: object) -> _ResolvedConfig:
         config_endpoint=config_ep,
         loki_url=loki_url,
         provider_lists=provider_lists,
-        bypass_provider_list=_resolve_providers(_BYPASS_PROVIDER_LIST, env),
+        bypass_provider_list=_resolve_providers(
+            providers=_BYPASS_PROVIDER_LIST,
+            env=env,
+        ),
     )
 
     if loki_url or not config.LOKI_URL:
@@ -251,10 +340,22 @@ def _resolve_config(env: object) -> _ResolvedConfig:
 
 
 class Default(WorkerEntrypoint):
-    """Cloudflare Worker entrypoint handling DNS-over-HTTPS requests."""
+    """
+    Cloudflare Worker entrypoint handling DNS-over-HTTPS requests.
+
+    Inherits from WorkerEntrypoint.
+    """
 
     async def fetch(self, request: object) -> Response:
-        """Top-level request handler with global exception guard."""
+        """
+        Top-level request handler with global exception guard.
+
+        Parameters:
+        request (object): Incoming HTTP request.
+
+        Returns:
+        Response: HTTP response object.
+        """
         try:
             return await self._handle(request)
         except Exception:
@@ -262,7 +363,15 @@ class Default(WorkerEntrypoint):
             return Response("Internal server error", status=500)
 
     async def _handle(self, request: object) -> Response:
-        """Route the request to health, config, or DoH handler."""
+        """
+        Route the request to health, config, or DoH handler.
+
+        Parameters:
+        request (object): Incoming HTTP request.
+
+        Returns:
+        Response: HTTP response object.
+        """
         parsed_url = urllib.parse.urlparse(str(request.url))
         pathname = parsed_url.path
 
@@ -273,10 +382,10 @@ class Default(WorkerEntrypoint):
             return Response("Internal server error", status=500)
 
         if cfg.health_endpoint and pathname == cfg.health_endpoint:
-            return Response("ok", status=200)
+            return _handle_health(cfg)
 
         if cfg.config_endpoint and pathname == cfg.config_endpoint:
-            return _handle_config(request, self.env)
+            return _handle_config(request=request, env=self.env)
 
         doh_providers = cfg.provider_lists.get(pathname)
 
@@ -284,14 +393,40 @@ class Default(WorkerEntrypoint):
             return Response("", status=404)
 
         return await _handle_request(
-            request,
-            pathname,
-            doh_providers,
-            cfg,
-            self.env,
-            self.ctx,
-            parsed_url,
+            request=request,
+            endpoint=pathname,
+            doh_providers=doh_providers,
+            cfg=cfg,
+            env=self.env,
+            ctx=self.ctx,
+            parsed_url=parsed_url,
         )
+
+
+def _handle_health(cfg: _ResolvedConfig) -> Response:
+    """
+    Return a lightweight JSON health response.
+
+    Parameters:
+    cfg (_ResolvedConfig): The resolved runtime configuration.
+
+    Returns:
+    Response: HTTP response with status 200 and a JSON body containing status and endpoint count.
+    """
+    body = json.dumps(
+        {
+            "status": "ok",
+            "endpoints": len(cfg.provider_lists),
+        },
+    )
+    return Response(
+        body,
+        status=200,
+        headers={
+            "content-type": "application/json",
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 _CONFIG_ALLOWLIST = frozenset(
@@ -314,7 +449,16 @@ _CONFIG_ALLOWLIST = frozenset(
 
 
 def _handle_config(request: object, env: object) -> Response:
-    """Return current runtime configuration as JSON, gated by ADMIN_TOKEN secret."""
+    """
+    Return current runtime configuration as JSON, gated by ADMIN_TOKEN secret.
+
+    Parameters:
+    request (object): Incoming HTTP request.
+    env (object): Environment with secrets.
+
+    Returns:
+    Response: HTTP response with JSON config or error.
+    """
     token = getattr(env, "ADMIN_TOKEN", None)
 
     if not token:
@@ -343,12 +487,20 @@ def _handle_config(request: object, env: object) -> Response:
     )
 
 
-def _json_default(obj: object) -> list:
-    """JSON serializer fallback for set objects."""
-    if isinstance(obj, set):
-        return sorted(obj)
+def _json_default(value: object) -> list:
+    """
+    JSON serializer fallback for set objects.
 
-    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+    Parameters:
+    value (object): Value to serialize.
+
+    Returns:
+    list: Sorted list if value is set.
+    """
+    if isinstance(value, set):
+        return sorted(value)
+
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
 _HEADER_PREFIX = "CLOUDFLARE-DOH-WORKER"
@@ -392,7 +544,32 @@ def _build_response_headers(
     providers_retried: int = 0,
     response_from_main: bool | None = None,
 ) -> dict:
-    """Build response headers with optional DEBUG diagnostics."""
+    """
+    Build response headers with optional DEBUG diagnostics.
+
+    Parameters:
+    content_type (str): Content-Type header value.
+    response_from (str): Provider ID.
+    response_codes (list[str] | None): Per-provider status codes.
+    possibly_blocked (list[str] | None): Possibly blocked providers.
+    blocked (list[str] | None): Blocked providers.
+    timed_out (list[str] | None): Timed out providers.
+    connection_error (list[str] | None): Providers with connection errors.
+    config_allowed (bool): Is config allowed.
+    config_blocked (bool): Is config blocked.
+    rebind (bool): Rebind protection triggered.
+    ecs_truncated (str): ECS truncation description.
+    providers_queried (int): Number of providers queried.
+    providers_failed (int): Number of providers failed.
+    providers_timed_out (int): Number of providers timed out.
+    providers_conn_error (int): Number of providers with connection errors.
+    providers_failed_status (int): Number of providers failed with status code.
+    providers_retried (int): Number of providers retried.
+    response_from_main (bool | None): Response from main provider.
+
+    Returns:
+    dict: Response headers.
+    """
     headers = {"content-type": content_type}
 
     if rebind:
@@ -434,7 +611,15 @@ def _build_response_headers(
 
 
 def _to_js_body(body: bytes | bytearray | str) -> object:
-    """Convert Python bytes to a JS Uint8Array for Cloudflare Workers Response."""
+    """
+    Convert Python bytes to a JS Uint8Array for Cloudflare Workers Response.
+
+    Parameters:
+    body (bytes | bytearray | str): Response body.
+
+    Returns:
+    object: JS Uint8Array or original body.
+    """
     if isinstance(body, (bytes, bytearray)):
         from pyodide.ffi import to_js
 
@@ -444,7 +629,15 @@ def _to_js_body(body: bytes | bytearray | str) -> object:
 
 
 def _negotiate_accept(raw: str) -> str:
-    """Return the first supported media type from a raw Accept header."""
+    """
+    Return the first supported media type from a raw Accept header.
+
+    Parameters:
+    raw (str): Raw Accept header value.
+
+    Returns:
+    str: Supported media type or empty string.
+    """
     for part in raw.split(","):
         media_type = part.split(";", 1)[0].strip().lower()
         if media_type in SUPPORTED_ACCEPT_HEADERS:
@@ -454,9 +647,23 @@ def _negotiate_accept(raw: str) -> str:
 
 
 class _RejectError(Exception):
-    """Raised to short-circuit _parse_dns_request with an error Response."""
+    """
+    Raised to short-circuit _parse_dns_request with an error Response.
+
+    Inherits from Exception.
+    """
 
     def __init__(self, message: str, status: int = 406) -> None:
+        """
+        Initialize _RejectError.
+
+        Parameters:
+        message (str): Error message.
+        status (int): HTTP status code (default 406).
+
+        Returns:
+        None
+        """
         self.response = Response(message, status=status)
 
 
@@ -466,13 +673,24 @@ async def _parse_dns_request(
     method: str,
     accept: str,
 ) -> DnsParseResult | Response:
-    """Parse DNS question and wire bytes; returns DnsParseResult or a Response on error."""
+    """
+    Parse DNS question and wire bytes; returns DnsParseResult or a Response on error.
+
+    Parameters:
+    request (object): Incoming HTTP request.
+    query_string (str): Query string.
+    method (str): HTTP method.
+    accept (str): Accept header value.
+
+    Returns:
+    DnsParseResult | Response: Parsed DNS result or error response.
+    """
     try:
         if method == "GET":
-            return _parse_get(query_string, accept)
+            return _parse_get(query_string=query_string, accept=accept)
 
         if method == "POST":
-            return await _parse_post(request, accept)
+            return await _parse_post(request=request, accept=accept)
 
         raise _RejectError(f"Method not allowed: {method}", status=405)
     except _RejectError as r:
@@ -480,7 +698,16 @@ async def _parse_dns_request(
 
 
 def _parse_get(query_string: str, accept: str) -> DnsParseResult:
-    """Parse a DNS question from GET query parameters."""
+    """
+    Parse a DNS question from GET query parameters.
+
+    Parameters:
+    query_string (str): Query string.
+    accept (str): Accept header value.
+
+    Returns:
+    DnsParseResult: Parsed DNS result.
+    """
     if not accept:
         supported = ", ".join(sorted(SUPPORTED_ACCEPT_HEADERS))
         raise _RejectError(f"Unsupported Accept header\n\nUse one of: {supported}")
@@ -536,7 +763,16 @@ def _parse_get(query_string: str, accept: str) -> DnsParseResult:
 
 
 async def _parse_post(request: object, accept: str) -> DnsParseResult:
-    """Parse a DNS wire message from a POST request body."""
+    """
+    Parse a DNS wire message from a POST request body.
+
+    Parameters:
+    request (object): Incoming HTTP request.
+    accept (str): Accept header value.
+
+    Returns:
+    DnsParseResult: Parsed DNS result.
+    """
     if accept != "application/dns-message":
         raise _RejectError("POST requires Accept: application/dns-message")
 
@@ -558,7 +794,15 @@ async def _parse_post(request: object, accept: str) -> DnsParseResult:
 
 
 def _select_winner(results: list[ProviderResult]) -> ProviderResult | None:
-    """Pick the best upstream result: blocked > possibly_blocked > main > any."""
+    """
+    Pick the best upstream result: blocked > possibly_blocked > main > any.
+
+    Parameters:
+    results (list[ProviderResult]): List of provider results.
+
+    Returns:
+    ProviderResult | None: Winning provider result or None.
+    """
     first_blocked = None
     first_possibly_blocked = None
     first_successful_main = None
@@ -608,8 +852,20 @@ def _make_rebind_blocked_response(
     ecs_truncated: str,
     parsed_request: object = None,
 ) -> Response | None:
-    """Build a synthetic NXDOMAIN when all successful responses have private IPs."""
-    """Build a synthetic NXDOMAIN when all successful responses have private IPs."""
+    """
+    Build a synthetic NXDOMAIN when all successful responses have private IPs.
+
+    Parameters:
+    results (list[ProviderResult]): List of provider results.
+    question (Question): DNS question tuple.
+    accept (str): Accept header value.
+    request_wire (bytes | None): Original DNS wire message.
+    ecs_truncated (str): ECS truncation description.
+    parsed_request (object): Parsed DNS message (optional).
+
+    Returns:
+    Response | None: Synthetic NXDOMAIN response or None.
+    """
     if not (
         config.REBIND_PROTECTION
         and any(r.rebind for r in results)
@@ -618,18 +874,18 @@ def _make_rebind_blocked_response(
         return None
 
     body, content_type = make_blocked_response(
-        question,
-        accept,
-        request_wire,
-        parsed_request,
+        question=question,
+        accept=accept,
+        request_wire=request_wire,
+        parsed_request=parsed_request,
     )
 
     return Response(
         _to_js_body(body),
         status=200,
         headers=_build_response_headers(
-            content_type,
-            "rebind-protection",
+            content_type=content_type,
+            response_from="rebind-protection",
             rebind=True,
             ecs_truncated=ecs_truncated,
         ),
@@ -643,7 +899,19 @@ def _build_winner_response(
     ecs_truncated: str,
     endpoint: str,
 ) -> Response:
-    """Build the final HTTP Response from the winning provider result."""
+    """
+    Build the final HTTP Response from the winning provider result.
+
+    Parameters:
+    winner (ProviderResult): Winning provider result.
+    results (list[ProviderResult]): List of provider results.
+    config_allowed (bool): Is config allowed.
+    ecs_truncated (str): ECS truncation description.
+    endpoint (str): Endpoint path.
+
+    Returns:
+    Response: Final HTTP response.
+    """
     response_codes = []
     blocked_ids = []
     possibly_blocked_ids = []
@@ -674,8 +942,8 @@ def _build_winner_response(
     rebind_triggered = any(result.rebind for result in results)
 
     response_headers = _build_response_headers(
-        winner.response_content_type,
-        winner.provider_id,
+        content_type=winner.response_content_type,
+        response_from=winner.provider_id,
         response_codes=response_codes,
         possibly_blocked=possibly_blocked_ids,
         blocked=blocked_ids,
@@ -720,7 +988,21 @@ async def _handle_request(
     ctx: object,
     parsed_url: urllib.parse.ParseResult,
 ) -> Response:
-    """Core DoH handler: parse, fan-out to providers, select winner, respond."""
+    """
+    Core DoH handler: parse, fan-out to providers, select winner, respond.
+
+    Parameters:
+    request (object): Incoming HTTP request.
+    endpoint (str): Endpoint path.
+    doh_providers (list[dict]): List of provider dicts.
+    cfg (_ResolvedConfig): Resolved config.
+    env (object): Environment with secrets.
+    ctx (object): Worker context.
+    parsed_url (urllib.parse.ParseResult): Parsed URL.
+
+    Returns:
+    Response: Final HTTP response.
+    """
     request_timestamp_ms = int(time.time() * 1000)
     client_ip = str(request.headers.get("cf-connecting-ip") or "unknown")
     query = f"?{parsed_url.query}" if parsed_url.query else ""
@@ -735,7 +1017,12 @@ async def _handle_request(
         and getattr(env, "LOKI_PASSWORD", None),
     )
 
-    parsed = await _parse_dns_request(request, parsed_url.query, method, accept)
+    parsed = await _parse_dns_request(
+        request=request,
+        query_string=parsed_url.query,
+        method=method,
+        accept=accept,
+    )
     if isinstance(parsed, Response):
         return parsed
 
@@ -752,7 +1039,9 @@ async def _handle_request(
         query = "?" + urllib.parse.urlencode(_json_params)
 
     name = question.name
-    config_allowed = bool(name and domain_matches(name, _ALLOWED_COMPILED))
+    config_allowed = bool(
+        name and domain_matches(name=name, compiled=_ALLOWED_COMPILED),
+    )
 
     config_blocked = False
     error = False
@@ -762,20 +1051,20 @@ async def _handle_request(
     if config_allowed:
         doh_providers = cfg.bypass_provider_list
 
-    if name and domain_matches(name, _BLOCKED_COMPILED):
+    if name and domain_matches(name=name, compiled=_BLOCKED_COMPILED):
         body, content_type = make_blocked_response(
-            question,
-            accept,
-            request_wire,
-            parsed_request,
+            question=question,
+            accept=accept,
+            request_wire=request_wire,
+            parsed_request=parsed_request,
         )
 
         final_response = Response(
             _to_js_body(body),
             status=200,
             headers=_build_response_headers(
-                content_type,
-                "config",
+                content_type=content_type,
+                response_from="config",
                 config_blocked=True,
                 ecs_truncated=ecs_truncated,
             ),
@@ -789,11 +1078,11 @@ async def _handle_request(
         try:
             results = await asyncio.wait_for(
                 send_doh_requests_fanout(
-                    doh_providers,
-                    method,
-                    accept,
-                    body_bytes,
-                    query,
+                    doh_providers=doh_providers,
+                    method=method,
+                    accept=accept,
+                    body_bytes=body_bytes,
+                    query=query,
                 ),
                 timeout=safety_seconds,
             )
@@ -811,12 +1100,12 @@ async def _handle_request(
 
         try:
             rebind_response = _make_rebind_blocked_response(
-                results,
-                question,
-                accept,
-                request_wire,
-                ecs_truncated,
-                parsed_request,
+                results=results,
+                question=question,
+                accept=accept,
+                request_wire=request_wire,
+                ecs_truncated=ecs_truncated,
+                parsed_request=parsed_request,
             )
 
             if rebind_response is not None:
@@ -826,11 +1115,11 @@ async def _handle_request(
             elif winner := _select_winner(results):
                 response_from = winner.provider_id
                 final_response = _build_winner_response(
-                    winner,
-                    results,
-                    config_allowed,
-                    ecs_truncated,
-                    endpoint,
+                    winner=winner,
+                    results=results,
+                    config_allowed=config_allowed,
+                    ecs_truncated=ecs_truncated,
+                    endpoint=endpoint,
                 )
             else:
                 error = True
@@ -845,13 +1134,13 @@ async def _handle_request(
 
     if loki_enabled:
         promise = build_loki_fetch_promise(
-            request_timestamp_ms,
-            endpoint,
-            question,
-            response_from,
-            results,
-            env,
-            loki_url,
+            request_timestamp_ms=request_timestamp_ms,
+            endpoint=endpoint,
+            question=question,
+            response_from=response_from,
+            results=results,
+            env=env,
+            loki_url=loki_url,
             client_ip=client_ip,
             config_blocked=config_blocked,
             config_allowed=config_allowed,
