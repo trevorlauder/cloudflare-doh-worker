@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3] - 2026-03-14
+
+### Build
+
+- Fix release notes generation ([#95](https://github.com/trevorlauder/cloudflare-doh-worker/pull/95))
+- Comment routes so first deploy doesn't throw an error ([#96](https://github.com/trevorlauder/cloudflare-doh-worker/pull/96))
+
 ## [1.0.2] - 2026-03-14
 
 ### Build
