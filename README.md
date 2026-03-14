@@ -107,7 +107,9 @@ Each endpoint has one `main_provider` (whose answer is used when nothing is bloc
 
 Each provider dict accepts `url`, and optionally `headers` and `dns_json`. Add `"dns_json": True` to providers that support `application/dns-json` so they aren't skipped for those requests.
 
-If your repo is public, use `${SECRET_NAME}` placeholders for sensitive values like endpoint paths and provider paths. They're resolved from Cloudflare Worker secrets at runtime. Setting your endpoint paths to include random strings keeps them from being discovered.
+If your repo is public, use `${SECRET_NAME}` placeholders for sensitive values like endpoint paths and provider paths. Placeholders are resolved from Cloudflare Worker secrets on the first request and cached for the lifetime of the Worker instance. Changes to secrets take effect when the Worker is redeployed or replaced. Setting your endpoint paths to include random strings keeps them from being discovered.
+
+See [`examples/config.py`](examples/config.py) for a real-world example configuration.
 
 ```python
 DEBUG = False
