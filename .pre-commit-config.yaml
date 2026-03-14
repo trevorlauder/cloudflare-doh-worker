@@ -18,7 +18,6 @@ repos:
         args:
           - --fix=lf
       - id: check-added-large-files
-
   - repo: local
     hooks:
       - id: dprint

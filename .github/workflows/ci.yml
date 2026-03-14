@@ -27,6 +27,7 @@ jobs:
         with:
           install: true
           cache: true
+          install_args: actionlint buildifier dprint hadolint node pre-commit python ruff shellcheck trufflehog uv zizmor
       - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: ~/.cache/pre-commit
@@ -78,6 +79,7 @@ jobs:
         with:
           install: true
           cache: true
+          install_args: uv
       - run: uv sync --group dev
       - run: uv run pytest tests/test_unit.py
 
@@ -98,6 +100,7 @@ jobs:
         with:
           install: true
           cache: true
+          install_args: k3d kubectl tilt uv
       - name: Create k3d cluster
         run: make k3d-create
       - name: Login to GHCR
