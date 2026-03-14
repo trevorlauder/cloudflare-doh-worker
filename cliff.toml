@@ -10,13 +10,13 @@ body = """
 {% if commits | filter(attribute="breaking", value=true) | length > 0 %}
 ### ⚠ Breaking Changes
 {% for commit in commits | filter(attribute="breaking", value=true) %}
-- {% if commit.scope %}**{{ commit.scope }}**: {% endif %}{{ commit.message | upper_first }}{% if commit.remote.pr_number %} ([#{{ commit.remote.pr_number }}](https://github.com/trevorlauder/cloudflare-doh-worker/pull/{{ commit.remote.pr_number }})){% endif %}\
+- {% if commit.scope %}**{{ commit.scope }}**: {% endif %}{{ commit.message | upper_first }}\
 {% endfor %}
 {% endif %}\
 {% for group, commits in commits | group_by(attribute="group") %}
 ### {{ group }}
 {% for commit in commits %}
-- {% if commit.scope %}**{{ commit.scope }}**: {% endif %}{{ commit.message | upper_first }}{% if commit.remote.pr_number %} ([#{{ commit.remote.pr_number }}](https://github.com/trevorlauder/cloudflare-doh-worker/pull/{{ commit.remote.pr_number }})){% endif %}\
+- {% if commit.scope %}**{{ commit.scope }}**: {% endif %}{{ commit.message | upper_first }}\
 {% endfor %}
 {% endfor %}\n
 """
@@ -31,7 +31,7 @@ protect_breaking_changes = true
 
 commit_preprocessors = [
   { pattern = '\n[\s\S]*', replace = "" },
-  { pattern = '\(#\d+\)', replace = "" },
+  { pattern = '\(#(\d+)\)', replace = " ([#$1](https://github.com/trevorlauder/cloudflare-doh-worker/pull/$1))" },
   { pattern = '\.+$', replace = "" },
 ]
 
