@@ -22,6 +22,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3.6.3
+        with:
+          install: true
+          cache: false
+          install_args: git-cliff
+
       - name: Build deploy tree
         env:
           TAG: ${{ github.ref_name }}
@@ -46,6 +52,9 @@ jobs:
 
           Grafana dashboard for this release:
           https://github.com/${GH_REPOSITORY}/blob/${TAG}/dashboard/grafana.json
+
+          Additional example configs:
+          https://github.com/${GH_REPOSITORY}/blob/${TAG}/examples/
           EOF
 
       - name: Push deploy branch
@@ -70,3 +79,15 @@ jobs:
 
           git tag "deploy-${TAG}"
           git push origin "deploy-${TAG}"
+
+      - name: Create GitHub release
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          notes=$(GITHUB_TOKEN="${GH_TOKEN}" git cliff --tag "${TAG}" --latest --strip all)
+          gh release create "${TAG}" \
+            --title "${TAG}" \
+            --notes "${notes}" \
+            --repo "${GH_REPOSITORY}"
