@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.0.2] - 2026-03-14
+
+### Build
+
+- Add release to CI ([#92](https://github.com/trevorlauder/cloudflare-doh-worker/pull/92))
+- Update mise sha ([#93](https://github.com/trevorlauder/cloudflare-doh-worker/pull/93))
+
+### Dependencies
+
+- **deps**: Update dependency uv to v0.10.10 ([#89](https://github.com/trevorlauder/cloudflare-doh-worker/pull/89))
+- **deps**: Update dependency jdx/mise to v2026.3.9 ([#88](https://github.com/trevorlauder/cloudflare-doh-worker/pull/88))
+- **deps**: Update jdx/mise-action action to v4 ([#91](https://github.com/trevorlauder/cloudflare-doh-worker/pull/91))
+
+### Documentation
+
+- Update README feature wording ([#86](https://github.com/trevorlauder/cloudflare-doh-worker/pull/86))
+- README fixes ([#87](https://github.com/trevorlauder/cloudflare-doh-worker/pull/87))
+- Add example config ([#90](https://github.com/trevorlauder/cloudflare-doh-worker/pull/90))
+
 ## [1.0.1] - 2026-03-13
 
 ### Dependencies
