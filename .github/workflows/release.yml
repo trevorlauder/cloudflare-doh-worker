@@ -86,7 +86,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPOSITORY: ${{ github.repository }}
         run: |
-          notes=$(GITHUB_TOKEN="${GH_TOKEN}" git cliff --tag "${TAG}" --latest --strip all)
+          notes=$(awk "/^## \[${TAG}\]/{found=1; next} found && /^## /{exit} found{print}" CHANGELOG.md)
           gh release create "${TAG}" \
             --title "${TAG}" \
             --notes "${notes}" \
