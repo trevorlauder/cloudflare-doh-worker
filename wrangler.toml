@@ -11,9 +11,9 @@ compatibility_flags = [
 ]
 
 # Use a custom route if you have your own domain on Cloudflare
-routes = [
-  "www.mydomain.com/top/level/path/to/entrypoints/*",
-]
+# routes = [
+#   "www.mydomain.com/top/level/path/to/entrypoints/*",
+# ]
 
 main = "src/worker.py"
 
