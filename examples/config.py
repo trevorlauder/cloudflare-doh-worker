@@ -54,6 +54,8 @@ LOKI_TIMEOUT_MS = 5000
 
 RETRY_MAX_ATTEMPTS = 2
 
+CACHE_DNS = True
+
 ENDPOINTS = {
     f"{_ENDPOINT_PREFIX}/home/firewall": {
         "main_provider": {

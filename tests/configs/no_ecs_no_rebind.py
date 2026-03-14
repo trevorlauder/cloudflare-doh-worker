@@ -32,6 +32,8 @@ LOKI_TIMEOUT_MS = 5000
 
 RETRY_MAX_ATTEMPTS = 2
 
+CACHE_DNS = True
+
 ENDPOINTS = {
     "/doh/my-device": {
         "main_provider": {

@@ -118,26 +118,30 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+deploy = [
+    { name = "workers-py" },
+    { name = "workers-runtime-sdk" },
+]
 dev = [
     { name = "curl-cffi" },
     { name = "pytest" },
     { name = "pytest-rerunfailures" },
     { name = "pytest-xdist" },
-    { name = "workers-py" },
-    { name = "workers-runtime-sdk" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "dnspython", specifier = "~=2.8.0" }]
+requires-dist = [{ name = "dnspython" }]
 
 [package.metadata.requires-dev]
+deploy = [
+    { name = "workers-py" },
+    { name = "workers-runtime-sdk" },
+]
 dev = [
-    { name = "curl-cffi", specifier = "~=0.14.0" },
-    { name = "pytest", specifier = "~=9.0.2" },
-    { name = "pytest-rerunfailures", specifier = "~=16.1" },
-    { name = "pytest-xdist", specifier = "~=3.6" },
-    { name = "workers-py", specifier = "~=1.9.0" },
-    { name = "workers-runtime-sdk", specifier = "~=1.1.0" },
+    { name = "curl-cffi" },
+    { name = "pytest" },
+    { name = "pytest-rerunfailures" },
+    { name = "pytest-xdist" },
 ]
 
 [[package]]
