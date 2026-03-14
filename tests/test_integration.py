@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import random
 import string
+import time
 import tomllib
 import urllib.error
 from urllib.parse import urlparse
@@ -27,6 +28,7 @@ from config import (
     ALLOWED_DOMAINS,
     BLOCKED_DOMAINS,
     BYPASS_PROVIDER,
+    CACHE_DNS,
     CONFIG_ENDPOINT,
     DEBUG,
     ECS_TRUNCATION,
@@ -62,6 +64,8 @@ DEFAULT_HEADERS = {
 TIMEOUT = 10
 
 MOCK_DOH_URL = f"https://{urlparse(BASE_URL).netloc}/mock-doh"
+
+_HEADER_CACHE = "cloudflare-doh-worker-cache"
 
 
 def _assert_worker_headers(headers: object) -> None:
@@ -247,7 +251,7 @@ def test_unsupported_method_returns_405(method: str):
 def test_http3_alt_svc_advertised():
     with urllib.request.urlopen(
         _request(
-            f"{BASE_URL}{TEST_ENDPOINTS[0]}?name=google.com&type=A",
+            f"{BASE_URL}{TEST_ENDPOINTS[0]}?name=mozilla.org&type=A",
             headers={"Accept": "application/dns-json"},
         ),
         timeout=TIMEOUT,
@@ -267,7 +271,7 @@ def test_http3_alt_svc_advertised():
 )
 def test_http3_udp():
     resp = cffi_requests.get(
-        f"{BASE_URL}{TEST_ENDPOINTS[0]}?name=google.com&type=A",
+        f"{BASE_URL}{TEST_ENDPOINTS[0]}?name=apple.com&type=A",
         http_version=CurlHttpVersion.V3ONLY,
         headers={"Accept": "application/dns-json", **DEFAULT_HEADERS},
         timeout=TIMEOUT,
@@ -284,7 +288,7 @@ def test_http3_udp():
 )
 @pytest.mark.parametrize("endpoint", TEST_ENDPOINTS)
 def test_get_dns_json_name(endpoint: str):
-    status, headers, data = _get_json("google.com", "A", endpoint)
+    status, headers, data = _get_json("nextdns.io", "A", endpoint)
     assert status == 200
     content_type = headers.get("content-type", "")
     assert "dns-json" in content_type or "json" in content_type, (
@@ -342,7 +346,7 @@ def test_allowed_domain_uses_bypass_provider():
         assert BYPASS_PROVIDER["url"] in response_from, (
             f"expected bypass provider {BYPASS_PROVIDER['url']!r} in response-from, got {response_from!r}"
         )
-    _assert_worker_headers(headers)
+        _assert_worker_headers(headers)
 
 
 @pytest.mark.skipif(
@@ -641,7 +645,6 @@ def test_post_empty_body_returns_400():
 
 def _assert_provider_stat_headers(headers: object) -> None:
     """Check provider stat headers on a successful response."""
-
     queried = headers.get("cloudflare-doh-worker-providers-queried", "")
     assert queried, (
         f"expected CLOUDFLARE-DOH-WORKER-PROVIDERS-QUERIED to be present, got {queried!r}"
@@ -669,7 +672,7 @@ def _assert_provider_stat_headers(headers: object) -> None:
     reason="mock-doh provider does not support DNS-JSON",
 )
 def test_provider_stat_headers_present_on_dns_json():
-    status, headers, _ = _get_json("google.com", "A")
+    status, headers, _ = _get_json("ubuntu.com", "A")
     assert status == 200
     _assert_provider_stat_headers(headers)
 
@@ -756,7 +759,7 @@ def test_head_request_returns_405():
 )
 @pytest.mark.parametrize("qtype", ["AAAA", "TXT", "MX"])
 def test_get_dns_json_query_type(qtype: str):
-    status, headers, data = _get_json("google.com", qtype)
+    status, headers, data = _get_json("wikipedia.org", qtype)
     assert status == 200
     assert "Status" in data
     _assert_worker_headers(headers)
@@ -1070,3 +1073,40 @@ def test_mock_doh_no_ecs_forwarded_clean_via_get():
     assert _get_wire(wire)[0] == 200
     ecs = _mock_doh_last_ecs()
     assert ecs is None, f"expected no ECS option forwarded, got {ecs}"
+
+
+def _parse_max_age(headers: object) -> int | None:
+    cc = headers.get("cache-control", "")
+    return int(cc.split("=", 1)[1]) if cc.startswith("max-age=") else None
+
+
+@pytest.mark.skipif(not CACHE_DNS, reason="CACHE_DNS is disabled")
+@pytest.mark.skipif(MOCK_DOH_ENABLED, reason="mock-doh does not support DNS-JSON")
+def test_cache_response_header_absent_on_miss():
+    suffix = "".join(random.choices(string.ascii_lowercase, k=16))
+    _, headers, _ = _get_json(f"miss-{suffix}.trevorlauder.dev", "A")
+    assert headers.get(_HEADER_CACHE) != "HIT"
+
+
+@pytest.mark.skipif(not CACHE_DNS, reason="CACHE_DNS is disabled")
+@pytest.mark.skipif(IS_LOCAL, reason="Cache API not available in local dev")
+@pytest.mark.skipif(MOCK_DOH_ENABLED, reason="mock-doh does not support DNS-JSON")
+def test_cache_hit_on_repeated_get_json_query():
+    assert _get_json("google.com", "A")[0] == 200
+    time.sleep(1)
+    _, headers, _ = _get_json("google.com", "A")
+    assert headers.get(_HEADER_CACHE) == "HIT"
+
+
+@pytest.mark.skipif(not CACHE_DNS, reason="CACHE_DNS is disabled")
+@pytest.mark.skipif(IS_LOCAL, reason="Cache API not available in local dev")
+@pytest.mark.skipif(MOCK_DOH_ENABLED, reason="mock-doh does not support DNS-JSON")
+def test_cache_hit_remaining_ttl_not_greater_than_miss():
+    miss_ttl = _parse_max_age(_get_json("cloudflare.com", "A")[1])
+    assert miss_ttl is not None, "miss response missing Cache-Control: max-age"
+    time.sleep(1)
+    _, headers, _ = _get_json("cloudflare.com", "A")
+    if headers.get(_HEADER_CACHE) == "HIT":
+        hit_ttl = _parse_max_age(headers)
+        assert hit_ttl is not None, "hit response missing Cache-Control: max-age"
+        assert hit_ttl <= miss_ttl

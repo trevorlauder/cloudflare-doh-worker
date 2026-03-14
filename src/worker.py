@@ -81,6 +81,7 @@ _CONFIG_TYPE_RULES: list[tuple[str, type | tuple]] = [
     ("LOKI_TIMEOUT_MS", int),
     ("RETRY_MAX_ATTEMPTS", int),
     ("REBIND_PROTECTION", bool),
+    ("CACHE_DNS", bool),
     ("BLOCKED_DOMAINS", list),
     ("ALLOWED_DOMAINS", list),
     ("BYPASS_PROVIDER", dict),
@@ -443,6 +444,7 @@ _CONFIG_ALLOWLIST = frozenset(
         "LOKI_URL",
         "LOKI_TIMEOUT_MS",
         "RETRY_MAX_ATTEMPTS",
+        "CACHE_DNS",
         "ENDPOINTS",
     },
 )
@@ -521,6 +523,7 @@ _HEADER_PROVIDERS_CONN_ERROR = f"{_HEADER_PREFIX}-PROVIDERS-CONNECTION-ERROR"
 _HEADER_PROVIDERS_FAILED_STATUS = f"{_HEADER_PREFIX}-PROVIDERS-FAILED-STATUS-CODE"
 _HEADER_PROVIDERS_RETRIED = f"{_HEADER_PREFIX}-PROVIDERS-RETRIED"
 _HEADER_RESPONSE_FROM_MAIN = f"{_HEADER_PREFIX}-RESPONSE-FROM-MAIN"
+_HEADER_CACHE = f"{_HEADER_PREFIX}-CACHE"
 
 
 def _build_response_headers(
@@ -979,6 +982,152 @@ def _build_winner_response(
     )
 
 
+_CACHE_KEY_BASE = "https://doh-cache.internal"
+
+
+def _build_cache_key(
+    endpoint: str,
+    body_bytes: bytes | None,
+    question: Question,
+) -> str | None:
+    """
+    Build a synthetic cache URL that uniquely identifies a DNS request.
+
+    For wire-format requests the query bytes are base64url-encoded into a
+    ?dns= parameter (mirroring the DoH GET format).  For JSON GET
+    requests the name and type are encoded as ?name=&type= parameters.
+    The endpoint path is included so that different device endpoints with
+    different upstream providers always produce distinct cache keys.
+
+    Parameters:
+    endpoint (str): Worker endpoint path.
+    body_bytes (bytes | None): ECS-truncated DNS wire bytes, or None for JSON GET.
+    question (Question): Parsed DNS question (name and type).
+
+    Returns:
+    str | None: Synthetic cache URL, or None if a key cannot be built.
+    """
+    if body_bytes is not None:
+        encoded = base64.urlsafe_b64encode(body_bytes).rstrip(b"=").decode("ascii")
+        return f"{_CACHE_KEY_BASE}{endpoint}?dns={encoded}"
+
+    if question.name:
+        params = {
+            "name": question.name,
+            **(({"type": question.type}) if question.type else {}),
+        }
+        return f"{_CACHE_KEY_BASE}{endpoint}?" + urllib.parse.urlencode(params)
+
+    return None
+
+
+async def _try_cache_get(cache_key: str) -> Response | None:
+    """
+    Look up a DNS response in the Cloudflare Cache API.
+
+    Returns the cached Response on a hit, or None on a miss or any error.
+    The Cache-Control: max-age on the returned response reflects the
+    remaining TTL (original max-age minus the Age the cache reports),
+    so the client sees an accurate TTL rather than the original stored value.
+    Cache errors are intentionally non-fatal so a lookup failure never
+    breaks request handling.
+
+    Parameters:
+    cache_key (str): Synthetic cache URL built by _build_cache_key.
+
+    Returns:
+    Response | None: Cached response with a HIT header, or None.
+    """
+    try:
+        from js import caches
+
+        cached = await caches.default.match(cache_key)
+
+        if cached is None:
+            return None
+
+        body = await cached.bytes()
+
+        content_type = str(
+            cached.headers.get("content-type") or "application/dns-message",
+        )
+
+        response_headers: dict[str, str] = {
+            "content-type": content_type,
+            _HEADER_CACHE: "HIT",
+        }
+
+        try:
+            cc = str(cached.headers.get("cache-control") or "")
+            age = int(cached.headers.get("age") or 0)
+            part = next(
+                (p.strip() for p in cc.split(",") if p.strip().startswith("max-age=")),
+                None,
+            )
+            if part:
+                response_headers["Cache-Control"] = (
+                    f"max-age={max(0, int(part[8:]) - age)}"
+                )
+        except (ValueError, AttributeError):
+            pass
+
+        return Response(
+            _to_js_body(body),
+            status=200,
+            headers=response_headers,
+        )
+    except Exception:
+        logger.debug("Cache get failed for %s", cache_key, exc_info=True)
+        return None
+
+
+def _schedule_cache_put(
+    ctx: object,
+    cache_key: str,
+    body: bytes | str,
+    content_type: str,
+    min_ttl: int,
+) -> None:
+    """
+    Schedule a DNS response to be stored in the Cloudflare Cache API.
+
+    Uses ctx.waitUntil so the cache write does not block the response
+    being returned to the client.  The Cache-Control: max-age is set
+    to the DNS response's minimum TTL so the entry expires at the right time.
+    Errors are non-fatal.
+
+    Parameters:
+    ctx (object): Worker execution context.
+    cache_key (str): Synthetic cache URL built by _build_cache_key.
+    body (bytes | str): DNS response body to cache.
+    content_type (str): Content-Type of the response (wire or JSON).
+    min_ttl (int): Minimum TTL from the DNS response in seconds.
+
+    Returns:
+    None
+    """
+    try:
+        from js import Object, caches
+        from js import Response as JsResponse
+        from pyodide.ffi import to_js
+
+        js_body = _to_js_body(body)
+        init = to_js(
+            {
+                "status": 200,
+                "headers": {
+                    "content-type": content_type,
+                    "Cache-Control": f"max-age={min_ttl}",
+                },
+            },
+            dict_converter=Object.fromEntries,
+        )
+
+        ctx.waitUntil(caches.default.put(cache_key, JsResponse.new(js_body, init)))
+    except Exception:
+        logger.debug("Cache put failed for %s", cache_key, exc_info=True)
+
+
 async def _handle_request(
     request: object,
     endpoint: str,
@@ -1043,6 +1192,14 @@ async def _handle_request(
         name and domain_matches(name=name, compiled=_ALLOWED_COMPILED),
     )
 
+    cache_key: str | None = None
+    if config.CACHE_DNS:
+        cache_key = _build_cache_key(
+            endpoint=endpoint,
+            body_bytes=body_bytes,
+            question=question,
+        )
+
     config_blocked = False
     error = False
     results = []
@@ -1073,6 +1230,11 @@ async def _handle_request(
         config_blocked = True
         response_from = "config"
     else:
+        if cache_key:
+            cached_response = await _try_cache_get(cache_key)
+            if cached_response is not None:
+                return cached_response
+
         safety_seconds = config.TIMEOUT_MS / 1000 + 2
 
         try:
@@ -1121,6 +1283,16 @@ async def _handle_request(
                     ecs_truncated=ecs_truncated,
                     endpoint=endpoint,
                 )
+
+                min_ttl = get_response_min_ttl(winner)
+                if cache_key and min_ttl and min_ttl > 0:
+                    _schedule_cache_put(
+                        ctx=ctx,
+                        cache_key=cache_key,
+                        body=winner.response_body,
+                        content_type=winner.response_content_type,
+                        min_ttl=min_ttl,
+                    )
             else:
                 error = True
                 final_response = Response(
