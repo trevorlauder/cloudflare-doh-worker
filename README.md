@@ -167,20 +167,21 @@ See the full set of options with defaults in `src/config.py`.
 <details>
 <summary>All configuration options</summary>
 
-| Option               | Default                                                             | Description                                                                                          |
-| -------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `DEBUG`              | `False`                                                             | Enable verbose logging and diagnostic response headers                                               |
-| `CONFIG_ENDPOINT`    | `None`                                                              | Path for the authenticated config endpoint (requires `ADMIN_TOKEN` secret)                           |
-| `HEALTH_ENDPOINT`    | `None`                                                              | Path for the health-check endpoint                                                                   |
-| `TIMEOUT_MS`         | `5000`                                                              | Upstream provider timeout in milliseconds                                                            |
-| `ECS_TRUNCATION`     | `{"enabled": False}`                                                | Truncate EDNS Client Subnet prefixes for privacy                                                     |
-| `REBIND_PROTECTION`  | `True`                                                              | Block responses that resolve to private/internal IPs                                                 |
-| `BLOCKED_DOMAINS`    | `[]`                                                                | Domains to block with synthetic `NXDOMAIN` (supports `*.example.com` wildcards)                      |
-| `ALLOWED_DOMAINS`    | `[]`                                                                | Domains to bypass fan-out and send to `BYPASS_PROVIDER` only                                         |
-| `BYPASS_PROVIDER`    | `{"url": "https://cloudflare-dns.com/dns-query", "dns_json": True}` | Non-filtering provider used for allowed domains                                                      |
-| `LOKI_URL`           | `""`                                                                | Grafana Loki push endpoint (also requires `LOKI_USERNAME` and `LOKI_PASSWORD` secrets)               |
-| `LOKI_TIMEOUT_MS`    | `5000`                                                              | Loki push timeout in milliseconds                                                                    |
-| `RETRY_MAX_ATTEMPTS` | `2`                                                                 | Number of times to retry a provider on 5xx responses before marking it failed; set to `0` to disable |
+| Option               | Default                                                             | Description                                                                                                                                             |
+| -------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DEBUG`              | `False`                                                             | Enable verbose logging and diagnostic response headers                                                                                                  |
+| `CONFIG_ENDPOINT`    | `None`                                                              | Path for the authenticated config endpoint (requires `ADMIN_TOKEN` secret)                                                                              |
+| `HEALTH_ENDPOINT`    | `None`                                                              | Path for the health-check endpoint                                                                                                                      |
+| `TIMEOUT_MS`         | `5000`                                                              | Upstream provider timeout in milliseconds                                                                                                               |
+| `ECS_TRUNCATION`     | `{"enabled": False}`                                                | Truncate EDNS Client Subnet prefixes for privacy. Optional `ipv4_prefix` (default `24`) and `ipv6_prefix` (default `64`) control the truncation lengths |
+| `REBIND_PROTECTION`  | `True`                                                              | Block responses that resolve to private/internal IPs                                                                                                    |
+| `BLOCKED_DOMAINS`    | `[]`                                                                | Domains to block with synthetic `NXDOMAIN` (supports `*.example.com` wildcards)                                                                         |
+| `ALLOWED_DOMAINS`    | `[]`                                                                | Domains to bypass fan-out and send to `BYPASS_PROVIDER` only                                                                                            |
+| `BYPASS_PROVIDER`    | `{"url": "https://cloudflare-dns.com/dns-query", "dns_json": True}` | Non-filtering provider used for allowed domains                                                                                                         |
+| `LOKI_URL`           | `""`                                                                | Grafana Loki push endpoint (also requires `LOKI_USERNAME` and `LOKI_PASSWORD` secrets)                                                                  |
+| `LOKI_TIMEOUT_MS`    | `5000`                                                              | Loki push timeout in milliseconds                                                                                                                       |
+| `RETRY_MAX_ATTEMPTS` | `2`                                                                 | Number of times to retry a provider on 5xx responses before giving up. Set to `0` to disable retries                                                    |
+| `ENDPOINTS`          | `{}`                                                                | Map of URL paths to endpoint configs. Each entry requires a `main_provider` and optionally `additional_providers`                                       |
 
 </details>
 
