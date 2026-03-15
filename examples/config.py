@@ -13,7 +13,11 @@ Copy this into src/config.py and adjust it for your environment.
 See the README for full documentation of all available options.
 """
 
-_ADDITIONAL_PROVIDERS: list = [
+from typing import Literal
+
+from config_types import EcsConfig, EndpointConfig, Provider
+
+_ADDITIONAL_PROVIDERS: list[Provider] = [
     {
         "url": "https://dns11.quad9.net/dns-query",
     },
@@ -25,38 +29,40 @@ _ADDITIONAL_PROVIDERS: list = [
 
 _ENDPOINT_PREFIX = "/${ENDPOINT_SECRET}"
 
-DEBUG = False
+DEBUG: bool = False
 
-CONFIG_ENDPOINT = f"{_ENDPOINT_PREFIX}/config"
+CONFIG_ENDPOINT: str = f"{_ENDPOINT_PREFIX}/config"
 
-HEALTH_ENDPOINT = f"{_ENDPOINT_PREFIX}/health"
+HEALTH_ENDPOINT: str = f"{_ENDPOINT_PREFIX}/health"
 
-TIMEOUT_MS = 5000
+TIMEOUT_MS: int = 5000
 
-ECS_TRUNCATION = {
+ECS_TRUNCATION: EcsConfig = {
     "enabled": True,
 }
 
-REBIND_PROTECTION = True
+REBIND_PROTECTION: bool = True
 
-BLOCKED_DOMAINS = []
+BLOCKED_DOMAINS: list = []
 
-ALLOWED_DOMAINS = []
+ALLOWED_DOMAINS: list = []
 
-BYPASS_PROVIDER = {
+BYPASS_PROVIDER: Provider = {
     "url": "https://cloudflare-dns.com/dns-query",
     "dns_json": True,
 }
 
-LOKI_URL = "${LOKI_URL}"
+LOKI_URL: str = "${LOKI_URL}"
 
-LOKI_TIMEOUT_MS = 5000
+LOKI_TIMEOUT_MS: int = 5000
 
-RETRY_MAX_ATTEMPTS = 2
+RETRY_MAX_ATTEMPTS: int = 2
 
-CACHE_DNS = True
+CACHE_DNS: bool = True
 
-ENDPOINTS = {
+BLOCKLIST_LOADING_POLICY: Literal["block", "bypass"] = "block"
+
+ENDPOINTS: dict[str, EndpointConfig] = {
     f"{_ENDPOINT_PREFIX}/home/firewall": {
         "main_provider": {
             "url": "https://dns.nextdns.io/${NEXTDNS_HOME_ID}",

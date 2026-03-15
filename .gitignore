@@ -8,3 +8,5 @@ __pycache__/
 .vscode
 .pytest_cache/
 .ruff_cache/
+blocklist/*.bin
+blocklist/*.json

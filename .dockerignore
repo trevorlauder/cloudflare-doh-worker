@@ -8,3 +8,6 @@ src/config.py
 !wrangler.toml
 !tests/
 !Makefile
+!blocklist/
+!blocklist_sources.yaml
+!scripts/

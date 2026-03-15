@@ -100,7 +100,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-23056592349"
         }
       }
     },
@@ -123,7 +123,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question_name, question_type, result_status, response_from | result_status != `not blocked` | line_format `{\"endpoint\":\"{{.endpoint}}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\",\"status\":\"{{.result_status}}\",\"provider\":\"{{.response_from}}\"}`",
+                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question_name, question_type, result_status, response_from | result_status != `not blocked` | line_format `{\"endpoint\":\"{{ .endpoint | trimPrefix \"${endpoint_prefix}\" }}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\",\"status\":\"{{.result_status}}\",\"provider\":\"{{.response_from}}\"}`",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -181,7 +181,7 @@
             ]
           }
         },
-        "description": "Queries with a notable status: blocked, config blocked, possibly blocked, config allowed, or error",
+        "description": "Queries with a notable status: blocked, worker blocked, possibly blocked, worker allowed, or error",
         "id": 10,
         "links": [],
         "title": "Recent Notable Queries",
@@ -235,16 +235,6 @@
                               "index": 0,
                               "text": "blocked"
                             },
-                            "config allowed": {
-                              "color": "blue",
-                              "index": 3,
-                              "text": "config allowed"
-                            },
-                            "config blocked": {
-                              "color": "dark-red",
-                              "index": 1,
-                              "text": "config blocked"
-                            },
                             "error": {
                               "color": "purple",
                               "index": 4,
@@ -254,6 +244,16 @@
                               "color": "orange",
                               "index": 2,
                               "text": "possibly blocked"
+                            },
+                            "worker allowed": {
+                              "color": "blue",
+                              "index": 3,
+                              "text": "worker allowed"
+                            },
+                            "worker blocked": {
+                              "color": "dark-red",
+                              "index": 1,
+                              "text": "worker blocked"
                             }
                           },
                           "type": "value"
@@ -329,123 +329,7 @@
               ]
             }
           },
-          "version": "13.0.0-22751934439"
-        }
-      }
-    },
-    "panel-11": {
-      "kind": "Panel",
-      "spec": {
-        "data": {
-          "kind": "QueryGroup",
-          "spec": {
-            "queries": [
-              {
-                "kind": "PanelQuery",
-                "spec": {
-                  "hidden": false,
-                  "query": {
-                    "datasource": {
-                      "name": "${datasource}"
-                    },
-                    "group": "loki",
-                    "kind": "DataQuery",
-                    "spec": {
-                      "direction": "backward",
-                      "editorMode": "code",
-                      "expr": "sum by (response_from) (count_over_time({source=\"cloudflare-doh-worker\"} | json result_status, response_from | result_status != `not blocked` [$__interval]))",
-                      "legendFormat": "{{response_from}}",
-                      "queryType": "range"
-                    },
-                    "version": "v0"
-                  },
-                  "refId": "A"
-                }
-              }
-            ],
-            "queryOptions": {},
-            "transformations": []
-          }
-        },
-        "description": "Comparison of blocking by each DNS provider",
-        "id": 11,
-        "links": [],
-        "title": "Blocks by Provider",
-        "vizConfig": {
-          "group": "timeseries",
-          "kind": "VizConfig",
-          "spec": {
-            "fieldConfig": {
-              "defaults": {
-                "color": {
-                  "mode": "palette-classic"
-                },
-                "custom": {
-                  "axisBorderShow": false,
-                  "axisCenteredZero": false,
-                  "axisColorMode": "text",
-                  "axisLabel": "",
-                  "axisPlacement": "auto",
-                  "barAlignment": 0,
-                  "barWidthFactor": 0.6,
-                  "drawStyle": "points",
-                  "fillOpacity": 80,
-                  "gradientMode": "none",
-                  "hideFrom": {
-                    "legend": false,
-                    "tooltip": false,
-                    "viz": false
-                  },
-                  "insertNulls": false,
-                  "lineInterpolation": "linear",
-                  "lineWidth": 1,
-                  "pointSize": 5,
-                  "scaleDistribution": {
-                    "type": "linear"
-                  },
-                  "showPoints": "never",
-                  "showValues": false,
-                  "spanNulls": false,
-                  "stacking": {
-                    "group": "A",
-                    "mode": "none"
-                  },
-                  "thresholdsStyle": {
-                    "mode": "off"
-                  }
-                },
-                "thresholds": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": 0
-                    }
-                  ]
-                },
-                "unit": "short"
-              },
-              "overrides": []
-            },
-            "options": {
-              "legend": {
-                "calcs": [
-                  "sum"
-                ],
-                "displayMode": "table",
-                "placement": "right",
-                "showLegend": true,
-                "sortBy": "Total",
-                "sortDesc": true
-              },
-              "tooltip": {
-                "hideZeros": false,
-                "mode": "multi",
-                "sort": "desc"
-              }
-            }
-          },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-22983845515"
         }
       }
     },
@@ -468,7 +352,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum by (endpoint) (count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint [$__range]))",
+                      "expr": "label_replace(sum by (endpoint) (count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint [$__range])), \"endpoint\", \"$1\", \"endpoint\", \"${endpoint_prefix}(.*)\")",
                       "legendFormat": "{{endpoint}}",
                       "queryType": "instant"
                     },
@@ -568,7 +452,7 @@
               ]
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-22983845515"
         }
       }
     },
@@ -708,7 +592,7 @@
               ]
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-22983845515"
         }
       }
     },
@@ -731,7 +615,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json result_status, response_from | result_status != `not blocked` [$__range])) by (response_from)",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json result_status, response_from | result_status = `blocked` | response_from !~ `config|error|blocklist-loading|rebind-protection|cache` [$__range])) by (response_from)",
                       "legendFormat": "{{response_from}}",
                       "queryType": "instant"
                     },
@@ -748,7 +632,7 @@
         "description": "Which DNS provider's response was used for blocked queries",
         "id": 15,
         "links": [],
-        "title": "Response Provider (Blocked)",
+        "title": "Blocked by Provider",
         "vizConfig": {
           "group": "piechart",
           "kind": "VizConfig",
@@ -770,9 +654,7 @@
               "overrides": []
             },
             "options": {
-              "displayLabels": [
-                "percent"
-              ],
+              "displayLabels": [],
               "legend": {
                 "calcs": [
                   "sum"
@@ -784,7 +666,7 @@
                   "value"
                 ]
               },
-              "pieType": "pie",
+              "pieType": "donut",
               "reduceOptions": {
                 "calcs": [
                   "sum"
@@ -800,7 +682,7 @@
               }
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-23056592349"
         }
       }
     },
@@ -849,6 +731,7 @@
                 "color": {
                   "mode": "thresholds"
                 },
+                "noValue": "0",
                 "thresholds": {
                   "mode": "absolute",
                   "steps": [
@@ -884,7 +767,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-23056592349"
         }
       }
     },
@@ -907,7 +790,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question_name, question_type, timed_out_providers | timed_out_providers != \"\" | line_format `{\"endpoint\":\"{{.endpoint}}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\"}`",
+                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question_name, question_type, timed_out_providers | timed_out_providers != \"\" | line_format `{\"endpoint\":\"{{ .endpoint | trimPrefix \"${endpoint_prefix}\" }}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\"}`",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -1044,7 +927,7 @@
               ]
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-22983845515"
         }
       }
     },
@@ -1067,7 +950,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json | result_status=`config blocked` [$__range]))",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json | result_status=`worker blocked` [$__range]))",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -1080,10 +963,10 @@
             "transformations": []
           }
         },
-        "description": "Queries blocked by local config (BLOCKED_DOMAINS)",
+        "description": "Queries blocked by local config (BLOCKED_DOMAINS) or community block list",
         "id": 18,
         "links": [],
-        "title": "Config Blocked",
+        "title": "Worker Blocked Queries",
         "vizConfig": {
           "group": "stat",
           "kind": "VizConfig",
@@ -1093,6 +976,7 @@
                 "color": {
                   "mode": "thresholds"
                 },
+                "noValue": "0",
                 "thresholds": {
                   "mode": "absolute",
                   "steps": [
@@ -1128,7 +1012,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-23056592349"
         }
       }
     },
@@ -1152,7 +1036,7 @@
                     "spec": {
                       "direction": "backward",
                       "editorMode": "code",
-                      "expr": "topk(15, sum by (question_name) (count_over_time({source=\"cloudflare-doh-worker\"} | json question_name, result_status | result_status=`config blocked` [$__range])))",
+                      "expr": "topk(15, sum by (question_name) (count_over_time({source=\"cloudflare-doh-worker\"} | json question_name, result_status | result_status=`worker blocked` [$__range])))",
                       "legendFormat": "{{question_name}}",
                       "queryType": "instant"
                     },
@@ -1199,7 +1083,7 @@
         "description": "Most queried domains blocked by local config",
         "id": 19,
         "links": [],
-        "title": "Top Config-Blocked Domains",
+        "title": "Top Worker-Blocked Domains",
         "vizConfig": {
           "group": "table",
           "kind": "VizConfig",
@@ -1269,7 +1153,7 @@
               ]
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-22983845515"
         }
       }
     },
@@ -1305,10 +1189,10 @@
             "transformations": []
           }
         },
-        "description": "Queries blocked by at least one DNS provider",
+        "description": "Queries blocked by at least one upstream DNS provider",
         "id": 2,
         "links": [],
-        "title": "Blocked Queries",
+        "title": "Provider Blocked Queries",
         "vizConfig": {
           "group": "stat",
           "kind": "VizConfig",
@@ -1353,7 +1237,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-23056592349"
         }
       }
     },
@@ -1376,7 +1260,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json | result_status=`config allowed` [$__range]))",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json | result_status=`worker allowed` [$__range]))",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -1392,7 +1276,7 @@
         "description": "Queries allowed by local config (ALLOWED_DOMAINS)",
         "id": 20,
         "links": [],
-        "title": "Config Allowed",
+        "title": "Worker Allowed Queries",
         "vizConfig": {
           "group": "stat",
           "kind": "VizConfig",
@@ -1402,6 +1286,7 @@
                 "color": {
                   "mode": "thresholds"
                 },
+                "noValue": "0",
                 "thresholds": {
                   "mode": "absolute",
                   "steps": [
@@ -1437,7 +1322,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-23056592349"
         }
       }
     },
@@ -1460,7 +1345,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "topk(15, sum by (question_name) (count_over_time({source=\"cloudflare-doh-worker\"} | json question_name, result_status | result_status=`config allowed` [$__range])))",
+                      "expr": "topk(15, sum by (question_name) (count_over_time({source=\"cloudflare-doh-worker\"} | json question_name, result_status | result_status=`worker allowed` [$__range])))",
                       "legendFormat": "{{question_name}}",
                       "queryType": "instant"
                     },
@@ -1577,7 +1462,7 @@
               ]
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-22983845515"
         }
       }
     },
@@ -1616,7 +1501,7 @@
         "description": "Queries where all upstream DNS providers failed",
         "id": 22,
         "links": [],
-        "title": "Provider Errors",
+        "title": "Provider Error Queries",
         "vizConfig": {
           "group": "stat",
           "kind": "VizConfig",
@@ -1626,6 +1511,7 @@
                 "color": {
                   "mode": "thresholds"
                 },
+                "noValue": "0",
                 "thresholds": {
                   "mode": "absolute",
                   "steps": [
@@ -1661,123 +1547,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22751934439"
-        }
-      }
-    },
-    "panel-26": {
-      "kind": "Panel",
-      "spec": {
-        "data": {
-          "kind": "QueryGroup",
-          "spec": {
-            "queries": [
-              {
-                "kind": "PanelQuery",
-                "spec": {
-                  "hidden": false,
-                  "query": {
-                    "datasource": {
-                      "name": "${datasource}"
-                    },
-                    "group": "loki",
-                    "kind": "DataQuery",
-                    "spec": {
-                      "direction": "backward",
-                      "editorMode": "code",
-                      "expr": "sum by (client_ip) (count_over_time({source=\"cloudflare-doh-worker\"} | json [$__interval]))",
-                      "legendFormat": "{{client_ip}}",
-                      "queryType": "range"
-                    },
-                    "version": "v0"
-                  },
-                  "refId": "A"
-                }
-              }
-            ],
-            "queryOptions": {},
-            "transformations": []
-          }
-        },
-        "description": "DNS query volume per client IP over time",
-        "id": 26,
-        "links": [],
-        "title": "Requests per Client IP",
-        "vizConfig": {
-          "group": "timeseries",
-          "kind": "VizConfig",
-          "spec": {
-            "fieldConfig": {
-              "defaults": {
-                "color": {
-                  "mode": "palette-classic"
-                },
-                "custom": {
-                  "axisBorderShow": false,
-                  "axisCenteredZero": false,
-                  "axisColorMode": "text",
-                  "axisLabel": "",
-                  "axisPlacement": "auto",
-                  "barAlignment": 0,
-                  "barWidthFactor": 0.6,
-                  "drawStyle": "points",
-                  "fillOpacity": 10,
-                  "gradientMode": "none",
-                  "hideFrom": {
-                    "legend": false,
-                    "tooltip": false,
-                    "viz": false
-                  },
-                  "insertNulls": false,
-                  "lineInterpolation": "smooth",
-                  "lineWidth": 2,
-                  "pointSize": 5,
-                  "scaleDistribution": {
-                    "type": "linear"
-                  },
-                  "showPoints": "auto",
-                  "showValues": false,
-                  "spanNulls": false,
-                  "stacking": {
-                    "group": "A",
-                    "mode": "normal"
-                  },
-                  "thresholdsStyle": {
-                    "mode": "off"
-                  }
-                },
-                "thresholds": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": 0
-                    }
-                  ]
-                },
-                "unit": "short"
-              },
-              "overrides": []
-            },
-            "options": {
-              "legend": {
-                "calcs": [
-                  "sum"
-                ],
-                "displayMode": "table",
-                "placement": "right",
-                "showLegend": true,
-                "sortBy": "Total",
-                "sortDesc": true
-              },
-              "tooltip": {
-                "hideZeros": false,
-                "mode": "multi",
-                "sort": "desc"
-              }
-            }
-          },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-23056592349"
         }
       }
     },
@@ -1826,6 +1596,7 @@
                 "color": {
                   "mode": "thresholds"
                 },
+                "noValue": "0",
                 "thresholds": {
                   "mode": "absolute",
                   "steps": [
@@ -1861,7 +1632,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-23056592349"
         }
       }
     },
@@ -1885,7 +1656,7 @@
                     "spec": {
                       "direction": "backward",
                       "editorMode": "code",
-                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question_name, question_type, rebind_providers | rebind_providers != \"\" | line_format `{\"endpoint\":\"{{.endpoint}}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\"}`",
+                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question_name, question_type, rebind_providers | rebind_providers != \"\" | line_format `{\"endpoint\":\"{{ .endpoint | trimPrefix \"${endpoint_prefix}\" }}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\"}`",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -2022,7 +1793,7 @@
               ]
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-22983845515"
         }
       }
     },
@@ -2061,7 +1832,7 @@
         "description": "Queries where at least one upstream DNS provider failed",
         "id": 29,
         "links": [],
-        "title": "Failed Providers",
+        "title": "Failed Provider Queries",
         "vizConfig": {
           "group": "stat",
           "kind": "VizConfig",
@@ -2071,6 +1842,7 @@
                 "color": {
                   "mode": "thresholds"
                 },
+                "noValue": "0",
                 "thresholds": {
                   "mode": "absolute",
                   "steps": [
@@ -2106,7 +1878,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-23056592349"
         }
       }
     },
@@ -2142,10 +1914,10 @@
             "transformations": []
           }
         },
-        "description": "Queries possibly blocked (NXDOMAIN)",
+        "description": "Queries possibly blocked by an upstream DNS provider (NXDOMAIN)",
         "id": 3,
         "links": [],
-        "title": "Possibly Blocked Queries",
+        "title": "Provider Possibly Blocked Queries",
         "vizConfig": {
           "group": "stat",
           "kind": "VizConfig",
@@ -2190,7 +1962,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-23056592349"
         }
       }
     },
@@ -2213,7 +1985,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question_name, question_type, failed_providers | failed_providers != `` | line_format `{\"endpoint\":\"{{.endpoint}}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\",\"failed_providers\":\"{{.failed_providers}}\"}`",
+                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question_name, question_type, failed_providers | failed_providers != `` | line_format `{\"endpoint\":\"{{ .endpoint | trimPrefix \"${endpoint_prefix}\" }}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\",\"failed_providers\":\"{{.failed_providers}}\"}`",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -2352,7 +2124,7 @@
               ]
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-22983845515"
         }
       }
     },
@@ -2391,7 +2163,7 @@
         "description": "Queries where at least one upstream DNS provider was retried",
         "id": 31,
         "links": [],
-        "title": "Retried Providers",
+        "title": "Retried Provider Queries",
         "vizConfig": {
           "group": "stat",
           "kind": "VizConfig",
@@ -2401,6 +2173,7 @@
                 "color": {
                   "mode": "thresholds"
                 },
+                "noValue": "0",
                 "thresholds": {
                   "mode": "absolute",
                   "steps": [
@@ -2436,7 +2209,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-23056592349"
         }
       }
     },
@@ -2459,7 +2232,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "{source=\"cloudflare-doh-worker\"} | json retried_providers, endpoint, question_name, question_type | retried_providers != `` | line_format `{\"endpoint\":\"{{.endpoint}}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\",\"retried_providers\":\"{{.retried_providers}}\"}`",
+                      "expr": "{source=\"cloudflare-doh-worker\"} | json retried_providers, endpoint, question_name, question_type | retried_providers != `` | line_format `{\"endpoint\":\"{{ .endpoint | trimPrefix \"${endpoint_prefix}\" }}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\",\"retried_providers\":\"{{.retried_providers}}\"}`",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -2598,7 +2371,7 @@
               ]
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-22983845515"
         }
       }
     },
@@ -2647,6 +2420,7 @@
                 "color": {
                   "mode": "thresholds"
                 },
+                "noValue": "0",
                 "thresholds": {
                   "mode": "absolute",
                   "steps": [
@@ -2682,7 +2456,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-23056592349"
         }
       }
     },
@@ -2705,7 +2479,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question_name, question_type, connection_error_providers | connection_error_providers != \"\" | line_format `{\"endpoint\":\"{{.endpoint}}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\",\"connection_error_providers\":\"{{.connection_error_providers}}\"}`",
+                      "expr": "{source=\"cloudflare-doh-worker\"} | json endpoint, question_name, question_type, connection_error_providers | connection_error_providers != \"\" | line_format `{\"endpoint\":\"{{ .endpoint | trimPrefix \"${endpoint_prefix}\" }}\",\"domain\":\"{{.question_name}}\",\"type\":\"{{.question_type}}\",\"connection_error_providers\":\"{{.connection_error_providers}}\"}`",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -2844,7 +2618,370 @@
               ]
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-22983845515"
+        }
+      }
+    },
+    "panel-35": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json response_from | response_from =~ `config|error|blocklist-loading|rebind-protection|cache` [$__range])) by (response_from)",
+                      "legendFormat": "{{response_from}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Queries resolved internally without reaching an upstream DNS provider",
+        "id": 35,
+        "links": [],
+        "title": "Internal Resolution",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-36": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "editorMode": "code",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json result_status, response_from | result_status = `possibly blocked` | response_from !~ `config|error|blocklist-loading|rebind-protection|cache` [$__range])) by (response_from)",
+                      "legendFormat": "{{response_from}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Which DNS provider's response was used for possibly blocked queries",
+        "id": 36,
+        "links": [],
+        "title": "Possibly Blocked by Provider",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-37": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json result_status [$__range])) by (result_status)",
+                      "legendFormat": "{{result_status}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Overall distribution of query outcomes",
+        "id": 37,
+        "links": [],
+        "title": "Query Status Distribution",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": [
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "blocked"
+                  },
+                  "properties": [
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "red",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "possibly blocked"
+                  },
+                  "properties": [
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "yellow",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "not blocked"
+                  },
+                  "properties": [
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "green",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "worker blocked"
+                  },
+                  "properties": [
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "orange",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "worker allowed"
+                  },
+                  "properties": [
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "blue",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "error"
+                  },
+                  "properties": [
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "purple",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23056592349"
         }
       }
     },
@@ -2881,10 +3018,10 @@
             "transformations": []
           }
         },
-        "description": "Queries not blocked by any provider",
+        "description": "Queries not blocked by any upstream DNS provider",
         "id": 4,
         "links": [],
-        "title": "Not Blocked Queries",
+        "title": "Provider Not Blocked Queries",
         "vizConfig": {
           "group": "stat",
           "kind": "VizConfig",
@@ -2925,7 +3062,627 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-43": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "editorMode": "code",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json response_from | response_from = `cache` [$__range]))",
+                      "queryType": "range"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "DNS queries answered from the Cloudflare Cache API, skipping upstream provider fanout",
+        "id": 43,
+        "links": [],
+        "title": "Cache Hits",
+        "vizConfig": {
+          "group": "stat",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "thresholds"
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "blue",
+                      "value": 0
+                    }
+                  ]
+                },
+                "unit": "none"
+              },
+              "overrides": []
+            },
+            "options": {
+              "colorMode": "value",
+              "graphMode": "area",
+              "justifyMode": "auto",
+              "orientation": "auto",
+              "percentChangeColorMode": "standard",
+              "reduceOptions": {
+                "calcs": [
+                  "lastNotNull"
+                ],
+                "fields": "",
+                "values": false
+              },
+              "showPercentChange": false,
+              "textMode": "auto",
+              "wideLayout": true
+            }
+          },
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-44": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "editorMode": "code",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json kv_loading | kv_loading = `true` [$__range]))",
+                      "queryType": "range"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Queries served while the KV community blocklist was still loading",
+        "id": 44,
+        "links": [],
+        "title": "Blocklist Loading Queries",
+        "vizConfig": {
+          "group": "stat",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "thresholds"
+                },
+                "noValue": "0",
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    }
+                  ]
+                },
+                "unit": "none"
+              },
+              "overrides": []
+            },
+            "options": {
+              "colorMode": "value",
+              "graphMode": "area",
+              "justifyMode": "auto",
+              "orientation": "auto",
+              "percentChangeColorMode": "standard",
+              "reduceOptions": {
+                "calcs": [
+                  "lastNotNull"
+                ],
+                "fields": "",
+                "values": false
+              },
+              "showPercentChange": false,
+              "textMode": "auto",
+              "wideLayout": true
+            }
+          },
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-45": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json client_ip [$__range])) by (client_ip)",
+                      "legendFormat": "{{client_ip}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Query volume distribution across client IPs",
+        "id": 45,
+        "links": [],
+        "title": "All Queries by Client",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-46": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json client_ip, result_status | result_status = `blocked` [$__range])) by (client_ip)",
+                      "legendFormat": "{{client_ip}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Blocked query distribution across client IPs",
+        "id": 46,
+        "links": [],
+        "title": "Blocked by Client",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-47": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json client_ip, result_status | result_status = `possibly blocked` [$__range])) by (client_ip)",
+                      "legendFormat": "{{client_ip}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Possibly blocked query distribution across client IPs",
+        "id": 47,
+        "links": [],
+        "title": "Possibly Blocked by Client",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-48": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json client_ip, result_status | result_status = `worker blocked` [$__range])) by (client_ip)",
+                      "legendFormat": "{{client_ip}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Worker-blocked (config) query distribution across client IPs",
+        "id": 48,
+        "links": [],
+        "title": "Worker Blocked by Client",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-49": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json client_ip, result_status | result_status = `worker allowed` [$__range])) by (client_ip)",
+                      "legendFormat": "{{client_ip}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Worker-allowed (bypass) query distribution across client IPs",
+        "id": 49,
+        "links": [],
+        "title": "Worker Allowed by Client",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23056592349"
         }
       }
     },
@@ -2949,7 +3706,7 @@
                     "spec": {
                       "direction": "backward",
                       "editorMode": "code",
-                      "expr": "sum by (result_status) (count_over_time({source=\"cloudflare-doh-worker\"} | json [$__interval]))",
+                      "expr": "sum by (result_status) (count_over_time({source=\"cloudflare-doh-worker\"} | json [$__auto]))",
                       "legendFormat": "{{result_status}}",
                       "queryType": "range"
                     },
@@ -2963,12 +3720,12 @@
             "transformations": []
           }
         },
-        "description": "DNS query volume over time",
+        "description": "DNS query volume over time, broken down by status",
         "id": 5,
         "links": [],
         "title": "Query Volume by Status",
         "vizConfig": {
-          "group": "timeseries",
+          "group": "barchart",
           "kind": "VizConfig",
           "spec": {
             "fieldConfig": {
@@ -2982,29 +3739,16 @@
                   "axisColorMode": "text",
                   "axisLabel": "",
                   "axisPlacement": "auto",
-                  "barAlignment": 0,
-                  "barWidthFactor": 0.6,
-                  "drawStyle": "points",
-                  "fillOpacity": 20,
+                  "fillOpacity": 80,
                   "gradientMode": "none",
                   "hideFrom": {
                     "legend": false,
                     "tooltip": false,
                     "viz": false
                   },
-                  "insertNulls": false,
-                  "lineInterpolation": "smooth",
-                  "lineWidth": 2,
-                  "pointSize": 5,
+                  "lineWidth": 1,
                   "scaleDistribution": {
                     "type": "linear"
-                  },
-                  "showPoints": "auto",
-                  "showValues": false,
-                  "spanNulls": false,
-                  "stacking": {
-                    "group": "A",
-                    "mode": "normal"
                   },
                   "thresholdsStyle": {
                     "mode": "off"
@@ -3070,7 +3814,7 @@
                 {
                   "matcher": {
                     "id": "byName",
-                    "options": "config blocked"
+                    "options": "worker blocked"
                   },
                   "properties": [
                     {
@@ -3085,7 +3829,7 @@
                 {
                   "matcher": {
                     "id": "byName",
-                    "options": "config allowed"
+                    "options": "worker allowed"
                   },
                   "properties": [
                     {
@@ -3096,32 +3840,53 @@
                       }
                     }
                   ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "error"
+                  },
+                  "properties": [
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "purple",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
                 }
               ]
             },
             "options": {
+              "barRadius": 0,
+              "barWidth": 0.97,
+              "fillOpacity": 80,
+              "fullHighlight": false,
+              "groupWidth": 0.7,
               "legend": {
-                "calcs": [
-                  "sum"
-                ],
-                "displayMode": "table",
+                "calcs": [],
+                "displayMode": "list",
                 "placement": "right",
-                "showLegend": true,
-                "sortBy": "Total",
-                "sortDesc": true
+                "showLegend": true
               },
+              "orientation": "auto",
+              "showValue": "never",
+              "stacking": "normal",
               "tooltip": {
                 "hideZeros": false,
                 "mode": "multi",
                 "sort": "desc"
-              }
+              },
+              "xTickLabelRotation": 0,
+              "xTickLabelSpacing": 150
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-23056592349"
         }
       }
     },
-    "panel-6": {
+    "panel-50": {
       "kind": "Panel",
       "spec": {
         "data": {
@@ -3141,8 +3906,98 @@
                     "spec": {
                       "direction": "backward",
                       "editorMode": "code",
-                      "expr": "sum by (endpoint) (count_over_time({source=\"cloudflare-doh-worker\"} | json [$__interval]))",
-                      "legendFormat": "{{endpoint}}",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json client_ip, result_status | result_status = `error` [$__range])) by (client_ip)",
+                      "legendFormat": "{{client_ip}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Error query distribution across client IPs",
+        "id": 50,
+        "links": [],
+        "title": "Error by Client",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-51": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "max(last_over_time({source=\"cloudflare-doh-worker\"} | json blocklist_domain_count | unwrap blocklist_domain_count [$__range]))",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -3155,12 +4010,183 @@
             "transformations": []
           }
         },
-        "description": "Query volume by device/endpoint",
-        "id": 6,
+        "description": "Total number of domains in the loaded KV community blocklist",
+        "id": 51,
         "links": [],
-        "title": "Queries by Endpoint",
+        "title": "Blocklist Size",
         "vizConfig": {
-          "group": "timeseries",
+          "group": "stat",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "thresholds"
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "blue",
+                      "value": 0
+                    }
+                  ]
+                },
+                "unit": "sishort"
+              },
+              "overrides": []
+            },
+            "options": {
+              "colorMode": "value",
+              "graphMode": "area",
+              "justifyMode": "auto",
+              "orientation": "auto",
+              "percentChangeColorMode": "standard",
+              "reduceOptions": {
+                "calcs": [
+                  "lastNotNull"
+                ],
+                "fields": "",
+                "values": false
+              },
+              "showPercentChange": false,
+              "textMode": "auto",
+              "wideLayout": true
+            }
+          },
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-52": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "editorMode": "code",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json result_status | result_status =~ `blocked|worker blocked` [$__range])) / sum(count_over_time({source=\"cloudflare-doh-worker\"} | json [$__range]))",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Percentage of queries blocked by providers or worker config (blocked + worker blocked) over the selected time range",
+        "id": 52,
+        "links": [],
+        "title": "Queries Blocked %",
+        "vizConfig": {
+          "group": "stat",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "thresholds"
+                },
+                "noValue": "0",
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.1
+                    },
+                    {
+                      "color": "red",
+                      "value": 0.5
+                    }
+                  ]
+                },
+                "unit": "percentunit"
+              },
+              "overrides": []
+            },
+            "options": {
+              "colorMode": "value",
+              "graphMode": "none",
+              "justifyMode": "auto",
+              "orientation": "auto",
+              "percentChangeColorMode": "standard",
+              "reduceOptions": {
+                "calcs": [
+                  "lastNotNull"
+                ],
+                "fields": "",
+                "values": false
+              },
+              "showPercentChange": false,
+              "textMode": "auto",
+              "wideLayout": true
+            }
+          },
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-53": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "sum by (client_ip) (count_over_time({source=\"cloudflare-doh-worker\"} | json client_ip [$__auto]))",
+                      "legendFormat": "{{client_ip}}",
+                      "queryType": "range"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "DNS query volume over time broken down by client IP",
+        "id": 53,
+        "links": [],
+        "title": "Client Activity Over Time",
+        "vizConfig": {
+          "group": "barchart",
           "kind": "VizConfig",
           "spec": {
             "fieldConfig": {
@@ -3174,29 +4200,16 @@
                   "axisColorMode": "text",
                   "axisLabel": "",
                   "axisPlacement": "auto",
-                  "barAlignment": 0,
-                  "barWidthFactor": 0.6,
-                  "drawStyle": "points",
-                  "fillOpacity": 10,
+                  "fillOpacity": 80,
                   "gradientMode": "none",
                   "hideFrom": {
                     "legend": false,
                     "tooltip": false,
                     "viz": false
                   },
-                  "insertNulls": false,
-                  "lineInterpolation": "smooth",
-                  "lineWidth": 2,
-                  "pointSize": 5,
+                  "lineWidth": 1,
                   "scaleDistribution": {
                     "type": "linear"
-                  },
-                  "showPoints": "auto",
-                  "showValues": false,
-                  "spanNulls": false,
-                  "stacking": {
-                    "group": "A",
-                    "mode": "none"
                   },
                   "thresholdsStyle": {
                     "mode": "off"
@@ -3216,15 +4229,209 @@
               "overrides": []
             },
             "options": {
+              "barRadius": 0,
+              "barWidth": 0.97,
+              "fillOpacity": 80,
+              "fullHighlight": false,
+              "groupWidth": 0.7,
+              "legend": {
+                "calcs": [],
+                "displayMode": "list",
+                "placement": "right",
+                "showLegend": true
+              },
+              "orientation": "auto",
+              "showValue": "never",
+              "stacking": "normal",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              },
+              "xTickLabelRotation": 0,
+              "xTickLabelSpacing": 150
+            }
+          },
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-54": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "avg(quantile_over_time(0.5, {source=\"cloudflare-doh-worker\"} | json | elapsed_ms != \"\" | unwrap elapsed_ms [$__interval]))",
+                      "legendFormat": "P50",
+                      "queryType": "range"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "avg(quantile_over_time(0.9, {source=\"cloudflare-doh-worker\"} | json | elapsed_ms != \"\" | unwrap elapsed_ms [$__interval]))",
+                      "legendFormat": "P90",
+                      "queryType": "range"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "B"
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "avg(quantile_over_time(0.99, {source=\"cloudflare-doh-worker\"} | json | elapsed_ms != \"\" | unwrap elapsed_ms [$__interval]))",
+                      "legendFormat": "P99",
+                      "queryType": "range"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "C"
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "avg(quantile_over_time(0.999, {source=\"cloudflare-doh-worker\"} | json | elapsed_ms != \"\" | unwrap elapsed_ms [$__interval]))",
+                      "legendFormat": "P999",
+                      "queryType": "range"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "D"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Worker request latency from receipt to Loki dispatch",
+        "id": 54,
+        "links": [],
+        "title": "Request Latency",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "axisSoftMax": 300,
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "line",
+                  "fillOpacity": 5,
+                  "gradientMode": "none",
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  },
+                  "insertNulls": false,
+                  "lineInterpolation": "smooth",
+                  "lineWidth": 2,
+                  "pointSize": 5,
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
+                  "showPoints": "never",
+                  "showValues": false,
+                  "spanNulls": true,
+                  "stacking": {
+                    "group": "A",
+                    "mode": "none"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 80
+                    }
+                  ]
+                },
+                "unit": "ms"
+              },
+              "overrides": []
+            },
+            "options": {
+              "annotations": {
+                "multiLane": false
+              },
               "legend": {
                 "calcs": [
-                  "sum"
+                  "mean"
                 ],
                 "displayMode": "table",
                 "placement": "right",
-                "showLegend": true,
-                "sortBy": "Total",
-                "sortDesc": true
+                "showLegend": true
               },
               "tooltip": {
                 "hideZeros": false,
@@ -3233,7 +4440,578 @@
               }
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-55": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "label_replace(sum(count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint [$__range])) by (endpoint), \"endpoint\", \"$1\", \"endpoint\", \"${endpoint_prefix}(.*)\")",
+                      "legendFormat": "{{endpoint}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Query volume distribution across endpoints",
+        "id": 55,
+        "links": [],
+        "title": "All Queries by Endpoint",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": [
+                {
+                  "__systemRef": "hideSeriesFrom",
+                  "matcher": {
+                    "id": "byNames",
+                    "options": {
+                      "mode": "exclude",
+                      "names": [
+                        "Value #A"
+                      ],
+                      "prefix": "All except:",
+                      "readOnly": true
+                    }
+                  },
+                  "properties": [
+                    {
+                      "id": "custom.hideFrom",
+                      "value": {
+                        "legend": false,
+                        "tooltip": true,
+                        "viz": true
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-56": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "label_replace(sum(count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint, result_status | result_status = `blocked` [$__range])) by (endpoint), \"endpoint\", \"$1\", \"endpoint\", \"${endpoint_prefix}(.*)\")",
+                      "legendFormat": "{{endpoint}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Blocked query distribution across endpoints",
+        "id": 56,
+        "links": [],
+        "title": "Blocked by Endpoint",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-57": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "label_replace(sum(count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint, result_status | result_status = `possibly blocked` [$__range])) by (endpoint), \"endpoint\", \"$1\", \"endpoint\", \"${endpoint_prefix}(.*)\")",
+                      "legendFormat": "{{endpoint}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Possibly blocked query distribution across endpoints",
+        "id": 57,
+        "links": [],
+        "title": "Possibly Blocked by Endpoint",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-58": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "label_replace(sum(count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint, result_status | result_status = `worker blocked` [$__range])) by (endpoint), \"endpoint\", \"$1\", \"endpoint\", \"${endpoint_prefix}(.*)\")",
+                      "legendFormat": "{{endpoint}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Worker-blocked (config) query distribution across endpoints",
+        "id": 58,
+        "links": [],
+        "title": "Worker Blocked by Endpoint",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-59": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "label_replace(sum(count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint, result_status | result_status = `worker allowed` [$__range])) by (endpoint), \"endpoint\", \"$1\", \"endpoint\", \"${endpoint_prefix}(.*)\")",
+                      "legendFormat": "{{endpoint}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Worker-allowed (bypass) query distribution across endpoints",
+        "id": 59,
+        "links": [],
+        "title": "Worker Allowed by Endpoint",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-60": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "label_replace(sum(count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint, result_status | result_status = `error` [$__range])) by (endpoint), \"endpoint\", \"$1\", \"endpoint\", \"${endpoint_prefix}(.*)\")",
+                      "legendFormat": "{{endpoint}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Error query distribution across endpoints",
+        "id": 60,
+        "links": [],
+        "title": "Error by Endpoint",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23056592349"
         }
       }
     },
@@ -3255,6 +5033,7 @@
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
+                      "direction": "backward",
                       "editorMode": "code",
                       "expr": "sum by (question_type) (count_over_time({source=\"cloudflare-doh-worker\"} | json question_type [$__range]))",
                       "legendFormat": "{{question_type}}",
@@ -3295,9 +5074,7 @@
               "overrides": []
             },
             "options": {
-              "displayLabels": [
-                "percent"
-              ],
+              "displayLabels": [],
               "legend": {
                 "calcs": [
                   "sum"
@@ -3325,7 +5102,7 @@
               }
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-23056592349"
         }
       }
     },
@@ -3451,7 +5228,7 @@
               ]
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-22983845515"
         }
       }
     },
@@ -3474,7 +5251,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json result_status, response_from | result_status = `not blocked` [$__range])) by (response_from)",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json result_status, response_from | result_status = `not blocked` | response_from !~ `config|error|blocklist-loading|rebind-protection|cache` [$__range])) by (response_from)",
                       "legendFormat": "{{response_from}}",
                       "queryType": "instant"
                     },
@@ -3491,7 +5268,7 @@
         "description": "Which DNS provider's response was used for non-blocked queries",
         "id": 9,
         "links": [],
-        "title": "Response Provider (Not Blocked)",
+        "title": "Allowed by Provider",
         "vizConfig": {
           "group": "piechart",
           "kind": "VizConfig",
@@ -3513,9 +5290,7 @@
               "overrides": []
             },
             "options": {
-              "displayLabels": [
-                "percent"
-              ],
+              "displayLabels": [],
               "legend": {
                 "calcs": [
                   "sum"
@@ -3527,7 +5302,7 @@
                   "value"
                 ]
               },
-              "pieType": "pie",
+              "pieType": "donut",
               "reduceOptions": {
                 "calcs": [
                   "sum"
@@ -3543,403 +5318,693 @@
               }
             }
           },
-          "version": "13.0.0-22751934439"
+          "version": "13.0.0-23056592349"
         }
       }
     }
   },
   "layout": {
-    "kind": "GridLayout",
+    "kind": "RowsLayout",
     "spec": {
-      "items": [
+      "rows": [
         {
-          "kind": "GridLayoutItem",
+          "kind": "RowsLayoutRow",
           "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-1"
+            "collapse": false,
+            "layout": {
+              "kind": "GridLayout",
+              "spec": {
+                "items": [
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-1"
+                      },
+                      "height": 4,
+                      "width": 4,
+                      "x": 0,
+                      "y": 0
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-4"
+                      },
+                      "height": 4,
+                      "width": 4,
+                      "x": 4,
+                      "y": 0
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-2"
+                      },
+                      "height": 4,
+                      "width": 4,
+                      "x": 8,
+                      "y": 0
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-3"
+                      },
+                      "height": 4,
+                      "width": 4,
+                      "x": 12,
+                      "y": 0
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-18"
+                      },
+                      "height": 4,
+                      "width": 4,
+                      "x": 16,
+                      "y": 0
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-20"
+                      },
+                      "height": 4,
+                      "width": 4,
+                      "x": 20,
+                      "y": 0
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-27"
+                      },
+                      "height": 4,
+                      "width": 4,
+                      "x": 0,
+                      "y": 4
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-16"
+                      },
+                      "height": 4,
+                      "width": 4,
+                      "x": 4,
+                      "y": 4
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-22"
+                      },
+                      "height": 4,
+                      "width": 4,
+                      "x": 8,
+                      "y": 4
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-29"
+                      },
+                      "height": 4,
+                      "width": 4,
+                      "x": 12,
+                      "y": 4
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-31"
+                      },
+                      "height": 4,
+                      "width": 4,
+                      "x": 16,
+                      "y": 4
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-33"
+                      },
+                      "height": 4,
+                      "width": 4,
+                      "x": 20,
+                      "y": 4
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-43"
+                      },
+                      "height": 4,
+                      "width": 6,
+                      "x": 0,
+                      "y": 8
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-51"
+                      },
+                      "height": 4,
+                      "width": 6,
+                      "x": 6,
+                      "y": 8
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-44"
+                      },
+                      "height": 4,
+                      "width": 6,
+                      "x": 12,
+                      "y": 8
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-52"
+                      },
+                      "height": 4,
+                      "width": 6,
+                      "x": 18,
+                      "y": 8
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-5"
+                      },
+                      "height": 10,
+                      "width": 24,
+                      "x": 0,
+                      "y": 12
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-53"
+                      },
+                      "height": 10,
+                      "width": 24,
+                      "x": 0,
+                      "y": 22
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-54"
+                      },
+                      "height": 8,
+                      "width": 24,
+                      "x": 0,
+                      "y": 32
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-15"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 0,
+                      "y": 40
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-9"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 8,
+                      "y": 40
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-7"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 16,
+                      "y": 40
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-35"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 0,
+                      "y": 48
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-36"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 8,
+                      "y": 48
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-37"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 16,
+                      "y": 48
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-45"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 0,
+                      "y": 56
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-46"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 8,
+                      "y": 56
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-47"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 16,
+                      "y": 56
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-48"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 0,
+                      "y": 64
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-49"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 8,
+                      "y": 64
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-50"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 16,
+                      "y": 64
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-55"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 0,
+                      "y": 72
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-56"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 8,
+                      "y": 72
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-57"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 16,
+                      "y": 72
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-58"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 0,
+                      "y": 80
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-59"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 8,
+                      "y": 80
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-60"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 16,
+                      "y": 80
+                    }
+                  }
+                ]
+              }
             },
-            "height": 4,
-            "width": 4,
-            "x": 0,
-            "y": 0
+            "title": ""
           }
         },
         {
-          "kind": "GridLayoutItem",
+          "kind": "RowsLayoutRow",
           "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-4"
+            "collapse": true,
+            "layout": {
+              "kind": "GridLayout",
+              "spec": {
+                "items": [
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-13"
+                      },
+                      "height": 8,
+                      "width": 12,
+                      "x": 0,
+                      "y": 0
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-8"
+                      },
+                      "height": 8,
+                      "width": 12,
+                      "x": 12,
+                      "y": 0
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-10"
+                      },
+                      "height": 10,
+                      "width": 24,
+                      "x": 0,
+                      "y": 8
+                    }
+                  }
+                ]
+              }
             },
-            "height": 4,
-            "width": 4,
-            "x": 4,
-            "y": 0
+            "title": "Domain Overview"
           }
         },
         {
-          "kind": "GridLayoutItem",
+          "kind": "RowsLayoutRow",
           "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-2"
+            "collapse": true,
+            "layout": {
+              "kind": "GridLayout",
+              "spec": {
+                "items": [
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-14"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 0,
+                      "y": 0
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-19"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 8,
+                      "y": 0
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-21"
+                      },
+                      "height": 8,
+                      "width": 8,
+                      "x": 16,
+                      "y": 0
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-28"
+                      },
+                      "height": 10,
+                      "width": 24,
+                      "x": 0,
+                      "y": 8
+                    }
+                  }
+                ]
+              }
             },
-            "height": 4,
-            "width": 4,
-            "x": 8,
-            "y": 0
+            "title": "Blocking"
           }
         },
         {
-          "kind": "GridLayoutItem",
+          "kind": "RowsLayoutRow",
           "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-3"
+            "collapse": true,
+            "layout": {
+              "kind": "GridLayout",
+              "spec": {
+                "items": [
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-17"
+                      },
+                      "height": 10,
+                      "width": 24,
+                      "x": 0,
+                      "y": 0
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-32"
+                      },
+                      "height": 7,
+                      "width": 12,
+                      "x": 0,
+                      "y": 10
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-30"
+                      },
+                      "height": 7,
+                      "width": 12,
+                      "x": 12,
+                      "y": 10
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-34"
+                      },
+                      "height": 10,
+                      "width": 24,
+                      "x": 0,
+                      "y": 17
+                    }
+                  }
+                ]
+              }
             },
-            "height": 4,
-            "width": 4,
-            "x": 12,
-            "y": 0
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-18"
-            },
-            "height": 4,
-            "width": 4,
-            "x": 16,
-            "y": 0
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-20"
-            },
-            "height": 4,
-            "width": 4,
-            "x": 20,
-            "y": 0
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-27"
-            },
-            "height": 4,
-            "width": 4,
-            "x": 0,
-            "y": 4
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-16"
-            },
-            "height": 4,
-            "width": 4,
-            "x": 4,
-            "y": 4
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-22"
-            },
-            "height": 4,
-            "width": 4,
-            "x": 8,
-            "y": 4
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-29"
-            },
-            "height": 4,
-            "width": 4,
-            "x": 12,
-            "y": 4
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-31"
-            },
-            "height": 4,
-            "width": 4,
-            "x": 16,
-            "y": 4
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-33"
-            },
-            "height": 4,
-            "width": 4,
-            "x": 20,
-            "y": 4
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-11"
-            },
-            "height": 8,
-            "width": 12,
-            "x": 0,
-            "y": 8
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-5"
-            },
-            "height": 8,
-            "width": 12,
-            "x": 12,
-            "y": 8
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-26"
-            },
-            "height": 8,
-            "width": 12,
-            "x": 0,
-            "y": 16
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-6"
-            },
-            "height": 8,
-            "width": 12,
-            "x": 12,
-            "y": 16
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-15"
-            },
-            "height": 8,
-            "width": 8,
-            "x": 0,
-            "y": 24
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-9"
-            },
-            "height": 8,
-            "width": 8,
-            "x": 8,
-            "y": 24
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-7"
-            },
-            "height": 8,
-            "width": 8,
-            "x": 16,
-            "y": 24
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-10"
-            },
-            "height": 10,
-            "width": 24,
-            "x": 0,
-            "y": 32
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-32"
-            },
-            "height": 7,
-            "width": 12,
-            "x": 0,
-            "y": 42
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-30"
-            },
-            "height": 7,
-            "width": 12,
-            "x": 12,
-            "y": 42
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-17"
-            },
-            "height": 10,
-            "width": 24,
-            "x": 0,
-            "y": 49
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-13"
-            },
-            "height": 8,
-            "width": 12,
-            "x": 0,
-            "y": 59
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-8"
-            },
-            "height": 8,
-            "width": 12,
-            "x": 12,
-            "y": 59
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-14"
-            },
-            "height": 8,
-            "width": 8,
-            "x": 0,
-            "y": 67
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-19"
-            },
-            "height": 8,
-            "width": 8,
-            "x": 8,
-            "y": 67
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-21"
-            },
-            "height": 8,
-            "width": 8,
-            "x": 16,
-            "y": 67
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-28"
-            },
-            "height": 10,
-            "width": 12,
-            "x": 0,
-            "y": 75
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-34"
-            },
-            "height": 10,
-            "width": 12,
-            "x": 12,
-            "y": 75
+            "title": "Provider Health"
           }
         }
       ]
@@ -3994,6 +6059,20 @@
         "refresh": "onDashboardLoad",
         "regex": "",
         "skipUrlSync": false
+      }
+    },
+    {
+      "kind": "ConstantVariable",
+      "spec": {
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "hide": "hideVariable",
+        "label": "Endpoint Prefix",
+        "name": "endpoint_prefix",
+        "query": "",
+        "skipUrlSync": true
       }
     }
   ]

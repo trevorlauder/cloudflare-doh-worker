@@ -16,7 +16,7 @@ if not (is_ci and os.getenv("SKIP_DOCKER_BUILD", "") == "1"):
     docker_build(
         worker_image,
         ".",
-        ignore = ["k8s/", "nginx/", "docs/"],
+        ignore = ["k8s/", "nginx/", "docs/", "**/__pycache__"],
         live_update = [sync("src/", "/usr/src/app/src/")],
     )
 

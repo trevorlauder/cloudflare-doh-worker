@@ -49,10 +49,10 @@ spec:
           resources:
             requests:
               cpu: 500m
-              memory: 1Gi
+              memory: 2Gi
             limits:
-              cpu: 2000m
-              memory: 1Gi
+              cpu: 4000m
+              memory: 2Gi
           env:
             - name: SSL_CERT_FILE
               value: /ssl-certs/ca-certificates.crt
