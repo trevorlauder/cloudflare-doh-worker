@@ -111,7 +111,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPOSITORY: ${{ github.repository }}
         run: |
-          notes=$(awk "/^## \[${TAG}\]/{found=1; next} found && /^## /{exit} found{print}" CHANGELOG.md)
+          notes=$(git cliff --latest --strip header)
 
           prerelease_flag=""
           if [[ "${TAG}" == *-* ]]; then
