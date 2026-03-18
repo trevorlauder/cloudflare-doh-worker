@@ -34,7 +34,7 @@ jobs:
           TAG: ${{ github.ref_name }}
           GH_REPOSITORY: ${{ github.repository }}
         run: |
-          mkdir -p /tmp/deploy/.github /tmp/deploy/scripts /tmp/deploy/blocklist
+          mkdir -p /tmp/deploy/blocklist
 
           cp -r src/ /tmp/deploy/src/
           cp -r scripts/ /tmp/deploy/scripts/
