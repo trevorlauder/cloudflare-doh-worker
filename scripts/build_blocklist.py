@@ -312,8 +312,9 @@ def main() -> None:
         _console.print(
             "[yellow]No URLs configured in blocklist_sources.yaml, cleaning up blocklist files.[/yellow]",
         )
-        for stale in sorted(_BLOCKLIST_DIR.glob("*")):
+        for stale in sorted(_BLOCKLIST_DIR.glob("*.txt")):
             stale.unlink()
+            _console.print(f"[yellow]Removed {stale.name}[/yellow]")
             _console.print(f"[yellow]Removed {stale.name}[/yellow]")
         return
 
