@@ -39,7 +39,6 @@ jobs:
 
           cp -r src/ /tmp/deploy/src/
           cp -r scripts/ /tmp/deploy/scripts/
-          cp -r workflows/ /tmp/deploy/.github/workflows/
           cp wrangler.toml pyproject.toml package.json uv.lock LICENSE .gitignore /tmp/deploy/
           cp mise.deploy.toml /tmp/deploy/mise.toml
           cp blocklist_sources_deploy.yaml /tmp/deploy/blocklist_sources.yaml
@@ -77,9 +76,8 @@ jobs:
 
           The bloom filter is rebuilt and uploaded to KV automatically on deploy.
 
-          To keep lists updated automatically, uncomment the entire contents of
-          \`.github/workflows/update-blocklist.yml\`. It runs weekly and opens a PR
-          when any upstream list changes.
+          To keep lists updated automatically, you can use the sample workflow here:
+          https://github.com/${GH_REPOSITORY}/blob/${TAG}/workflows/update-blocklist.yml
 
           See the full docs for details:
           https://github.com/${GH_REPOSITORY}/blob/${TAG}/README.md#community-block-list
