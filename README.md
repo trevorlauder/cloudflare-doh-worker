@@ -229,15 +229,16 @@ git merge --allow-unrelated-histories deploy-1.0.3  # replace with the new versi
 
 ### Avoiding merge conflicts
 
-Since the deploy branch is force-pushed as an orphan, merges can produce conflicts on every file. A `.gitattributes` file is included that auto-accepts upstream changes for all files except `src/config.py`, `blocklist_sources.yaml`, and `wrangler.toml`. To enable it, set up the custom merge driver it references:
+Since the deploy branch is force-pushed as an orphan, merges can produce conflicts on every file. A `.gitattributes` file is included that auto-accepts upstream changes for all files and keeps your local versions of `src/config.py`, `blocklist_sources.yaml`, and `wrangler.toml`. To enable it, set up the custom merge drivers it references:
 
 ```shell
 git config merge.theirs.driver 'cp %B %A'
+git config merge.ours.driver true
 ```
 
-With this in place, only `src/config.py`, `blocklist_sources.yaml`, and `wrangler.toml` will go through normal merge and may require manual conflict resolution. All other files will silently accept the upstream version.
+With this in place, all files will silently accept the upstream version except `src/config.py`, `blocklist_sources.yaml`, and `wrangler.toml`, which will keep your local versions unchanged. Check the release notes for any required changes to those files and apply them manually.
 
-After resolving any conflicts, redeploy.
+After applying any changes, redeploy.
 
 ## Latency
 
