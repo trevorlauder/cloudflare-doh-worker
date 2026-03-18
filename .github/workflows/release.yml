@@ -14,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # required to push the deploy branch and tags
-      actions: write # required to create or update workflow files
     concurrency:
       group: deploy-branch-${{ github.ref }}
       cancel-in-progress: false
