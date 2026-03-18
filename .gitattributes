@@ -1,4 +1,4 @@
 * merge=theirs
-src/config.py merge
-blocklist_sources.yaml merge
-wrangler.toml merge
+src/config.py merge=ours
+blocklist_sources.yaml merge=ours
+wrangler.toml merge=ours
