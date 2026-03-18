@@ -309,7 +309,12 @@ def main() -> None:
 
     urls: list[str] = load_urls()
     if not urls:
-        print("No URLs configured in blocklist_sources.yaml, nothing to do.")
+        _console.print(
+            "[yellow]No URLs configured in blocklist_sources.yaml, cleaning up blocklist files.[/yellow]",
+        )
+        for stale in sorted(_BLOCKLIST_DIR.glob("*")):
+            stale.unlink()
+            _console.print(f"[yellow]Removed {stale.name}[/yellow]")
         return
 
     _BLOCKLIST_DIR.mkdir(exist_ok=True)
