@@ -1,0 +1,4 @@
+* merge=theirs
+src/config.py merge
+blocklist_sources.yaml merge
+wrangler.toml merge
