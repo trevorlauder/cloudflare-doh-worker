@@ -110,6 +110,7 @@ _CONFIG_TYPE_RULES: list[tuple[str, type | tuple]] = [
     ("RETRY_MAX_ATTEMPTS", int),
     ("REBIND_PROTECTION", bool),
     ("CACHE_DNS", bool),
+    ("KV_ENABLED", bool),
     ("BLOCKLIST_LOADING_POLICY", str),
     ("BLOCKED_DOMAINS", list),
     ("ALLOWED_DOMAINS", list),
@@ -1221,7 +1222,7 @@ async def _handle_request(
 
     blocklist_bypassed: bool = False
     blocklist_loading_503: bool = False
-    if not name or config_allowed or config_blocked:
+    if not name or config_allowed or config_blocked or not config.KV_ENABLED:
         kv_blocklist: BlocklistCache = _EMPTY_BLOCKLIST
     else:
         kv_blocklist = await _load_blocklist_from_kv(env)
