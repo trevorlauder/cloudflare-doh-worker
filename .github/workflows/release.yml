@@ -1,3 +1,4 @@
+---
 name: deploy-branch
 
 permissions: {}
@@ -33,16 +34,15 @@ jobs:
           TAG: ${{ github.ref_name }}
           GH_REPOSITORY: ${{ github.repository }}
         run: |
-          mkdir /tmp/deploy
+          mkdir -p /tmp/deploy/.github /tmp/deploy/scripts /tmp/deploy/blocklist
 
-          cp -r src/          /tmp/deploy/src/
-          cp wrangler.toml    /tmp/deploy/
-          cp pyproject.toml   /tmp/deploy/
-          cp package.json     /tmp/deploy/
-          cp uv.lock          /tmp/deploy/
-          cp LICENSE          /tmp/deploy/
-          cp .gitignore       /tmp/deploy/
+          cp -r src/ /tmp/deploy/src/
+          cp -r scripts/ /tmp/deploy/scripts/
+          cp -r workflows/ /tmp/deploy/.github/workflows/
+          cp wrangler.toml pyproject.toml package.json uv.lock LICENSE .gitignore /tmp/deploy/
           cp mise.deploy.toml /tmp/deploy/mise.toml
+          cp blocklist_sources_deploy.yaml /tmp/deploy/blocklist_sources.yaml
+          touch /tmp/deploy/blocklist/.gitkeep
 
           cat > /tmp/deploy/README.md << EOF
           # cloudflare-doh-worker
@@ -55,6 +55,33 @@ jobs:
 
           Additional example configs:
           https://github.com/${GH_REPOSITORY}/blob/${TAG}/examples/
+
+          ## Community Block List
+
+          Add URLs to \`blocklist_sources.yaml\` to enable community block lists:
+
+          \`\`\`yaml
+          urls:
+            - https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+          \`\`\`
+
+          Then download and commit the per-source files:
+
+          \`\`\`shell
+          uv run python scripts/build_blocklist.py
+          git add blocklist/
+          git commit -m "update blocklist"
+          git push
+          \`\`\`
+
+          The bloom filter is rebuilt and uploaded to KV automatically on deploy.
+
+          To keep lists updated automatically, uncomment the entire contents of
+          \`.github/workflows/update-blocklist.yml\`. It runs weekly and opens a PR
+          when any upstream list changes.
+
+          See the full docs for details:
+          https://github.com/${GH_REPOSITORY}/blob/${TAG}/README.md#community-block-list
           EOF
 
       - name: Push deploy branch

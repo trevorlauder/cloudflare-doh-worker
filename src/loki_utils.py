@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 def build_loki_fetch_promise(
     request_timestamp_ms: int,
+    elapsed_ms: int,
     endpoint: str,
     question: Question,
     response_from: str,
@@ -25,6 +26,8 @@ def build_loki_fetch_promise(
     config_blocked: bool = False,
     config_allowed: bool = False,
     error: bool = False,
+    kv_loading: bool = False,
+    blocklist_domain_count: int = 0,
 ) -> object | None:
     """
     Build a Loki log entry and return a JS fetch Promise, or None on failure.
@@ -40,7 +43,9 @@ def build_loki_fetch_promise(
     client_ip (str): Client IP address.
     config_blocked (bool): Whether the request was blocked by config.
     config_allowed (bool): Whether the request was allowed by config bypass.
+    elapsed_ms (int): Elapsed milliseconds from request start to just before Loki dispatch.
     error (bool): Whether the request resulted in an error.
+    kv_loading (bool): Whether the KV blocklist was still loading when this request was handled.
 
     Returns:
     object | None: JS fetch Promise or None on failure.
@@ -49,27 +54,27 @@ def build_loki_fetch_promise(
         from js import AbortSignal
         from workers import fetch
 
-        loki_username = getattr(env, "LOKI_USERNAME", None)
-        loki_password = getattr(env, "LOKI_PASSWORD", None)
+        loki_username: object | None = getattr(env, "LOKI_USERNAME", None)
+        loki_password: object | None = getattr(env, "LOKI_PASSWORD", None)
 
         if not loki_username or not loki_password:
             return None
 
-        credentials = base64.b64encode(
+        credentials: str = base64.b64encode(
             f"{loki_username}:{loki_password}".encode(),
         ).decode()
 
-        response_codes = {}
-        blocked_ids = []
-        timed_out_ids = []
-        connection_error_ids = []
-        rebind_ids = []
-        possibly_blocked_ids = []
-        failed_provider_ids = []
-        retried_provider_ids = []
+        response_codes: dict[str, int] = {}
+        blocked_ids: list[str] = []
+        timed_out_ids: list[str] = []
+        connection_error_ids: list[str] = []
+        rebind_ids: list[str] = []
+        possibly_blocked_ids: list[str] = []
+        failed_provider_ids: list[str] = []
+        retried_provider_ids: list[str] = []
 
         for result in results:
-            pid = result.provider_id
+            pid: str = result.provider_id
             response_codes[pid] = result.response_status
             if result.blocked:
                 blocked_ids.append(pid)
@@ -86,18 +91,20 @@ def build_loki_fetch_promise(
             if result.retry_count > 0:
                 retried_provider_ids.append(f"{pid} (x{result.retry_count})")
 
-        is_blocked = any(r.blocked and r.provider_id == response_from for r in results)
+        is_blocked: bool = any(
+            r.blocked and r.provider_id == response_from for r in results
+        )
 
-        is_possibly_blocked = any(
+        is_possibly_blocked: bool = any(
             r.possibly_blocked and r.provider_id == response_from for r in results
         )
 
         if error:
-            result_status = "error"
+            result_status: str = "error"
         elif config_blocked:
-            result_status = "config blocked"
+            result_status = "worker blocked"
         elif config_allowed:
-            result_status = "config allowed"
+            result_status = "worker allowed"
         elif is_blocked:
             result_status = "blocked"
         elif is_possibly_blocked:
@@ -105,9 +112,10 @@ def build_loki_fetch_promise(
         else:
             result_status = "not blocked"
 
-        log_entry = {
+        log_entry: dict[str, object] = {
             "client_ip": client_ip,
             "endpoint": endpoint,
+            "elapsed_ms": elapsed_ms,
             "question_name": question.name,
             "question_type": question.type,
             "result_status": result_status,
@@ -120,11 +128,13 @@ def build_loki_fetch_promise(
             "retried_providers": ", ".join(retried_provider_ids),
             "response_codes": response_codes,
             "response_from": response_from,
+            "kv_loading": kv_loading,
+            "blocklist_domain_count": blocklist_domain_count,
         }
 
-        ts_ns = str(request_timestamp_ms * 1_000_000)
+        ts_ns: str = str(request_timestamp_ms * 1_000_000)
 
-        loki_payload = {
+        loki_payload: dict[str, list] = {
             "streams": [
                 {
                     "stream": {"source": "cloudflare-doh-worker"},
@@ -133,12 +143,12 @@ def build_loki_fetch_promise(
             ],
         }
 
-        headers = {
+        headers: dict[str, str] = {
             "Authorization": f"Basic {credentials}",
             "Content-Type": "application/json",
         }
 
-        fetch_options = {
+        fetch_options: dict[str, object] = {
             "method": "POST",
             "headers": headers,
             "body": json.dumps(loki_payload, separators=(",", ":")),

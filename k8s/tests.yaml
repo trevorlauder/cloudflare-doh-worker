@@ -11,7 +11,7 @@ spec:
       containers:
         - name: tests
           image: k3d-doh-registry:5001/doh-worker
-          command: ["make", "test-ci"]
+          command: ["make", "test-ci-integration"]
           env:
             - name: BASE_URL
               value: https://nginx

@@ -1,4 +1,4 @@
-.PHONY: dev deploy install setup ci test test-ci k3d-create k3d-delete k3d-recreate update-mise-checksums changelog
+.PHONY: dev deploy install setup ci test test-ci-integration k3d-create k3d-delete k3d-recreate update-mise-checksums changelog
 
 changelog:
 	@GITHUB_TOKEN=$(shell gh auth token) git cliff \
@@ -24,8 +24,8 @@ ci:
 test:
 	uv run pytest tests/ -n auto
 
-test-ci:
-	uv run pytest tests/ -v
+test-ci-integration:
+	uv run pytest tests/test_integration.py -v
 
 k3d-create:
 	k3d registry create doh-registry --port 5001 || true

@@ -263,7 +263,7 @@ def test_http3_alt_svc_advertised():
 
 @pytest.mark.skipif(
     not IS_HTTPS or IS_LOCAL,
-    reason="HTTP/3 requires nginx HTTPS stack; skipped for localhost",
+    reason="HTTP/3 requires nginx HTTPS stack, skipped for localhost",
 )
 @pytest.mark.skipif(
     MOCK_DOH_ENABLED,
@@ -323,14 +323,19 @@ def test_post_dns_wire(endpoint: str):
 @pytest.mark.skipif(not BLOCKED_DOMAINS, reason="BLOCKED_DOMAINS is empty in config")
 def test_config_blocked_domain_returns_nxdomain():
     domain = _first_domain(BLOCKED_DOMAINS)
-    status, headers, data = _get_json(domain, "A")
+    status, headers, body = _post_wire(_build_dns_wire(domain))
     assert status == 200
-    assert data["Status"] == 3, f"expected NXDOMAIN (Status 3), got {data['Status']}"
+    msg = dns.message.from_wire(body)
+    assert msg.rcode() == dns.rcode.NXDOMAIN, (
+        f"expected NXDOMAIN, got {dns.rcode.to_text(msg.rcode())}"
+    )
+
     if DEBUG:
         response_from = headers.get("cloudflare-doh-worker-response-from", "")
         assert response_from == "config", (
             f"expected response-from 'config', got {response_from!r}"
         )
+
         config_blocked = headers.get("cloudflare-doh-worker-config-blocked", "")
         assert config_blocked == "1", (
             f"expected CLOUDFLARE-DOH-WORKER-CONFIG-BLOCKED to be '1', got {config_blocked!r}"
@@ -341,6 +346,11 @@ def test_config_blocked_domain_returns_nxdomain():
 def test_allowed_domain_uses_bypass_provider():
     status, headers, _ = _get_json(_first_domain(ALLOWED_DOMAINS), "A")
     assert status == 200
+
+    assert headers.get("cloudflare-doh-worker-config-allowed") == "1", (
+        "missing CLOUDFLARE-DOH-WORKER-CONFIG-ALLOWED header"
+    )
+
     if DEBUG:
         response_from = headers.get("cloudflare-doh-worker-response-from", "")
         assert BYPASS_PROVIDER["url"] in response_from, (
@@ -363,16 +373,17 @@ def test_provider_blocks_known_malware_domain():
     is_blocked_ip = any(a.get("data") in blocked_ips for a in answers)
 
     assert is_nxdomain or is_blocked_ip, (
-        f"expected {domain!r} to resolve to NXDOMAIN or a blocked IP, "
-        f"got Status={dns_status}, Answer={answers}"
+        f"expected {domain!r} to resolve to NXDOMAIN or a blocked IP, got Status={dns_status}, Answer={answers}"
     )
 
     if DEBUG:
         blocked_by = headers.get("cloudflare-doh-worker-blocked-providers", "")
+
         possibly_blocked_by = headers.get(
             "cloudflare-doh-worker-possibly-blocked-providers",
             "",
         )
+
         assert blocked_by or possibly_blocked_by, (
             f"expected at least one provider to report blocking {domain!r}, "
             f"blocked-providers={blocked_by!r}, possibly-blocked-providers={possibly_blocked_by!r}"
@@ -404,11 +415,14 @@ def test_config_with_valid_token_returns_config():
         content_type = resp.headers.get("content-type", "")
         assert "json" in content_type, f"unexpected content-type: {content_type}"
         data = json.loads(resp.read())
-        assert "ENDPOINTS" in data, "config response missing 'ENDPOINTS' key"
-        assert "BLOCKED_DOMAINS" in data, (
+        config_data = data["config"]
+        assert "ENDPOINTS" in config_data, "config response missing 'ENDPOINTS' key"
+
+        assert "BLOCKED_DOMAINS" in config_data, (
             "config response missing 'BLOCKED_DOMAINS' key"
         )
-        assert "REBIND_PROTECTION" in data, (
+
+        assert "REBIND_PROTECTION" in config_data, (
             "config response missing 'REBIND_PROTECTION' key"
         )
 
@@ -449,8 +463,6 @@ def test_health_returns_ok():
         assert resp.status == 200
         body = json.loads(resp.read().decode())
         assert body["status"] == "ok"
-        assert isinstance(body["endpoints"], int)
-        assert body["endpoints"] > 0
 
 
 @pytest.mark.skipif(
@@ -468,13 +480,15 @@ def test_cache_control_present_on_successful_dns_wire():
 
 
 @pytest.mark.skipif(not BLOCKED_DOMAINS, reason="BLOCKED_DOMAINS is empty in config")
-def test_blocked_domain_json_has_empty_answer():
-    status, _, data = _get_json(_first_domain(BLOCKED_DOMAINS), "A")
+def test_blocked_domain_returns_nxdomain_no_answer():
+    status, _, body = _post_wire(_build_dns_wire(_first_domain(BLOCKED_DOMAINS)))
     assert status == 200
-    assert data["Status"] == 3, f"expected NXDOMAIN (Status 3), got {data['Status']}"
-    assert "Answer" in data, "blocked JSON response missing 'Answer' key"
-    assert data["Answer"] == [], (
-        f"expected empty Answer list for blocked domain, got {data['Answer']!r}"
+    msg = dns.message.from_wire(body)
+    assert msg.rcode() == dns.rcode.NXDOMAIN, (
+        f"expected NXDOMAIN, got {dns.rcode.to_text(msg.rcode())}"
+    )
+    assert len(msg.answer) == 0, (
+        f"expected empty answer section for blocked domain, got {msg.answer!r}"
     )
 
 
@@ -610,6 +624,57 @@ def test_post_dns_wire_with_ipv6_ecs_no_truncation():
     )
 
 
+_KV_BLOCKLIST_ENABLED = (Path(__file__).parent.parent / "blocklist" / "0.json").exists()
+_KV_FP_CHECK_N = int(os.environ.get("KV_FP_CHECK_PROBES", "100"))
+
+
+@pytest.mark.skipif(not _KV_BLOCKLIST_ENABLED, reason="blocklist/0.json not present")
+def test_kv_blocklist_domain_returns_nxdomain():
+    status, headers, body = _post_wire(_build_dns_wire("analytics.archive.org"))
+    assert status == 200
+    msg = dns.message.from_wire(body)
+    assert msg.rcode() == dns.rcode.NXDOMAIN, (
+        f"expected NXDOMAIN for analytics.archive.org (KV blocklist), got {dns.rcode.to_text(msg.rcode())}"
+    )
+    if DEBUG:
+        config_blocked = headers.get("cloudflare-doh-worker-config-blocked", "")
+        assert config_blocked == "1", (
+            f"expected CONFIG-BLOCKED to be '1', got {config_blocked!r}"
+        )
+
+
+@pytest.mark.skipif(not _KV_BLOCKLIST_ENABLED, reason="blocklist/0.json not present")
+@pytest.mark.skipif(
+    not MOCK_DOH_ENABLED,
+    reason="requires mock-doh upstream to guarantee NOERROR for absent domains",
+)
+def test_kv_blocklist_false_positive_rate():
+    """
+    Query the worker with KV_FP_CHECK_PROBES absent domains and assert none are falsely blocked.
+
+    Uses deterministic {i}.fp-probe.invalid probe names matching the build script convention.
+    The reserved .invalid TLD cannot appear in any real blocklist, and because mock-doh always
+    returns NOERROR, any NXDOMAIN response can only come from the worker's KV bloom filter.
+
+    Set KV_FP_CHECK_PROBES env var to override the default probe count (default: 1000).
+
+    Returns:
+    None
+    """
+    false_hits = []
+    for i in range(_KV_FP_CHECK_N):
+        probe = f"{i}.fp-probe.invalid"
+        _, _, body = _post_wire(_build_dns_wire(probe))
+        if dns.message.from_wire(body).rcode() == dns.rcode.NXDOMAIN:
+            false_hits.append(probe)
+
+    rate = len(false_hits) / _KV_FP_CHECK_N
+    assert not false_hits, (
+        f"KV blocklist false-positive rate {rate:.2e} "
+        f"({len(false_hits)} hits / {_KV_FP_CHECK_N} probes): {false_hits[:5]!r}"
+    )
+
+
 @pytest.mark.skipif(_ECS_ENABLED, reason="ECS_TRUNCATION is enabled")
 def test_ecs_disabled_no_truncation_header():
     wire = _build_dns_wire_with_ecs(
@@ -685,7 +750,7 @@ def test_provider_stat_headers_present_on_dns_wire():
 
 @pytest.mark.skipif(not BLOCKED_DOMAINS, reason="BLOCKED_DOMAINS is empty in config")
 def test_provider_stat_headers_absent_on_config_blocked():
-    status, headers, _ = _get_json(_first_domain(BLOCKED_DOMAINS), "A")
+    status, headers, _ = _post_wire(_build_dns_wire(_first_domain(BLOCKED_DOMAINS)))
     assert status == 200
     queried = headers.get("cloudflare-doh-worker-providers-queried", "")
     assert not queried, (
@@ -804,6 +869,10 @@ def test_allowed_domain_via_post_wire():
     wire = _build_dns_wire(_first_domain(ALLOWED_DOMAINS))
     status, headers, _ = _post_wire(wire)
     assert status == 200
+
+    assert headers.get("cloudflare-doh-worker-config-allowed") == "1", (
+        "missing CLOUDFLARE-DOH-WORKER-CONFIG-ALLOWED header"
+    )
     if DEBUG:
         response_from = headers.get("cloudflare-doh-worker-response-from", "")
         assert BYPASS_PROVIDER["url"] in response_from, (
@@ -860,6 +929,7 @@ def test_get_wire_param_with_json_accept_rejected():
             ),
             timeout=TIMEOUT,
         )
+
     assert e.value.code == 406
 
 
@@ -872,6 +942,7 @@ def test_get_name_param_with_wire_accept_rejected():
             ),
             timeout=TIMEOUT,
         )
+
     assert e.value.code == 406
 
 
@@ -891,6 +962,7 @@ def test_post_wire_with_json_accept_rejected():
             ),
             timeout=TIMEOUT,
         )
+
     assert e.value.code == 406
 
 

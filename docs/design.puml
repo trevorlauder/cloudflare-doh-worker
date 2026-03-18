@@ -8,10 +8,7 @@ activate "DNS Client"
 
 note over "Cloudflare Worker": Resolve {SECRET} placeholders\nParse DNS request\nTruncate ECS prefixes (if enabled)
 
-alt Domain in BLOCKED_DOMAINS
-  "Cloudflare Worker" -[#gray]-> "Grafana Loki": POST log entry (async, if configured)
-  "Cloudflare Worker" -> "DNS Client": NXDOMAIN (synthetic)
-else Domain in ALLOWED_DOMAINS
+alt Domain in ALLOWED_DOMAINS
 group Single request (Bypass Provider only)
   "Cloudflare Worker" -> "Bypass Provider": GET/POST https://bypass-provider/dns-query
   "Cloudflare Worker" <- "Bypass Provider": Bypass Provider DNS Response
@@ -19,7 +16,10 @@ end
 
 "Cloudflare Worker" -[#gray]-> "Grafana Loki": POST log entry (async, if configured)
 "Cloudflare Worker" -> "DNS Client": Cloudflare Worker DNS Response
-else Domain not in BLOCKED_DOMAINS or ALLOWED_DOMAINS
+else Domain in BLOCKED_DOMAINS or community blocklist
+  "Cloudflare Worker" -[#gray]-> "Grafana Loki": POST log entry (async, if configured)
+  "Cloudflare Worker" -> "DNS Client": NXDOMAIN (synthetic)
+else Domain not in ALLOWED_DOMAINS or BLOCKED_DOMAINS
 group Parallel
   "Cloudflare Worker" -> "Main Provider": GET/POST https://main-provider/dns-query
   "Cloudflare Worker" <- "Main Provider": Main Provider DNS Response

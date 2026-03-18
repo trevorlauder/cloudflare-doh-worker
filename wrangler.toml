@@ -10,12 +10,15 @@ compatibility_flags = [
   "python_dedicated_snapshot",
 ]
 
-# Use a custom route if you have your own domain on Cloudflare
-# routes = [
-#   "www.mydomain.com/top/level/path/to/entrypoints/*",
-# ]
-
 main = "src/worker.py"
+
+# Use a custom route if you have your own domain on Cloudflare
+# [[routes]]
+# pattern = "www.mydomain.com/top/level/path/to/entrypoints/*"
+# zone_name = "www.mydomain.com"
+
+[build]
+command = "bash scripts/wrangler_build.sh"
 
 [observability]
 [observability.logs]
@@ -24,8 +27,11 @@ invocation_logs = false
 
 [vars]
 # Secrets managed outside of the file
-# Run `npx wrangler secret put <NAME>` for each of these
+# Run `uv run pywrangler secret put <NAME>` for each of these
 # - LOKI_URL          (Grafana Loki push endpoint URL)
 # - LOKI_USERNAME
 # - LOKI_PASSWORD
 # - ADMIN_TOKEN       (required to enable /config endpoint)
+
+[[kv_namespaces]]
+binding = "BLOCK_LIST"

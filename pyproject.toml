@@ -8,14 +8,17 @@ dependencies = [
 
 [dependency-groups]
 deploy = [
+  "pyyaml",
+  "rbloom",
+  "rich",
   "workers-py",
   "workers-runtime-sdk",
 ]
 dev = [
   "curl-cffi",
-  "pytest",
   "pytest-rerunfailures",
   "pytest-xdist",
+  "pytest",
 ]
 
 [tool.uv]
@@ -34,27 +37,28 @@ line-length = 120
 [tool.ruff.lint]
 select = [
   "ANN",
-  "E4",
-  "E7",
-  "E9",
-  "E501",
-  "F",
   "B",
-  "N",
-  "Q",
-  "I",
-  "UP",
-  "SIM",
   "C4",
   "COM812",
+  "E4",
+  "E501",
+  "E7",
+  "E9",
+  "F",
+  "I",
+  "N",
   "PT",
+  "Q",
   "RUF",
-  "T20",
   "S",
+  "SIM",
+  "T20",
+  "UP",
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["ANN201", "S101", "S104", "S310", "S311"]
+"scripts/**" = ["T201", "S310", "S603"]
 
 [tool.ruff.lint.isort]
 force-sort-within-sections = true

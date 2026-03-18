@@ -1,41 +1,47 @@
 # Copyright 2025-2026 Trevor Lauder.
 # SPDX-License-Identifier: MIT
 
-"""Default configuration for the Cloudflare DoH worker proxy."""
+"""Configuration for the Cloudflare DoH worker proxy."""
 
-DEBUG = False
+from typing import Literal
 
-CONFIG_ENDPOINT = "/doh/config"
+from config_types import EcsConfig, EndpointConfig, Provider
 
-HEALTH_ENDPOINT = "/doh/health"
+DEBUG: bool = False
 
-TIMEOUT_MS = 5000
+CONFIG_ENDPOINT: str = "/config"
 
-ECS_TRUNCATION = {
+HEALTH_ENDPOINT: str = "/health"
+
+TIMEOUT_MS: int = 5000
+
+ECS_TRUNCATION: EcsConfig = {
     "enabled": False,
 }
 
-REBIND_PROTECTION = True
+REBIND_PROTECTION: bool = True
 
-BLOCKED_DOMAINS = []
+BLOCKED_DOMAINS: list = []
 
-ALLOWED_DOMAINS = []
+ALLOWED_DOMAINS: list = []
 
-BYPASS_PROVIDER = {
+BYPASS_PROVIDER: Provider = {
     "url": "https://cloudflare-dns.com/dns-query",
     "dns_json": True,
 }
 
-LOKI_URL = ""
+LOKI_URL: str = ""
 
-LOKI_TIMEOUT_MS = 5000
+LOKI_TIMEOUT_MS: int = 5000
 
-RETRY_MAX_ATTEMPTS = 2
+RETRY_MAX_ATTEMPTS: int = 2
 
-CACHE_DNS = True
+CACHE_DNS: bool = True
 
-ENDPOINTS = {
-    "/doh/my-device": {
+BLOCKLIST_LOADING_POLICY: Literal["block", "bypass"] = "block"
+
+ENDPOINTS: dict[str, EndpointConfig] = {
+    "/my-device": {
         "main_provider": {
             "url": "https://security.cloudflare-dns.com/dns-query",
             "dns_json": True,

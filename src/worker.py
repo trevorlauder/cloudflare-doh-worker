@@ -5,9 +5,11 @@
 
 import asyncio
 import base64
+from collections.abc import Callable
 import hmac
 import json
 import logging
+import math
 import re
 import time
 from typing import NamedTuple
@@ -16,15 +18,24 @@ import urllib.parse
 import dns.exception
 import dns.name
 import dns.rdatatype
+from pyodide.ffi import to_js
 from workers import Response, WorkerEntrypoint
 
+from cache_utils import (
+    _build_cache_key,
+    _schedule_cache_put,
+    _to_js_body,
+    _try_cache_get,
+)
 import config
+from config_types import EndpointConfig, Provider
 from dns_utils import (
     MAX_DNS_BODY_SIZE,
     SUPPORTED_ACCEPT_HEADERS,
     DnsParseResult,
     ProviderResult,
     Question,
+    _bloom_contains,
     compile_domain_set,
     domain_matches,
     get_response_min_ttl,
@@ -36,21 +47,17 @@ from loki_utils import build_loki_fetch_promise
 
 
 class _JsonFormatter(logging.Formatter):
-    """
-    Emit log records as single-line JSON for Workers Observability.
-
-    Inherits from logging.Formatter.
-    """
+    """Emit log records as single-line JSON for Workers Observability."""
 
     def format(self, record: logging.LogRecord) -> str:
         """
-        Format a log record as a single-line JSON string.
+        Format a log record as single-line JSON.
 
         Parameters:
         record (logging.LogRecord): The log record to format.
 
         Returns:
-        str: JSON with level, logger, message, and an optional exception field.
+        str: JSON string with level, logger, message, and optional exception.
         """
         entry: dict[str, object] = {
             "level": record.levelname,
@@ -75,6 +82,27 @@ _ALLOWED_COMPILED = compile_domain_set(config.ALLOWED_DOMAINS)
 _BLOCKED_COMPILED = compile_domain_set(config.BLOCKED_DOMAINS)
 
 
+class BlocklistCache(NamedTuple):
+    """Immutable container for a loaded KV blocklist."""
+
+    check: Callable[[str], bool]
+    manifest_urls: tuple[str, ...]
+    domain_count: int
+    fp_rate: float
+    bloom_size_bytes: int
+
+
+_kv_blocklist_cache: BlocklistCache | None = None
+_kv_blocklist_loading: bool = False
+_EMPTY_BLOCKLIST: BlocklistCache = BlocklistCache(
+    check=lambda _: False,
+    manifest_urls=(),
+    domain_count=0,
+    fp_rate=0.0,
+    bloom_size_bytes=0,
+)
+
+
 _CONFIG_TYPE_RULES: list[tuple[str, type | tuple]] = [
     ("DEBUG", bool),
     ("TIMEOUT_MS", int),
@@ -82,6 +110,7 @@ _CONFIG_TYPE_RULES: list[tuple[str, type | tuple]] = [
     ("RETRY_MAX_ATTEMPTS", int),
     ("REBIND_PROTECTION", bool),
     ("CACHE_DNS", bool),
+    ("BLOCKLIST_LOADING_POLICY", str),
     ("BLOCKED_DOMAINS", list),
     ("ALLOWED_DOMAINS", list),
     ("BYPASS_PROVIDER", dict),
@@ -94,14 +123,9 @@ _CONFIG_TYPE_RULES: list[tuple[str, type | tuple]] = [
 
 
 def _validate_types() -> None:
-    """
-    Raise TypeError if any config value has the wrong type.
-
-    Returns:
-    None
-    """
+    """Raise TypeError if any config value has the wrong type."""
     for name, expected_type in _CONFIG_TYPE_RULES:
-        value = getattr(config, name, None)
+        value: object = getattr(config, name, None)
 
         if value is not None and not isinstance(value, expected_type):
             raise TypeError(
@@ -109,17 +133,23 @@ def _validate_types() -> None:
             )
 
 
-def _validate_config() -> None:
-    """
-    Validate cross-field config constraints at import time.
+_VALID_BLOCKLIST_LOADING_POLICIES: frozenset[str] = frozenset({"block", "bypass"})
 
-    Returns:
-    None
-    """
+
+def _validate_config() -> None:
+    """Validate cross-field config constraints at import time."""
+    policy: str = config.BLOCKLIST_LOADING_POLICY
+
+    if policy not in _VALID_BLOCKLIST_LOADING_POLICIES:
+        raise ValueError(
+            f"config.BLOCKLIST_LOADING_POLICY must be one of "
+            f"{sorted(_VALID_BLOCKLIST_LOADING_POLICIES)}, got {policy!r}",
+        )
+
     if not config.ALLOWED_DOMAINS:
         return
 
-    value = config.BYPASS_PROVIDER.get("url")
+    value: object = config.BYPASS_PROVIDER.get("url")
 
     if not isinstance(value, str) or not value:
         raise ValueError(
@@ -131,15 +161,168 @@ _validate_types()
 _validate_config()
 
 
-def _with_provider_id(provider: dict) -> dict:
+async def _load_blocklist_from_kv(env: object) -> BlocklistCache | None:
     """
-    Return a copy of provider with a pre-computed provider_id key.
+    Load the community block list from KV on cold start.
 
     Parameters:
-    provider (dict): Provider config dict.
+    env (object): Worker environment with KV namespace bindings.
 
     Returns:
-    dict: Provider dict with provider_id.
+    BlocklistCache | None: Loaded blocklist data, or None if another request
+        is already loading the blocklist.
+    """
+    global _kv_blocklist_cache, _kv_blocklist_loading
+
+    if _kv_blocklist_cache is not None:
+        return _kv_blocklist_cache
+
+    if _kv_blocklist_loading:
+        return None
+
+    _kv_blocklist_loading = True
+
+    try:
+        binding: str = "BLOCK_LIST"
+        kv: object | None = getattr(env, binding, None)
+
+        if kv is None:
+            logger.warning(
+                "KV binding %r not found on env, community block list disabled",
+                binding,
+            )
+
+            _kv_blocklist_cache = _EMPTY_BLOCKLIST
+            return _kv_blocklist_cache
+
+        manifest_key: str = "blocklist:manifest"
+
+        try:
+            manifest_json: str | None = await kv.get(manifest_key)
+        except Exception:
+            logger.warning(
+                "Failed to read KV block list manifest %r, community block list disabled",
+                manifest_key,
+                exc_info=True,
+            )
+
+            _kv_blocklist_cache = _EMPTY_BLOCKLIST
+            return _kv_blocklist_cache
+
+        if not manifest_json:
+            logger.warning(
+                "KV block list manifest %r is empty or not found, community block list disabled",
+                manifest_key,
+            )
+
+            _kv_blocklist_cache = _EMPTY_BLOCKLIST
+            return _kv_blocklist_cache
+
+        try:
+            manifest: list = json.loads(manifest_json)
+        except Exception:
+            logger.warning("Failed to parse blocklist manifest JSON", exc_info=True)
+            _kv_blocklist_cache = _EMPTY_BLOCKLIST
+            return _kv_blocklist_cache
+
+        if not manifest:
+            logger.warning("Blocklist manifest is empty, community block list disabled")
+            _kv_blocklist_cache = _EMPTY_BLOCKLIST
+            return _kv_blocklist_cache
+
+        entry: dict = manifest[0]
+
+        entry_source_urls: list = entry.get("source_urls", [])
+        if entry_source_urls:
+            manifest_urls: list[str] = list(entry_source_urls)
+        else:
+            legacy_url: str = entry.get("url", "")
+            manifest_urls: list[str] = [legacy_url] if legacy_url else []
+
+        bloom_m: int = int(entry.get("bloom_m", 0))
+        bloom_k: int = int(entry.get("bloom_k", 0))
+        exact_count: int = int(entry.get("exact_count", 0))
+        suffixes_list: list = entry.get("suffixes", [])
+
+        suffixes_tuple: tuple[str, ...] = tuple(sorted(suffixes_list))
+        total_domain_count: int = exact_count + len(suffixes_list)
+
+        if bloom_m and bloom_k:
+            bloom_key: str = "blocklist:bloom"
+            try:
+                bloom_buf: object | None = await kv.get(
+                    bloom_key,
+                    to_js({"type": "arrayBuffer"}),
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to read KV bloom filter %r, community block list disabled",
+                    bloom_key,
+                    exc_info=True,
+                )
+                _kv_blocklist_cache = _EMPTY_BLOCKLIST
+                return _kv_blocklist_cache
+
+            if bloom_buf is None:
+                logger.warning(
+                    "KV bloom filter %r is empty or not found, community block list disabled",
+                    bloom_key,
+                )
+                _kv_blocklist_cache = _EMPTY_BLOCKLIST
+                return _kv_blocklist_cache
+
+            bit_array: bytearray = bytearray(bloom_buf.to_bytes())
+            fp_rate: float = (
+                (1.0 - math.exp(-bloom_k * exact_count / bloom_m)) ** bloom_k
+                if exact_count > 0
+                else 0.0
+            )
+        else:
+            bit_array: bytearray = bytearray()
+            fp_rate: float = 0.0
+
+        def _check(name: str) -> bool:
+            normalized: str = name.rstrip(".").lower()
+            if any(normalized.endswith(suffix) for suffix in suffixes_tuple):
+                return True
+            if not bit_array:
+                return False
+            return _bloom_contains(bit_array, bloom_m, bloom_k, normalized)
+
+        _kv_blocklist_cache = BlocklistCache(
+            check=_check,
+            manifest_urls=tuple(manifest_urls),
+            domain_count=total_domain_count,
+            fp_rate=fp_rate,
+            bloom_size_bytes=len(bit_array),
+        )
+
+        logger.info(
+            "Loaded KV block list: %d domains, %d wildcard suffixes, "
+            "theoretical FP rate %.2e (2 KV reads)",
+            total_domain_count,
+            len(suffixes_tuple),
+            fp_rate,
+        )
+
+        return _kv_blocklist_cache
+    except Exception:
+        logger.warning("Unexpected error loading KV blocklist", exc_info=True)
+        _kv_blocklist_cache = _EMPTY_BLOCKLIST
+        return _kv_blocklist_cache
+    finally:
+        _kv_blocklist_loading = False
+
+
+def _with_provider_id(provider: Provider) -> dict:
+    """
+    Return a copy of provider with provider_id set to its URL.
+
+    Parameters:
+    provider (Provider): Provider config dict.
+
+    Returns:
+    dict: Provider dict with provider_id added.
     """
     return {**provider, "provider_id": provider["url"]}
 
@@ -149,43 +332,35 @@ _SECRET_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
 
 def _resolve_secrets(data: object, env: object) -> object:
     """
-    Recursively substitute ${SECRET_NAME} placeholders in strings, dicts, and lists.
+    Recursively replace ${SECRET_NAME} placeholders with values from env.
 
     Parameters:
-    data (object): Data to resolve placeholders in.
-    env (object): Environment with secrets.
+    data (object): Data structure to resolve.
+    env (object): Worker environment with secrets.
 
     Returns:
-    object: Resolved object.
+    object: Data with all placeholders replaced.
     """
     missing: list[str] = []
 
     def _resolve(value: object) -> object:
-        """
-        Recursively resolve placeholders in a value.
-
-        Parameters:
-        value (object): Value to resolve.
-
-        Returns:
-        object: Resolved value.
-        """
+        """Recursively resolve placeholders in a value."""
         if isinstance(value, str):
             if "${" not in value:
                 return value
 
             def _replacer(match: re.Match[str]) -> str:
                 """
-                Replace a single ${SECRET_NAME} match with the secret value.
+                Replace a ${SECRET_NAME} match with the resolved secret value.
 
                 Parameters:
                 match (re.Match[str]): Regex match object.
 
                 Returns:
-                str: Resolved secret value or original placeholder.
+                str: Secret value, or original placeholder if not found.
                 """
                 try:
-                    secret = getattr(env, match.group(1), None)
+                    secret: object | None = getattr(env, match.group(1), None)
                 except Exception:
                     secret = None
                 if not secret:
@@ -200,7 +375,7 @@ def _resolve_secrets(data: object, env: object) -> object:
             return [_resolve(item) for item in value]
         return value
 
-    resolved = _resolve(data)
+    resolved: object = _resolve(data)
 
     if missing:
         raise ValueError(f"Missing secret(s): {', '.join(sorted(set(missing)))}")
@@ -208,18 +383,18 @@ def _resolve_secrets(data: object, env: object) -> object:
     return resolved
 
 
-def _resolve_providers(providers: list[dict], env: object) -> list[dict]:
+def _resolve_providers(providers: list[Provider], env: object) -> list[dict]:
     """
-    Resolve secret placeholders in providers and recompute provider_id.
+    Resolve secret placeholders in providers and update provider_id.
 
     Parameters:
-    providers (list[dict]): List of provider dicts.
-    env (object): Environment with secrets.
+    providers (list[Provider]): List of provider dicts.
+    env (object): Worker environment with secrets.
 
     Returns:
-    list[dict]: List of resolved provider dicts.
+    list[dict]: Resolved provider dicts.
     """
-    resolved = _resolve_secrets(data=providers, env=env)
+    resolved: list = _resolve_secrets(data=providers, env=env)
 
     for provider in resolved:
         provider["provider_id"] = provider["url"]
@@ -229,16 +404,17 @@ def _resolve_providers(providers: list[dict], env: object) -> list[dict]:
 
 def _build_provider_lists() -> dict[str, list[dict]]:
     """
-    Build per-endpoint provider lists from config at import time.
+    Build per-endpoint provider lists from config.
 
     Returns:
-    dict[str, list[dict]]: Mapping of endpoint paths to provider lists.
+    dict[str, list[dict]]: Endpoint paths mapped to provider lists.
     """
     result: dict[str, list[dict]] = {}
+    cfg: EndpointConfig
     for path, cfg in config.ENDPOINTS.items():
-        main = _with_provider_id({**cfg["main_provider"], "main": True})
+        main: dict = _with_provider_id({**cfg["main_provider"], "main": True})
 
-        additional = [
+        additional: list[dict] = [
             _with_provider_id({**p, "main": False})
             for p in cfg.get("additional_providers", [])
         ]
@@ -260,30 +436,22 @@ _resolved_config_cache: "_ResolvedConfig | None" = None
 
 
 class _ResolvedConfig(NamedTuple):
-    """
-    Runtime configuration with all ${SECRET} placeholders resolved.
-
-    Attributes:
-    health_endpoint (str | None): Health endpoint path.
-    config_endpoint (str | None): Config endpoint path.
-    loki_url (str): Loki URL.
-    provider_lists (dict[str, list[dict]]): Endpoint provider lists.
-    bypass_provider_list (list[dict]): Bypass provider list.
-    """
+    """Runtime configuration with all ${SECRET} placeholders resolved."""
 
     health_endpoint: str | None
     config_endpoint: str | None
     loki_url: str
     provider_lists: dict[str, list[dict]]
     bypass_provider_list: list[dict]
+    full_config: dict
 
 
 def _resolve_config(env: object) -> _ResolvedConfig:
     """
-    Resolve all ${SECRET} placeholders in the config.
+    Resolve ${SECRET} placeholders in the config and cache the result.
 
     Parameters:
-    env (object): Environment with secrets.
+    env (object): Worker environment with secrets.
 
     Returns:
     _ResolvedConfig: Resolved runtime configuration.
@@ -293,18 +461,18 @@ def _resolve_config(env: object) -> _ResolvedConfig:
     if _resolved_config_cache is not None:
         return _resolved_config_cache
 
-    health = (
+    health: str | None = (
         _resolve_secrets(data=config.HEALTH_ENDPOINT, env=env)
         if config.HEALTH_ENDPOINT
         else None
     )
-    config_ep = (
+    config_ep: str | None = (
         _resolve_secrets(data=config.CONFIG_ENDPOINT, env=env)
         if config.CONFIG_ENDPOINT
         else None
     )
     try:
-        loki_url = (
+        loki_url: str = (
             _resolve_secrets(data=config.LOKI_URL, env=env) if config.LOKI_URL else ""
         )
     except ValueError as e:
@@ -313,9 +481,9 @@ def _resolve_config(env: object) -> _ResolvedConfig:
             e,
         )
 
-        loki_url = ""
+        loki_url: str = ""
 
-    provider_lists = {
+    provider_lists: dict[str, list[dict]] = {
         _resolve_secrets(data=path, env=env): _resolve_providers(
             providers=providers,
             env=env,
@@ -323,7 +491,12 @@ def _resolve_config(env: object) -> _ResolvedConfig:
         for path, providers in _PROVIDER_LISTS.items()
     }
 
-    resolved = _ResolvedConfig(
+    full_config: dict = _resolve_secrets(
+        data={name: getattr(config, name) for name, _ in _CONFIG_TYPE_RULES},
+        env=env,
+    )
+
+    resolved: _ResolvedConfig = _ResolvedConfig(
         health_endpoint=health,
         config_endpoint=config_ep,
         loki_url=loki_url,
@@ -332,6 +505,7 @@ def _resolve_config(env: object) -> _ResolvedConfig:
             providers=_BYPASS_PROVIDER_LIST,
             env=env,
         ),
+        full_config=full_config,
     )
 
     if loki_url or not config.LOKI_URL:
@@ -341,21 +515,17 @@ def _resolve_config(env: object) -> _ResolvedConfig:
 
 
 class Default(WorkerEntrypoint):
-    """
-    Cloudflare Worker entrypoint handling DNS-over-HTTPS requests.
-
-    Inherits from WorkerEntrypoint.
-    """
+    """Cloudflare Worker entrypoint for DNS-over-HTTPS requests."""
 
     async def fetch(self, request: object) -> Response:
         """
-        Top-level request handler with global exception guard.
+        Top-level request handler that catches all unhandled exceptions.
 
         Parameters:
         request (object): Incoming HTTP request.
 
         Returns:
-        Response: HTTP response object.
+        Response: HTTP response.
         """
         try:
             return await self._handle(request)
@@ -365,30 +535,30 @@ class Default(WorkerEntrypoint):
 
     async def _handle(self, request: object) -> Response:
         """
-        Route the request to health, config, or DoH handler.
+        Route the request to the health, config, or DoH handler.
 
         Parameters:
         request (object): Incoming HTTP request.
 
         Returns:
-        Response: HTTP response object.
+        Response: HTTP response.
         """
-        parsed_url = urllib.parse.urlparse(str(request.url))
-        pathname = parsed_url.path
+        parsed_url: urllib.parse.ParseResult = urllib.parse.urlparse(str(request.url))
+        pathname: str = parsed_url.path
 
         try:
-            cfg = _resolve_config(self.env)
+            cfg: _ResolvedConfig = _resolve_config(self.env)
         except ValueError as e:
             logger.exception("Configuration error: %s", e)
             return Response("Internal server error", status=500)
 
         if cfg.health_endpoint and pathname == cfg.health_endpoint:
-            return _handle_health(cfg)
+            return _handle_health()
 
         if cfg.config_endpoint and pathname == cfg.config_endpoint:
-            return _handle_config(request=request, env=self.env)
+            return _handle_config(request=request, env=self.env, cfg=cfg)
 
-        doh_providers = cfg.provider_lists.get(pathname)
+        doh_providers: list[dict] | None = cfg.provider_lists.get(pathname)
 
         if doh_providers is None:
             return Response("", status=404)
@@ -404,22 +574,14 @@ class Default(WorkerEntrypoint):
         )
 
 
-def _handle_health(cfg: _ResolvedConfig) -> Response:
+def _handle_health() -> Response:
     """
-    Return a lightweight JSON health response.
-
-    Parameters:
-    cfg (_ResolvedConfig): The resolved runtime configuration.
+    Return a 200 JSON health response.
 
     Returns:
-    Response: HTTP response with status 200 and a JSON body containing status and endpoint count.
+    Response: {"status": "ok"} with no-cache headers.
     """
-    body = json.dumps(
-        {
-            "status": "ok",
-            "endpoints": len(cfg.provider_lists),
-        },
-    )
+    body: str = json.dumps({"status": "ok"})
     return Response(
         body,
         status=200,
@@ -430,53 +592,62 @@ def _handle_health(cfg: _ResolvedConfig) -> Response:
     )
 
 
-_CONFIG_ALLOWLIST = frozenset(
-    {
-        "CONFIG_ENDPOINT",
-        "DEBUG",
-        "HEALTH_ENDPOINT",
-        "TIMEOUT_MS",
-        "ECS_TRUNCATION",
-        "REBIND_PROTECTION",
-        "BLOCKED_DOMAINS",
-        "ALLOWED_DOMAINS",
-        "BYPASS_PROVIDER",
-        "LOKI_URL",
-        "LOKI_TIMEOUT_MS",
-        "RETRY_MAX_ATTEMPTS",
-        "CACHE_DNS",
-        "ENDPOINTS",
-    },
-)
-
-
-def _handle_config(request: object, env: object) -> Response:
+def _handle_config(request: object, env: object, cfg: _ResolvedConfig) -> Response:
     """
-    Return current runtime configuration as JSON, gated by ADMIN_TOKEN secret.
+    Return the runtime config as JSON, gated by ADMIN_TOKEN bearer auth.
 
     Parameters:
     request (object): Incoming HTTP request.
-    env (object): Environment with secrets.
+    env (object): Worker environment with secrets.
+    cfg (_ResolvedConfig): Resolved runtime configuration.
 
     Returns:
-    Response: HTTP response with JSON config or error.
+    Response: JSON config on success, 401/404 on auth failure.
     """
-    token = getattr(env, "ADMIN_TOKEN", None)
+    token: object | None = getattr(env, "ADMIN_TOKEN", None)
 
     if not token:
         return Response("", status=404)
 
-    auth_header = str(request.headers.get("authorization") or "")
+    auth_header: str = str(request.headers.get("authorization") or "")
 
     if not auth_header.startswith("Bearer "):
         return Response("Unauthorized", status=401)
 
-    provided = auth_header[7:].strip()
+    provided: str = auth_header[7:].strip()
 
     if not provided or not hmac.compare_digest(provided, str(token)):
         return Response("Unauthorized", status=401)
 
-    payload = {k: getattr(config, k) for k in _CONFIG_ALLOWLIST if hasattr(config, k)}
+    kv_count: int | None = (
+        _kv_blocklist_cache.domain_count if _kv_blocklist_cache is not None else None
+    )
+    kv_urls: list[str] | None = (
+        list(_kv_blocklist_cache.manifest_urls)
+        if _kv_blocklist_cache is not None
+        else None
+    )
+    kv_fp_rate: float | None = (
+        _kv_blocklist_cache.fp_rate if _kv_blocklist_cache is not None else None
+    )
+    kv_bloom_bytes: int | None = (
+        _kv_blocklist_cache.bloom_size_bytes
+        if _kv_blocklist_cache is not None
+        else None
+    )
+
+    payload: dict[str, object] = {
+        "config": cfg.full_config,
+        "stats": {
+            "endpoints": len(cfg.provider_lists),
+            "allowed_domains": len(config.ALLOWED_DOMAINS),
+            "blocked_domains": len(config.BLOCKED_DOMAINS),
+            "kv_blocklist": kv_count,
+            "kv_blocklist_urls": kv_urls,
+            "kv_blocklist_fp_rate": kv_fp_rate,
+            "kv_bloom_size_bytes": kv_bloom_bytes,
+        },
+    }
 
     return Response(
         json.dumps(payload, indent=2, default=_json_default),
@@ -491,13 +662,13 @@ def _handle_config(request: object, env: object) -> Response:
 
 def _json_default(value: object) -> list:
     """
-    JSON serializer fallback for set objects.
+    JSON serializer fallback for sets.
 
     Parameters:
     value (object): Value to serialize.
 
     Returns:
-    list: Sorted list if value is set.
+    list: Sorted list for set values.
     """
     if isinstance(value, set):
         return sorted(value)
@@ -523,7 +694,6 @@ _HEADER_PROVIDERS_CONN_ERROR = f"{_HEADER_PREFIX}-PROVIDERS-CONNECTION-ERROR"
 _HEADER_PROVIDERS_FAILED_STATUS = f"{_HEADER_PREFIX}-PROVIDERS-FAILED-STATUS-CODE"
 _HEADER_PROVIDERS_RETRIED = f"{_HEADER_PREFIX}-PROVIDERS-RETRIED"
 _HEADER_RESPONSE_FROM_MAIN = f"{_HEADER_PREFIX}-RESPONSE-FROM-MAIN"
-_HEADER_CACHE = f"{_HEADER_PREFIX}-CACHE"
 
 
 def _build_response_headers(
@@ -548,27 +718,27 @@ def _build_response_headers(
     response_from_main: bool | None = None,
 ) -> dict:
     """
-    Build response headers with optional DEBUG diagnostics.
+    Build response headers. Adds DEBUG diagnostics when DEBUG is enabled.
 
     Parameters:
     content_type (str): Content-Type header value.
-    response_from (str): Provider ID.
+    response_from (str): Winning provider ID.
     response_codes (list[str] | None): Per-provider status codes.
-    possibly_blocked (list[str] | None): Possibly blocked providers.
-    blocked (list[str] | None): Blocked providers.
-    timed_out (list[str] | None): Timed out providers.
+    possibly_blocked (list[str] | None): Providers that returned NXDOMAIN.
+    blocked (list[str] | None): Providers that returned a blocked response.
+    timed_out (list[str] | None): Providers that timed out.
     connection_error (list[str] | None): Providers with connection errors.
-    config_allowed (bool): Is config allowed.
-    config_blocked (bool): Is config blocked.
-    rebind (bool): Rebind protection triggered.
+    config_allowed (bool): Domain matched the allowlist.
+    config_blocked (bool): Domain matched the blocklist.
+    rebind (bool): Rebind protection was triggered.
     ecs_truncated (str): ECS truncation description.
-    providers_queried (int): Number of providers queried.
-    providers_failed (int): Number of providers failed.
-    providers_timed_out (int): Number of providers timed out.
+    providers_queried (int): Number of providers contacted.
+    providers_failed (int): Number of providers that failed.
+    providers_timed_out (int): Number of providers that timed out.
     providers_conn_error (int): Number of providers with connection errors.
-    providers_failed_status (int): Number of providers failed with status code.
-    providers_retried (int): Number of providers retried.
-    response_from_main (bool | None): Response from main provider.
+    providers_failed_status (int): Number of providers that failed with 5xx.
+    providers_retried (int): Number of providers that were retried.
+    response_from_main (bool | None): Whether the winner was the main provider.
 
     Returns:
     dict: Response headers.
@@ -596,6 +766,12 @@ def _build_response_headers(
     if response_from_main is not None:
         headers[_HEADER_RESPONSE_FROM_MAIN] = "1" if response_from_main else "0"
 
+    if config_blocked:
+        headers[_HEADER_CONFIG_BLOCKED] = "1"
+
+    if config_allowed:
+        headers[_HEADER_ALLOWED] = "1"
+
     if config.DEBUG:
         headers.update(
             {
@@ -613,24 +789,6 @@ def _build_response_headers(
     return headers
 
 
-def _to_js_body(body: bytes | bytearray | str) -> object:
-    """
-    Convert Python bytes to a JS Uint8Array for Cloudflare Workers Response.
-
-    Parameters:
-    body (bytes | bytearray | str): Response body.
-
-    Returns:
-    object: JS Uint8Array or original body.
-    """
-    if isinstance(body, (bytes, bytearray)):
-        from pyodide.ffi import to_js
-
-        return to_js(body)
-
-    return body
-
-
 def _negotiate_accept(raw: str) -> str:
     """
     Return the first supported media type from a raw Accept header.
@@ -642,7 +800,7 @@ def _negotiate_accept(raw: str) -> str:
     str: Supported media type or empty string.
     """
     for part in raw.split(","):
-        media_type = part.split(";", 1)[0].strip().lower()
+        media_type: str = part.split(";", 1)[0].strip().lower()
         if media_type in SUPPORTED_ACCEPT_HEADERS:
             return media_type
 
@@ -650,22 +808,13 @@ def _negotiate_accept(raw: str) -> str:
 
 
 class _RejectError(Exception):
-    """
-    Raised to short-circuit _parse_dns_request with an error Response.
-
-    Inherits from Exception.
-    """
+    """Raised to short-circuit request parsing with an error response."""
 
     def __init__(self, message: str, status: int = 406) -> None:
         """
-        Initialize _RejectError.
-
         Parameters:
         message (str): Error message.
-        status (int): HTTP status code (default 406).
-
-        Returns:
-        None
+        status (int): HTTP status code.
         """
         self.response = Response(message, status=status)
 
@@ -677,16 +826,16 @@ async def _parse_dns_request(
     accept: str,
 ) -> DnsParseResult | Response:
     """
-    Parse DNS question and wire bytes; returns DnsParseResult or a Response on error.
+    Parse the DNS request. Returns a Response directly on error.
 
     Parameters:
     request (object): Incoming HTTP request.
     query_string (str): Query string.
     method (str): HTTP method.
-    accept (str): Accept header value.
+    accept (str): Negotiated Accept header value.
 
     Returns:
-    DnsParseResult | Response: Parsed DNS result or error response.
+    DnsParseResult | Response: Parsed result or error response.
     """
     try:
         if method == "GET":
@@ -706,27 +855,30 @@ def _parse_get(query_string: str, accept: str) -> DnsParseResult:
 
     Parameters:
     query_string (str): Query string.
-    accept (str): Accept header value.
+    accept (str): Negotiated Accept header value.
 
     Returns:
     DnsParseResult: Parsed DNS result.
     """
     if not accept:
-        supported = ", ".join(sorted(SUPPORTED_ACCEPT_HEADERS))
+        supported: str = ", ".join(sorted(SUPPORTED_ACCEPT_HEADERS))
         raise _RejectError(f"Unsupported Accept header\n\nUse one of: {supported}")
 
-    params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
-    dns_param = params.get("dns", [None])[0]
-    name_param = params.get("name", [None])[0]
+    params: dict[str, list[str]] = urllib.parse.parse_qs(
+        query_string,
+        keep_blank_values=True,
+    )
+    dns_param: str | None = params.get("dns", [None])[0]
+    name_param: str | None = params.get("name", [None])[0]
 
     if dns_param:
         if accept != "application/dns-message":
             raise _RejectError("GET ?dns= requires Accept: application/dns-message")
 
-        padded = dns_param + "=" * (-len(dns_param) % 4)
+        padded: str = dns_param + "=" * (-len(dns_param) % 4)
 
         try:
-            data = base64.urlsafe_b64decode(padded)
+            data: bytes = base64.urlsafe_b64decode(padded)
             return parse_dns_wire_request(data)
         except Exception:
             raise _RejectError(
@@ -738,7 +890,7 @@ def _parse_get(query_string: str, accept: str) -> DnsParseResult:
         if accept != "application/dns-json":
             raise _RejectError("GET ?name= requires Accept: application/dns-json")
 
-        type_param = params.get("type", [None])[0]
+        type_param: str | None = params.get("type", [None])[0]
         try:
             dns.name.from_text(name_param)
 
@@ -752,7 +904,7 @@ def _parse_get(query_string: str, accept: str) -> DnsParseResult:
         ):
             raise _RejectError("Invalid DNS name or type", status=400) from None
 
-        question = Question(
+        question: Question = Question(
             name=name_param,
             type=type_param if type_param else "",
         )
@@ -767,11 +919,11 @@ def _parse_get(query_string: str, accept: str) -> DnsParseResult:
 
 async def _parse_post(request: object, accept: str) -> DnsParseResult:
     """
-    Parse a DNS wire message from a POST request body.
+    Parse a DNS wire message from the POST body.
 
     Parameters:
     request (object): Incoming HTTP request.
-    accept (str): Accept header value.
+    accept (str): Negotiated Accept header value.
 
     Returns:
     DnsParseResult: Parsed DNS result.
@@ -780,7 +932,7 @@ async def _parse_post(request: object, accept: str) -> DnsParseResult:
         raise _RejectError("POST requires Accept: application/dns-message")
 
     try:
-        raw_bytes = await request.bytes()
+        raw_bytes: bytes = await request.bytes()
     except Exception as e:
         logger.debug("Failed to read request body: %s", e)
         raise _RejectError("Failed to read request body", status=400) from None
@@ -798,20 +950,20 @@ async def _parse_post(request: object, accept: str) -> DnsParseResult:
 
 def _select_winner(results: list[ProviderResult]) -> ProviderResult | None:
     """
-    Pick the best upstream result: blocked > possibly_blocked > main > any.
+    Pick the best result: blocked > possibly_blocked > main > any.
 
     Parameters:
-    results (list[ProviderResult]): List of provider results.
+    results (list[ProviderResult]): All provider results.
 
     Returns:
-    ProviderResult | None: Winning provider result or None.
+    ProviderResult | None: Winning result, or None if all failed.
     """
-    first_blocked = None
-    first_possibly_blocked = None
-    first_successful_main = None
-    first_successful = None
-    first_non_rebind_main = None
-    first_non_rebind = None
+    first_blocked: ProviderResult | None = None
+    first_possibly_blocked: ProviderResult | None = None
+    first_successful_main: ProviderResult | None = None
+    first_successful: ProviderResult | None = None
+    first_non_rebind_main: ProviderResult | None = None
+    first_non_rebind: ProviderResult | None = None
 
     for result in results:
         if not result.failed:
@@ -829,7 +981,7 @@ def _select_winner(results: list[ProviderResult]) -> ProviderResult | None:
             if result.possibly_blocked and first_possibly_blocked is None:
                 first_possibly_blocked = result
 
-    winner = (
+    winner: ProviderResult | None = (
         first_blocked
         or first_possibly_blocked
         or first_successful_main
@@ -840,7 +992,7 @@ def _select_winner(results: list[ProviderResult]) -> ProviderResult | None:
         return None
 
     if winner.rebind and config.REBIND_PROTECTION:
-        replacement = first_non_rebind_main or first_non_rebind
+        replacement: ProviderResult | None = first_non_rebind_main or first_non_rebind
         if replacement:
             winner = replacement
 
@@ -856,18 +1008,18 @@ def _make_rebind_blocked_response(
     parsed_request: object = None,
 ) -> Response | None:
     """
-    Build a synthetic NXDOMAIN when all successful responses have private IPs.
+    Return a synthetic NXDOMAIN if rebind protection fired on all results.
 
     Parameters:
-    results (list[ProviderResult]): List of provider results.
-    question (Question): DNS question tuple.
-    accept (str): Accept header value.
-    request_wire (bytes | None): Original DNS wire message.
+    results (list[ProviderResult]): All provider results.
+    question (Question): DNS question.
+    accept (str): Negotiated Accept header value.
+    request_wire (bytes | None): Original DNS wire bytes.
     ecs_truncated (str): ECS truncation description.
-    parsed_request (object): Parsed DNS message (optional).
+    parsed_request (object): Parsed DNS message, if available.
 
     Returns:
-    Response | None: Synthetic NXDOMAIN response or None.
+    Response | None: Synthetic NXDOMAIN, or None if rebind protection didn't fire.
     """
     if not (
         config.REBIND_PROTECTION
@@ -903,29 +1055,29 @@ def _build_winner_response(
     endpoint: str,
 ) -> Response:
     """
-    Build the final HTTP Response from the winning provider result.
+    Build the final response from the winning provider result.
 
     Parameters:
     winner (ProviderResult): Winning provider result.
-    results (list[ProviderResult]): List of provider results.
-    config_allowed (bool): Is config allowed.
+    results (list[ProviderResult]): All provider results.
+    config_allowed (bool): Domain matched the allowlist.
     ecs_truncated (str): ECS truncation description.
     endpoint (str): Endpoint path.
 
     Returns:
     Response: Final HTTP response.
     """
-    response_codes = []
-    blocked_ids = []
-    possibly_blocked_ids = []
-    timed_out_ids = []
-    connection_error_ids = []
-    failed_count = 0
-    retried_count = 0
-    failed_status_count = 0
+    response_codes: list[str] = []
+    blocked_ids: list[str] = []
+    possibly_blocked_ids: list[str] = []
+    timed_out_ids: list[str] = []
+    connection_error_ids: list[str] = []
+    failed_count: int = 0
+    retried_count: int = 0
+    failed_status_count: int = 0
 
     for result in results:
-        pid = result.provider_id
+        pid: str = result.provider_id
         response_codes.append(f"{pid}:{result.response_status}")
         if result.blocked:
             blocked_ids.append(pid)
@@ -942,9 +1094,9 @@ def _build_winner_response(
             if not result.timed_out and not result.connection_error:
                 failed_status_count += 1
 
-    rebind_triggered = any(result.rebind for result in results)
+    rebind_triggered: bool = any(result.rebind for result in results)
 
-    response_headers = _build_response_headers(
+    response_headers: dict[str, str] = _build_response_headers(
         content_type=winner.response_content_type,
         response_from=winner.provider_id,
         response_codes=response_codes,
@@ -964,7 +1116,7 @@ def _build_winner_response(
         response_from_main=winner.main,
     )
 
-    min_ttl = get_response_min_ttl(winner)
+    min_ttl: int | None = get_response_min_ttl(winner)
 
     if min_ttl is not None:
         response_headers["Cache-Control"] = f"max-age={min_ttl}"
@@ -982,152 +1134,6 @@ def _build_winner_response(
     )
 
 
-_CACHE_KEY_BASE = "https://doh-cache.internal"
-
-
-def _build_cache_key(
-    endpoint: str,
-    body_bytes: bytes | None,
-    question: Question,
-) -> str | None:
-    """
-    Build a synthetic cache URL that uniquely identifies a DNS request.
-
-    For wire-format requests the query bytes are base64url-encoded into a
-    ?dns= parameter (mirroring the DoH GET format).  For JSON GET
-    requests the name and type are encoded as ?name=&type= parameters.
-    The endpoint path is included so that different device endpoints with
-    different upstream providers always produce distinct cache keys.
-
-    Parameters:
-    endpoint (str): Worker endpoint path.
-    body_bytes (bytes | None): ECS-truncated DNS wire bytes, or None for JSON GET.
-    question (Question): Parsed DNS question (name and type).
-
-    Returns:
-    str | None: Synthetic cache URL, or None if a key cannot be built.
-    """
-    if body_bytes is not None:
-        encoded = base64.urlsafe_b64encode(body_bytes).rstrip(b"=").decode("ascii")
-        return f"{_CACHE_KEY_BASE}{endpoint}?dns={encoded}"
-
-    if question.name:
-        params = {
-            "name": question.name,
-            **(({"type": question.type}) if question.type else {}),
-        }
-        return f"{_CACHE_KEY_BASE}{endpoint}?" + urllib.parse.urlencode(params)
-
-    return None
-
-
-async def _try_cache_get(cache_key: str) -> Response | None:
-    """
-    Look up a DNS response in the Cloudflare Cache API.
-
-    Returns the cached Response on a hit, or None on a miss or any error.
-    The Cache-Control: max-age on the returned response reflects the
-    remaining TTL (original max-age minus the Age the cache reports),
-    so the client sees an accurate TTL rather than the original stored value.
-    Cache errors are intentionally non-fatal so a lookup failure never
-    breaks request handling.
-
-    Parameters:
-    cache_key (str): Synthetic cache URL built by _build_cache_key.
-
-    Returns:
-    Response | None: Cached response with a HIT header, or None.
-    """
-    try:
-        from js import caches
-
-        cached = await caches.default.match(cache_key)
-
-        if cached is None:
-            return None
-
-        body = await cached.bytes()
-
-        content_type = str(
-            cached.headers.get("content-type") or "application/dns-message",
-        )
-
-        response_headers: dict[str, str] = {
-            "content-type": content_type,
-            _HEADER_CACHE: "HIT",
-        }
-
-        try:
-            cc = str(cached.headers.get("cache-control") or "")
-            age = int(cached.headers.get("age") or 0)
-            part = next(
-                (p.strip() for p in cc.split(",") if p.strip().startswith("max-age=")),
-                None,
-            )
-            if part:
-                response_headers["Cache-Control"] = (
-                    f"max-age={max(0, int(part[8:]) - age)}"
-                )
-        except (ValueError, AttributeError):
-            pass
-
-        return Response(
-            _to_js_body(body),
-            status=200,
-            headers=response_headers,
-        )
-    except Exception:
-        logger.debug("Cache get failed for %s", cache_key, exc_info=True)
-        return None
-
-
-def _schedule_cache_put(
-    ctx: object,
-    cache_key: str,
-    body: bytes | str,
-    content_type: str,
-    min_ttl: int,
-) -> None:
-    """
-    Schedule a DNS response to be stored in the Cloudflare Cache API.
-
-    Uses ctx.waitUntil so the cache write does not block the response
-    being returned to the client.  The Cache-Control: max-age is set
-    to the DNS response's minimum TTL so the entry expires at the right time.
-    Errors are non-fatal.
-
-    Parameters:
-    ctx (object): Worker execution context.
-    cache_key (str): Synthetic cache URL built by _build_cache_key.
-    body (bytes | str): DNS response body to cache.
-    content_type (str): Content-Type of the response (wire or JSON).
-    min_ttl (int): Minimum TTL from the DNS response in seconds.
-
-    Returns:
-    None
-    """
-    try:
-        from js import Object, caches
-        from js import Response as JsResponse
-        from pyodide.ffi import to_js
-
-        js_body = _to_js_body(body)
-        init = to_js(
-            {
-                "status": 200,
-                "headers": {
-                    "content-type": content_type,
-                    "Cache-Control": f"max-age={min_ttl}",
-                },
-            },
-            dict_converter=Object.fromEntries,
-        )
-
-        ctx.waitUntil(caches.default.put(cache_key, JsResponse.new(js_body, init)))
-    except Exception:
-        logger.debug("Cache put failed for %s", cache_key, exc_info=True)
-
-
 async def _handle_request(
     request: object,
     endpoint: str,
@@ -1138,35 +1144,35 @@ async def _handle_request(
     parsed_url: urllib.parse.ParseResult,
 ) -> Response:
     """
-    Core DoH handler: parse, fan-out to providers, select winner, respond.
+    Core DoH handler: parse request, fan out to providers, return best result.
 
     Parameters:
     request (object): Incoming HTTP request.
-    endpoint (str): Endpoint path.
-    doh_providers (list[dict]): List of provider dicts.
-    cfg (_ResolvedConfig): Resolved config.
-    env (object): Environment with secrets.
-    ctx (object): Worker context.
-    parsed_url (urllib.parse.ParseResult): Parsed URL.
+    endpoint (str): Matched endpoint path.
+    doh_providers (list[dict]): Providers for this endpoint.
+    cfg (_ResolvedConfig): Resolved runtime config.
+    env (object): Worker environment with secrets.
+    ctx (object): Worker execution context.
+    parsed_url (urllib.parse.ParseResult): Parsed request URL.
 
     Returns:
     Response: Final HTTP response.
     """
-    request_timestamp_ms = int(time.time() * 1000)
-    client_ip = str(request.headers.get("cf-connecting-ip") or "unknown")
-    query = f"?{parsed_url.query}" if parsed_url.query else ""
-    method = str(request.method).upper()
-    raw_accept = str(request.headers.get("accept") or "")
-    accept = _negotiate_accept(raw_accept)
+    request_timestamp_ms: int = int(time.time() * 1000)
+    client_ip: str = str(request.headers.get("cf-connecting-ip") or "unknown")
+    query: str = f"?{parsed_url.query}" if parsed_url.query else ""
+    method: str = str(request.method).upper()
+    raw_accept: str = str(request.headers.get("accept") or "")
+    accept: str = _negotiate_accept(raw_accept)
 
-    loki_url = cfg.loki_url
-    loki_enabled = bool(
+    loki_url: str = cfg.loki_url
+    loki_enabled: bool = bool(
         loki_url
         and getattr(env, "LOKI_USERNAME", None)
         and getattr(env, "LOKI_PASSWORD", None),
     )
 
-    parsed = await _parse_dns_request(
+    parsed: DnsParseResult | Response = await _parse_dns_request(
         request=request,
         query_string=parsed_url.query,
         method=method,
@@ -1175,11 +1181,11 @@ async def _handle_request(
     if isinstance(parsed, Response):
         return parsed
 
-    question = parsed.question
-    body_bytes = parsed.body_bytes
-    ecs_truncated = parsed.ecs_description
-    request_wire = parsed.request_wire
-    parsed_request = parsed.parsed_request
+    question: Question = parsed.question
+    body_bytes: bytes | None = parsed.body_bytes
+    ecs_truncated: str = parsed.ecs_description
+    request_wire: bytes | None = parsed.request_wire
+    parsed_request: object = parsed.parsed_request
 
     if method == "GET" and body_bytes is None and question.name:
         _json_params: dict[str, str] = {"name": question.name}
@@ -1187,8 +1193,8 @@ async def _handle_request(
             _json_params["type"] = question.type
         query = "?" + urllib.parse.urlencode(_json_params)
 
-    name = question.name
-    config_allowed = bool(
+    name: str = question.name
+    config_allowed: bool = bool(
         name and domain_matches(name=name, compiled=_ALLOWED_COMPILED),
     )
 
@@ -1200,22 +1206,60 @@ async def _handle_request(
             question=question,
         )
 
-    config_blocked = False
-    error = False
-    results = []
-    response_from = "error"
+    error: bool = False
+    results: list[ProviderResult] = []
+    response_from: str = "error"
 
     if config_allowed:
         doh_providers = cfg.bypass_provider_list
 
-    if name and domain_matches(name=name, compiled=_BLOCKED_COMPILED):
+    config_blocked = bool(
+        name
+        and not config_allowed
+        and domain_matches(name=name, compiled=_BLOCKED_COMPILED),
+    )
+
+    blocklist_bypassed: bool = False
+    blocklist_loading_503: bool = False
+    if not name or config_allowed or config_blocked:
+        kv_blocklist: BlocklistCache = _EMPTY_BLOCKLIST
+    else:
+        kv_blocklist = await _load_blocklist_from_kv(env)
+
+        if kv_blocklist is None:
+            if config.BLOCKLIST_LOADING_POLICY == "bypass":
+                logger.info("Blocklist still loading, bypassing check.")
+                kv_blocklist = _EMPTY_BLOCKLIST
+                blocklist_bypassed = True
+            else:
+                logger.warning("Blocklist still loading, returning 503.")
+                blocklist_loading_503 = True
+                kv_blocklist = _EMPTY_BLOCKLIST
+
+    config_blocked = config_blocked or bool(
+        name and not config_allowed and kv_blocklist.check(name),
+    )
+
+    results: list[ProviderResult] = []
+    response_from: str = "error"
+    error: bool = False
+    final_response: Response | None = None
+
+    if blocklist_loading_503:
+        final_response = Response(
+            "Service Unavailable",
+            status=503,
+            headers={"Retry-After": "1"},
+        )
+    elif config_blocked:
+        response_from = "config"
+
         body, content_type = make_blocked_response(
             question=question,
             accept=accept,
             request_wire=request_wire,
             parsed_request=parsed_request,
         )
-
         final_response = Response(
             _to_js_body(body),
             status=200,
@@ -1226,99 +1270,114 @@ async def _handle_request(
                 ecs_truncated=ecs_truncated,
             ),
         )
-
-        config_blocked = True
-        response_from = "config"
     else:
         if cache_key:
-            cached_response = await _try_cache_get(cache_key)
+            cached_response: Response | None = await _try_cache_get(cache_key)
             if cached_response is not None:
-                return cached_response
+                response_from = "cache"
+                final_response = cached_response
 
-        safety_seconds = config.TIMEOUT_MS / 1000 + 2
+        if final_response is None:
+            safety_seconds: float = config.TIMEOUT_MS / 1000 + 2
 
-        try:
-            results = await asyncio.wait_for(
-                send_doh_requests_fanout(
-                    doh_providers=doh_providers,
-                    method=method,
-                    accept=accept,
-                    body_bytes=body_bytes,
-                    query=query,
-                ),
-                timeout=safety_seconds,
-            )
-        except TimeoutError:
-            logger.warning(
-                "send_doh_requests_fanout safety timeout (%.0fs)",
-                safety_seconds,
-            )
-
-            return Response(
-                "Service Unavailable",
-                status=503,
-                headers={"Retry-After": "1"},
-            )
-
-        try:
-            rebind_response = _make_rebind_blocked_response(
-                results=results,
-                question=question,
-                accept=accept,
-                request_wire=request_wire,
-                ecs_truncated=ecs_truncated,
-                parsed_request=parsed_request,
-            )
-
-            if rebind_response is not None:
-                response_from = "rebind-protection"
-                error = True
-                final_response = rebind_response
-            elif winner := _select_winner(results):
-                response_from = winner.provider_id
-                final_response = _build_winner_response(
-                    winner=winner,
-                    results=results,
-                    config_allowed=config_allowed,
-                    ecs_truncated=ecs_truncated,
-                    endpoint=endpoint,
+            try:
+                results = await asyncio.wait_for(
+                    send_doh_requests_fanout(
+                        doh_providers=doh_providers,
+                        method=method,
+                        accept=accept,
+                        body_bytes=body_bytes,
+                        query=query,
+                    ),
+                    timeout=safety_seconds,
+                )
+            except TimeoutError:
+                logger.warning(
+                    "send_doh_requests_fanout safety timeout (%.0fs)",
+                    safety_seconds,
                 )
 
-                min_ttl = get_response_min_ttl(winner)
-                if cache_key and min_ttl and min_ttl > 0:
-                    _schedule_cache_put(
-                        ctx=ctx,
-                        cache_key=cache_key,
-                        body=winner.response_body,
-                        content_type=winner.response_content_type,
-                        min_ttl=min_ttl,
-                    )
-            else:
                 error = True
+
                 final_response = Response(
-                    "All providers responded with an error",
-                    status=500,
+                    "Service Unavailable",
+                    status=503,
+                    headers={"Retry-After": "1"},
                 )
-        except Exception:
-            logger.exception("Failed to process provider results")
-            error = True
-            final_response = Response("Internal server error", status=500)
+            else:
+                try:
+                    rebind_response: Response | None = _make_rebind_blocked_response(
+                        results=results,
+                        question=question,
+                        accept=accept,
+                        request_wire=request_wire,
+                        ecs_truncated=ecs_truncated,
+                        parsed_request=parsed_request,
+                    )
+
+                    if rebind_response is not None:
+                        response_from = "rebind-protection"
+                        error = True
+                        final_response = rebind_response
+                    elif winner := _select_winner(results):
+                        response_from = winner.provider_id
+                        final_response = _build_winner_response(
+                            winner=winner,
+                            results=results,
+                            config_allowed=config_allowed,
+                            ecs_truncated=ecs_truncated,
+                            endpoint=endpoint,
+                        )
+
+                        min_ttl: int | None = get_response_min_ttl(winner)
+                        if cache_key and min_ttl and min_ttl > 0:
+                            stable_headers: dict[str, str] = {}
+                            if config_allowed:
+                                stable_headers[_HEADER_ALLOWED] = "1"
+                            if ecs_truncated:
+                                stable_headers[_HEADER_ECS_TRUNCATED] = ecs_truncated
+                            _schedule_cache_put(
+                                ctx=ctx,
+                                cache_key=cache_key,
+                                body=winner.response_body,
+                                content_type=winner.response_content_type,
+                                min_ttl=min_ttl,
+                                extra_headers=stable_headers or None,
+                            )
+                    else:
+                        error = True
+
+                        final_response = Response(
+                            "All providers responded with an error",
+                            status=500,
+                        )
+                except Exception:
+                    logger.exception("Failed to process provider results")
+                    error = True
+                    final_response = Response("Internal server error", status=500)
 
     if loki_enabled:
-        promise = build_loki_fetch_promise(
+        elapsed_ms: int = int(time.time() * 1000) - request_timestamp_ms
+        promise: object | None = build_loki_fetch_promise(
             request_timestamp_ms=request_timestamp_ms,
+            elapsed_ms=elapsed_ms,
             endpoint=endpoint,
             question=question,
-            response_from=response_from,
+            response_from=response_from
+            if not blocklist_loading_503
+            else "blocklist-loading",
             results=results,
             env=env,
             loki_url=loki_url,
             client_ip=client_ip,
             config_blocked=config_blocked,
             config_allowed=config_allowed,
-            error=error,
+            error=error or blocklist_loading_503,
+            kv_loading=blocklist_bypassed or blocklist_loading_503,
+            blocklist_domain_count=_kv_blocklist_cache.domain_count
+            if _kv_blocklist_cache is not None
+            else 0,
         )
-
         if promise is not None:
             ctx.waitUntil(promise)
 

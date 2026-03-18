@@ -1,3 +1,4 @@
+---
 name: ci
 
 permissions:
@@ -81,6 +82,8 @@ jobs:
           cache: true
           install_args: uv
       - run: uv sync --group dev
+      - name: Rebuild combined.json from source cache
+        run: uv run python scripts/build_blocklist.py --skip-download
       - run: uv run pytest tests/test_unit.py
 
   integration-tests:

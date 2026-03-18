@@ -5,9 +5,11 @@
 
 import base64
 from dataclasses import dataclass
+import hashlib
 import ipaddress
 import json
 import logging
+import re
 from typing import NamedTuple
 
 import dns.edns
@@ -27,6 +29,34 @@ SUPPORTED_ACCEPT_HEADERS = frozenset(
     {"application/dns-json", "application/dns-message"},
 )
 
+_LCG_MUL = 47026247687942121848144207491837418733
+_LCG_MOD = 1 << 128
+
+
+def _bloom_hash(domain: str) -> int:
+    """Hash function shared by build (rbloom) and worker (_bloom_contains). Must stay in sync."""
+    return int.from_bytes(
+        hashlib.blake2b(domain.encode(), digest_size=16).digest(),
+        "big",
+        signed=True,
+    )
+
+
+def _bloom_contains(
+    bit_array: bytes | bytearray,
+    num_bits: int,
+    num_hashes: int,
+    domain: str,
+) -> bool:
+    """Return True if domain is (possibly) in the bloom filter bit array."""
+    state: int = _bloom_hash(domain)
+    for _ in range(num_hashes):
+        state = (state * _LCG_MUL + 1) % _LCG_MOD
+        bit: int = ((state >> 32) & 0xFFFFFFFFFFFFFFFF) % num_bits
+        if not (bit_array[bit >> 3] >> (bit & 7)) & 1:
+            return False
+    return True
+
 
 def _build_servfail_wire() -> bytes:
     """
@@ -35,7 +65,7 @@ def _build_servfail_wire() -> bytes:
     Returns:
     bytes: SERVFAIL DNS wire-format response.
     """
-    msg = dns.message.Message(id=0)
+    msg: dns.message.Message = dns.message.Message(id=0)
     msg.flags = dns.flags.QR | dns.flags.RD | dns.flags.RA
     msg.set_rcode(dns.rcode.SERVFAIL)
     return msg.to_wire()
@@ -68,7 +98,7 @@ def _is_private_ip(addr: str) -> bool:
     bool: True if private/reserved, False otherwise.
     """
     try:
-        ip = ipaddress.ip_address(addr)
+        ip: ipaddress.IPv4Address | ipaddress.IPv6Address = ipaddress.ip_address(addr)
         return any(ip in net for net in _PRIVATE_NETWORKS)
     except ValueError:
         return False
@@ -117,19 +147,19 @@ def truncate_ecs(
     if msg.edns < 0:
         return data, ""
 
-    ipv4_prefix = config.ECS_TRUNCATION.get("ipv4_prefix", 24)
-    ipv6_prefix = config.ECS_TRUNCATION.get("ipv6_prefix", 64)
+    ipv4_prefix: int = config.ECS_TRUNCATION.get("ipv4_prefix", 24)
+    ipv6_prefix: int = config.ECS_TRUNCATION.get("ipv6_prefix", 64)
 
-    new_options = []
-    descriptions = []
-    changed = False
+    new_options: list = []
+    descriptions: list[str] = []
+    changed: bool = False
 
     for opt in msg.options:
         if isinstance(opt, dns.edns.ECSOption):
-            target = ipv4_prefix if opt.family == 1 else ipv6_prefix
+            target: int = ipv4_prefix if opt.family == 1 else ipv6_prefix
 
             if opt.srclen > target:
-                truncated_opt = dns.edns.ECSOption(
+                truncated_opt: dns.edns.ECSOption = dns.edns.ECSOption(
                     opt.address,
                     srclen=target,
                     scopelen=0,
@@ -212,7 +242,7 @@ def _extract_question(packet: dns.message.Message) -> Question:
     Returns:
     Question: DNS question tuple.
     """
-    question = packet.question[0]
+    question: object = packet.question[0]
     return Question(
         name=str(question.name).rstrip("."),
         type=dns.rdatatype.to_text(question.rdtype),
@@ -229,8 +259,8 @@ def parse_dns_wire_request(data: bytes) -> DnsParseResult:
     Returns:
     DnsParseResult: Parsed DNS request result.
     """
-    packet = dns.message.from_wire(data)
-    question = _extract_question(packet)
+    packet: dns.message.Message = dns.message.from_wire(data)
+    question: Question = _extract_question(packet)
     truncated, ecs_desc = truncate_ecs(data, msg=packet)
     return DnsParseResult(question, truncated, ecs_desc, data, packet)
 
@@ -245,14 +275,14 @@ def compile_domain_set(domains: list) -> tuple[frozenset, tuple]:
     Returns:
     tuple[frozenset, tuple]: (exact matches, suffix matches)
     """
-    exact = set()
-    suffixes = []
+    exact_domains: set[str] = set()
+    wildcard_suffixes: list[str] = []
     for domain in domains:
         if domain.startswith("*."):
-            suffixes.append("." + domain[2:])
+            wildcard_suffixes.append("." + domain[2:])
         else:
-            exact.add(domain)
-    return frozenset(exact), tuple(suffixes)
+            exact_domains.add(domain)
+    return frozenset(exact_domains), tuple(wildcard_suffixes)
 
 
 def domain_matches(name: str, compiled: tuple[frozenset, tuple]) -> bool:
@@ -266,12 +296,70 @@ def domain_matches(name: str, compiled: tuple[frozenset, tuple]) -> bool:
     Returns:
     bool: True if match found.
     """
-    exact, suffixes = compiled
-    name = name.rstrip(".").lower()
-    if name in exact:
+    exact_domains, wildcard_suffixes = compiled
+    normalized_name: str = name.rstrip(".").lower()
+    if normalized_name in exact_domains:
         return True
 
-    return any(name.endswith(suffix) for suffix in suffixes)
+    return any(normalized_name.endswith(suffix) for suffix in wildcard_suffixes)
+
+
+_COMMENT_RE = re.compile(r"\s*#.*$")
+
+_IPV4_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
+_IPV6_RE = re.compile(r"^[\[\]0-9a-fA-F:]+:[0-9a-fA-F:]*$")
+
+
+def _is_ip(token: str) -> bool:
+    """Return True if token looks like an IPv4 or IPv6 address."""
+    return bool(_IPV4_RE.match(token) or _IPV6_RE.match(token))
+
+
+def parse_blocklist_text(text: str) -> tuple[set[str], set[str]]:
+    """
+    Parse a community block list in hosts-file or plain domain-per-line format.
+
+    Handles hosts-file lines with IPv4 or IPv6 addresses followed by one or
+    more domains (e.g. "0.0.0.0 a.example b.example" or "::1 example.com"),
+    wildcard entries ("*.example.com"), and plain domain-per-line format.
+    Comments (#) and blank lines are ignored.
+
+    Parameters:
+    text (str): Raw text content fetched from a block list URL or KV.
+
+    Returns:
+    tuple[set[str], set[str]]: (exact domains, suffix strings)
+        Suffix strings use a leading dot: ".example.com".
+    """
+    exact: set[str] = set()
+    suffixes: set[str] = set()
+
+    for raw_line in text.splitlines():
+        stripped: str = _COMMENT_RE.sub("", raw_line).strip()
+        if not stripped:
+            continue
+
+        tokens: list[str] = stripped.split()
+        if len(tokens) >= 2 and _is_ip(tokens[0]):
+            for token in tokens[1:]:
+                domain: str = token.lower().rstrip(".")
+                if "." in domain:
+                    exact.add(domain)
+
+            continue
+
+        if stripped.startswith("*."):
+            domain = stripped[2:].strip().lower().rstrip(".")
+            if "." in domain:
+                suffixes.add("." + domain)
+
+            continue
+
+        domain = stripped.lower().rstrip(".")
+        if "." in domain and " " not in domain:
+            exact.add(domain)
+
+    return exact, suffixes
 
 
 def make_blocked_response(
@@ -293,12 +381,12 @@ def make_blocked_response(
     tuple: (response body, content type)
     """
     try:
-        rdtype = dns.rdatatype.from_text(question.type or "A")
+        rdtype: int = dns.rdatatype.from_text(question.type or "A")
     except (dns.exception.SyntaxError, ValueError):
         rdtype = dns.rdatatype.A
 
     try:
-        qname = dns.name.from_text(question.name or ".")
+        qname: dns.name.Name = dns.name.from_text(question.name or ".")
     except (
         dns.exception.SyntaxError,
         dns.name.LabelTooLong,
@@ -308,7 +396,7 @@ def make_blocked_response(
         qname = dns.name.from_text(".")
 
     if "dns-json" in accept:
-        body = json.dumps(
+        body: str = json.dumps(
             {
                 "Status": 3,
                 "Question": [{"name": question.name or ".", "type": int(rdtype)}],
@@ -319,7 +407,7 @@ def make_blocked_response(
         return body, "application/dns-json"
 
     if parsed_request is not None:
-        req = parsed_request
+        req: dns.message.Message = parsed_request
     elif request_wire is not None:
         try:
             req = dns.message.from_wire(request_wire)
@@ -329,7 +417,7 @@ def make_blocked_response(
         req = dns.message.make_query(qname, rdtype)
 
     try:
-        resp = dns.message.make_response(req)
+        resp: dns.message.Message = dns.message.make_response(req)
         resp.set_rcode(dns.rcode.NXDOMAIN)
         return resp.to_wire(), "application/dns-message"
     except Exception:
@@ -360,7 +448,7 @@ def _classify_answers(
     Returns:
     None
     """
-    blocked = any(addr in _BLOCKED_ADDRS for addr in addresses)
+    blocked: bool = any(addr in _BLOCKED_ADDRS for addr in addresses)
     result.blocked = blocked
     result.possibly_blocked = status == dns.rcode.NXDOMAIN
     if config.REBIND_PROTECTION and not blocked:
@@ -392,15 +480,15 @@ def _build_provider_fetch_request(
     Returns:
     _ProviderFetchRequest: Fetch request tuple.
     """
-    target_url = provider["url"]
+    target_url: str = provider["url"]
 
     if method == "GET" and body_bytes is not None:
-        encoded = base64.urlsafe_b64encode(body_bytes).rstrip(b"=").decode("ascii")
+        encoded: str = base64.urlsafe_b64encode(body_bytes).rstrip(b"=").decode("ascii")
         target_url += "?dns=" + encoded
     elif method == "GET" and query:
         target_url += query
 
-    headers = {}
+    headers: dict[str, str] = {}
 
     if accept:
         headers["accept"] = accept
@@ -451,8 +539,8 @@ def _failed_result(
     Returns:
     ProviderResult: Failed provider result.
     """
-    exc_str = f"{type(exception).__name__} {exception}".lower()
-    timed_out = "timeout" in exc_str or "abort" in exc_str
+    exc_str: str = f"{type(exception).__name__} {exception}".lower()
+    timed_out: bool = "timeout" in exc_str or "abort" in exc_str
 
     return ProviderResult(
         url=provider["url"],
@@ -476,7 +564,7 @@ def _build_provider_result(
     accept: str,
 ) -> ProviderResult:
     """
-    Build a ProviderResult from pre-read response data (no async).
+    Build a ProviderResult from pre-read response data.
 
     Parameters:
     resp_body (bytes | str): Response body.
@@ -489,9 +577,9 @@ def _build_provider_result(
     Returns:
     ProviderResult: Provider result object.
     """
-    is_json = accept == "application/dns-json"
+    is_json: bool = accept == "application/dns-json"
 
-    result = ProviderResult(
+    result: ProviderResult = ProviderResult(
         url=provider["url"],
         provider_id=_get_provider_id(provider),
         response_status=status,
@@ -506,15 +594,16 @@ def _build_provider_result(
 
     if is_json:
         try:
-            resp_json = json.loads(resp_body)
-            answers = resp_json.get("Answer", [])
-            addresses = [a.get("data", "") for a in answers if a.get("data")]
+            resp_json: dict = json.loads(resp_body)
+            answers: list = resp_json.get("Answer", [])
+            addresses: list[str] = [a.get("data", "") for a in answers if a.get("data")]
             _classify_answers(
                 result=result,
                 status=resp_json.get("Status", 0),
                 addresses=addresses,
             )
-            ttls = [a["TTL"] for a in answers if "TTL" in a]
+
+            ttls: list[int] = [a["TTL"] for a in answers if "TTL" in a]
             result.min_ttl = min(ttls) if ttls else None
         except Exception:
             logger.debug(
@@ -524,9 +613,9 @@ def _build_provider_result(
             )
     else:
         try:
-            packet = dns.message.from_wire(resp_body)
+            packet: dns.message.Message = dns.message.from_wire(resp_body)
 
-            addresses = [
+            addresses: list[str] = [
                 str(rr)
                 for rrset in packet.answer
                 for rr in rrset
@@ -537,7 +626,8 @@ def _build_provider_result(
                 status=int(packet.rcode()),
                 addresses=addresses,
             )
-            ttls = [rrset.ttl for rrset in packet.answer]
+
+            ttls: list[int] = [rrset.ttl for rrset in packet.answer]
             result.min_ttl = min(ttls) if ttls else None
         except Exception:
             logger.debug(
@@ -608,9 +698,9 @@ async def send_doh_requests_fanout(
     if not doh_providers:
         return []
 
-    abort_signal = AbortSignal.timeout(config.TIMEOUT_MS)
-    is_json = accept == "application/dns-json"
-    is_json_query = is_json and body_bytes is None
+    abort_signal: object = AbortSignal.timeout(config.TIMEOUT_MS)
+    is_json: bool = accept == "application/dns-json"
+    is_json_query: bool = is_json and body_bytes is None
 
     pending: list[_FetchItem] = []
 
@@ -639,7 +729,7 @@ async def send_doh_requests_fanout(
     done: list[ProviderResult] = []
 
     for attempt in range(1 + config.RETRY_MAX_ATTEMPTS):
-        responses = await asyncio.gather(
+        responses: list = await asyncio.gather(
             *[
                 workers_fetch(item.request.url, **item.request.options)
                 for item in pending
@@ -666,19 +756,20 @@ async def send_doh_requests_fanout(
                 )
                 continue
 
-            status = resp.status
+            status: int = resp.status
 
             if status in _RETRY_STATUS_CODES and attempt < config.RETRY_MAX_ATTEMPTS:
                 next_pending.append(item)
                 continue
 
             try:
+                resp_body: str | bytes
                 if is_json:
                     resp_body = await resp.text()
                 else:
                     resp_body = await resp.bytes()
 
-                result = _build_provider_result(
+                result: ProviderResult = _build_provider_result(
                     resp_body=resp_body,
                     response_ok=resp.ok,
                     status=status,

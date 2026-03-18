@@ -6,10 +6,10 @@
 """Mock DoH server for ECS truncation integration tests.
 
 Endpoints:
-  POST /dns-query      — accepts DNS wire, records ECS, returns a synthetic NOERROR + dummy A
-  GET  /dns-query?dns= — same via base64url ?dns= param
-  GET  /last-ecs       — last recorded ECS as JSON (or null)
-  DELETE /last-ecs     — clears ECS state between tests
+  POST /dns-query      - accepts DNS wire, records ECS, returns a synthetic NOERROR + dummy A
+  GET  /dns-query?dns= - same via base64url ?dns= param
+  GET  /last-ecs       - last recorded ECS as JSON (or null)
+  DELETE /last-ecs     - clears ECS state between tests
 """
 
 import base64

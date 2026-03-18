@@ -3,41 +3,47 @@
 
 """Test configuration using the mock DoH server with custom ECS prefixes."""
 
-DEBUG = True
+from typing import Literal
 
-CONFIG_ENDPOINT = "/config"
+from config_types import EcsConfig, EndpointConfig, Provider
 
-HEALTH_ENDPOINT = "/health"
+DEBUG: bool = True
 
-TIMEOUT_MS = 5000
+CONFIG_ENDPOINT: str = "/config"
 
-ECS_TRUNCATION = {
+HEALTH_ENDPOINT: str = "/health"
+
+TIMEOUT_MS: int = 5000
+
+ECS_TRUNCATION: EcsConfig = {
     "enabled": True,
     "ipv4_prefix": 20,
     "ipv6_prefix": 48,
 }
 
-REBIND_PROTECTION = False
+REBIND_PROTECTION: bool = False
 
-BLOCKED_DOMAINS = []
+BLOCKED_DOMAINS: list = []
 
-ALLOWED_DOMAINS = []
+ALLOWED_DOMAINS: list = []
 
-BYPASS_PROVIDER = {
+BYPASS_PROVIDER: Provider = {
     "url": "https://cloudflare-dns.com/dns-query",
     "dns_json": True,
 }
 
-LOKI_URL = ""
+LOKI_URL: str = ""
 
-LOKI_TIMEOUT_MS = 5000
+LOKI_TIMEOUT_MS: int = 5000
 
-RETRY_MAX_ATTEMPTS = 2
+RETRY_MAX_ATTEMPTS: int = 2
 
-CACHE_DNS = True
+CACHE_DNS: bool = True
 
-ENDPOINTS = {
-    "/doh/my-device": {
+BLOCKLIST_LOADING_POLICY: Literal["block", "bypass"] = "block"
+
+ENDPOINTS: dict[str, EndpointConfig] = {
+    "/my-device": {
         "main_provider": {
             "url": "http://mock-doh:8080/dns-query",
         },
