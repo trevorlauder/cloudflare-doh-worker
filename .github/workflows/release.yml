@@ -112,7 +112,14 @@ jobs:
           GH_REPOSITORY: ${{ github.repository }}
         run: |
           notes=$(awk "/^## \[${TAG}\]/{found=1; next} found && /^## /{exit} found{print}" CHANGELOG.md)
+
+          prerelease_flag=""
+          if [[ "${TAG}" == *-* ]]; then
+            prerelease_flag="--prerelease"
+          fi
+
           gh release create "${TAG}" \
             --title "${TAG}" \
             --notes "${notes}" \
+            ${prerelease_flag} \
             --repo "${GH_REPOSITORY}"
