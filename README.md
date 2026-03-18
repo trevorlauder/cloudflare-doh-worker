@@ -227,7 +227,17 @@ git fetch upstream
 git merge --allow-unrelated-histories deploy-1.0.3  # replace with the new version tag
 ```
 
-Resolve any conflicts to merge in the changes while preserving your customizations (the `version` field in `uv.lock` and `pyproject.toml` will always conflict), then redeploy.
+### Avoiding merge conflicts
+
+Since the deploy branch is force-pushed as an orphan, merges can produce conflicts on every file. A `.gitattributes` file is included that auto-accepts upstream changes for all files except `src/config.py`, `blocklist_sources.yaml`, and `wrangler.toml`. To enable it, set up the custom merge driver it references:
+
+```shell
+git config merge.theirs.driver 'cp %B %A'
+```
+
+With this in place, only `src/config.py`, `blocklist_sources.yaml`, and `wrangler.toml` will go through normal merge and may require manual conflict resolution. All other files will silently accept the upstream version.
+
+After resolving any conflicts, redeploy.
 
 ## Latency
 
