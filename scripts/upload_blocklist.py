@@ -262,64 +262,62 @@ def main() -> None:
     _verify_kv_binding()
 
     bloom_json_path: Path = _ROOT / "blocklist" / "bloom.json"
-    if not bloom_json_path.exists():
-        _err.print(
-            "[red]ERROR: missing blocklist/bloom.json (run build_blocklist.py to generate)[/red]",
-        )
-        raise SystemExit(1)
-
     bloom_path: Path = _ROOT / "blocklist" / "bloom.bin"
-    if not bloom_path.exists():
-        _err.print(
-            "[red]ERROR: missing blocklist/bloom.bin (run build_blocklist.py to generate)[/red]",
-        )
-        raise SystemExit(1)
+    has_blocklist: bool = bloom_json_path.exists() and bloom_path.exists()
 
-    entry: dict = json.loads(bloom_json_path.read_text(encoding="utf-8"))
-    bloom_bytes: bytes = bloom_path.read_bytes()
-    manifest: list[dict] = [entry]
+    if has_blocklist:
+        entry: dict = json.loads(bloom_json_path.read_text(encoding="utf-8"))
+        bloom_bytes: bytes = bloom_path.read_bytes()
+        manifest: list[dict] = [entry]
 
-    manifest_key: str = "blocklist:manifest"
-    bloom_key: str = "blocklist:bloom"
-    manifest_json: str = json.dumps(manifest, separators=(",", ":"))
-    manifest_hash_key: str = f"{manifest_key}.hash"
-    content_hash: str = hashlib.sha256(manifest_json.encode()).hexdigest()
+        manifest_key: str = "blocklist:manifest"
+        bloom_key: str = "blocklist:bloom"
+        manifest_json: str = json.dumps(manifest, separators=(",", ":"))
+        manifest_hash_key: str = f"{manifest_key}.hash"
+        content_hash: str = hashlib.sha256(manifest_json.encode()).hexdigest()
 
-    stored_hash: str | None = get_kv_hash(
-        binding=_BINDING,
-        hash_key=manifest_hash_key,
-        remote=remote,
-    )
-    if stored_hash == content_hash:
-        _console.print(f"[yellow]{manifest_key} unchanged, skipping upload.[/yellow]")
-    elif args.dry_run:
-        _console.print(
-            f"[yellow]Would upload {manifest_key} ({len(manifest_json)} bytes)[/yellow]",
+        stored_hash: str | None = get_kv_hash(
+            binding=_BINDING,
+            hash_key=manifest_hash_key,
+            remote=remote,
         )
-        _console.print(
-            f"[yellow]Would upload {bloom_key} ({len(bloom_bytes):,} bytes binary)[/yellow]",
-        )
+        if stored_hash == content_hash:
+            _console.print(
+                f"[yellow]{manifest_key} unchanged, skipping upload.[/yellow]",
+            )
+        elif args.dry_run:
+            _console.print(
+                f"[yellow]Would upload {manifest_key} ({len(manifest_json)} bytes)[/yellow]",
+            )
+            _console.print(
+                f"[yellow]Would upload {bloom_key} ({len(bloom_bytes):,} bytes binary)[/yellow]",
+            )
+        else:
+            upload_to_kv(
+                text=manifest_json,
+                binding=_BINDING,
+                key=manifest_key,
+                remote=remote,
+            )
+            upload_bytes_to_kv(
+                data=bloom_bytes,
+                binding=_BINDING,
+                key=bloom_key,
+                remote=remote,
+            )
+            upload_to_kv(
+                text=content_hash,
+                binding=_BINDING,
+                key=manifest_hash_key,
+                remote=remote,
+            )
+
+        known_keys: set[str] = {manifest_key, bloom_key, manifest_hash_key}
     else:
-        upload_to_kv(
-            text=manifest_json,
-            binding=_BINDING,
-            key=manifest_key,
-            remote=remote,
+        _console.print(
+            "[yellow]No blocklist files found, will delete all keys from KV.[/yellow]",
         )
-        upload_bytes_to_kv(
-            data=bloom_bytes,
-            binding=_BINDING,
-            key=bloom_key,
-            remote=remote,
-        )
-        upload_to_kv(
-            text=content_hash,
-            binding=_BINDING,
-            key=manifest_hash_key,
-            remote=remote,
-        )
-
-    known_keys: set[str] = {manifest_key, bloom_key, manifest_hash_key}
+        known_keys: set[str] = set()
 
     list_result: subprocess.CompletedProcess[str] = _pywrangler(
         "kv",
