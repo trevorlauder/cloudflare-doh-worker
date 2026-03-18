@@ -4,6 +4,10 @@
 
 - Add support for large community blocklists ([#100](https://github.com/trevorlauder/cloudflare-doh-worker/pull/100))
 
+### 💼 Other
+
+- Remove workflow from build branch ([#105](https://github.com/trevorlauder/cloudflare-doh-worker/pull/105))
+
 ### 📚 Documentation
 
 - Add missing config options to README ([#98](https://github.com/trevorlauder/cloudflare-doh-worker/pull/98))
@@ -11,6 +15,11 @@
 ### ⚡ Performance
 
 - Implement provider response caching ([#99](https://github.com/trevorlauder/cloudflare-doh-worker/pull/99))
+
+### ⚙️ Miscellaneous Tasks
+
+- Add actions permission to release workflow ([#101](https://github.com/trevorlauder/cloudflare-doh-worker/pull/101))
+- Update cliff config ([#102](https://github.com/trevorlauder/cloudflare-doh-worker/pull/102))
 
 ## [1.0.3] - 2026-03-14
 
