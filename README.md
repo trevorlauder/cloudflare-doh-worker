@@ -33,7 +33,12 @@ This started as [a workaround](https://www.lauder.family/blog/2021/09/25/Avoidin
 - [mise](https://mise.jdx.dev) for installing dependencies (`uv`, `node`, `python`)
 - Grafana Loki (optional, for request logging)
 
-## Quickstart Deploy
+## Deploy
+
+> [!NOTE]
+> You do not deploy from the `main` branch. The `main` branch is the development branch and contains source code, tests, and CI tooling that are not needed to run it. Instead, each release has a corresponding `deploy-x.y.z` tag that contains only the files needed to run the worker. Both deploy methods below use these deploy tags as the starting point for your repo.
+
+### Quickstart Deploy
 
 Use this button to deploy this worker to your Cloudflare account.
 
@@ -57,7 +62,7 @@ Use this button to deploy this worker to your Cloudflare account.
   | `LOKI_USERNAME` | Using Grafana Loki logging |
   | `LOKI_PASSWORD` | Using Grafana Loki logging |
 
-## Manual Deploy
+### Manual Deploy
 
 - Fork this repo on GitHub, then clone your fork and reset `main` to the latest deploy tag:
 
