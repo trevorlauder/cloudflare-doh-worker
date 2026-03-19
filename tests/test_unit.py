@@ -307,67 +307,56 @@ def test_handle_health_returns_ok():
 
 def test_parse_blocklist_plain_domain():
     """Plain domain lines are parsed as exact matches."""
-    exact, suffixes = parse_blocklist_text("ads.example.com\ntracker.net\n")
+    exact = parse_blocklist_text("ads.example.com\ntracker.net\n")
     assert exact == {"ads.example.com", "tracker.net"}
-    assert not suffixes
 
 
 def test_parse_blocklist_hosts_format():
     """Hosts-file lines (0.0.0.0 domain) are parsed as exact matches."""
-    exact, suffixes = parse_blocklist_text(
+    exact = parse_blocklist_text(
         "0.0.0.0 ads.example.com\n127.0.0.1 tracker.net\n",
     )
 
     assert exact == {"ads.example.com", "tracker.net"}
-    assert not suffixes
-
-
-def test_parse_blocklist_wildcard():
-    """*.example.com lines are stored with a leading dot as suffix strings."""
-    exact, suffixes = parse_blocklist_text("*.tracking.example.com\n")
-    assert suffixes == {".tracking.example.com"}
-    assert not exact
 
 
 def test_parse_blocklist_comments_ignored():
     """Comment lines and inline comments are stripped."""
     text = "# this is a comment\nads.example.com # inline comment\n"
-    exact, _ = parse_blocklist_text(text)
+    exact = parse_blocklist_text(text)
     assert exact == {"ads.example.com"}
 
 
 def test_parse_blocklist_skips_no_dot_entries():
     """Entries without a dot (e.g. localhost) are excluded."""
     text = "0.0.0.0 localhost\nads.example.com\n"
-    exact, _ = parse_blocklist_text(text)
+    exact = parse_blocklist_text(text)
     assert exact == {"ads.example.com"}
 
 
 def test_parse_blocklist_lowercases_domains():
     """Domain names are normalized to lowercase."""
-    exact, _ = parse_blocklist_text("ADS.EXAMPLE.COM\n")
+    exact = parse_blocklist_text("ADS.EXAMPLE.COM\n")
     assert exact == {"ads.example.com"}
 
 
 def test_parse_blocklist_empty_input():
-    """Empty input yields empty sets."""
-    exact, suffixes = parse_blocklist_text("")
+    """Empty input yields empty set."""
+    exact = parse_blocklist_text("")
     assert not exact
-    assert not suffixes
 
 
 def test_parse_blocklist_strips_trailing_dot():
     """Trailing dots are stripped from domain names."""
-    exact, _ = parse_blocklist_text("ads.example.com.\n")
+    exact = parse_blocklist_text("ads.example.com.\n")
     assert exact == {"ads.example.com"}
 
 
 def test_parse_blocklist_mixed_formats():
-    """Hosts-file, plain, and wildcard lines all parse correctly together."""
-    text = "# OISD-style list\n0.0.0.0 ads.example.com\ntracker.net\n*.malware.example.org\n"
-    exact, suffixes = parse_blocklist_text(text)
+    """Hosts-file and plain lines both parse correctly together."""
+    text = "# OISD-style list\n0.0.0.0 ads.example.com\ntracker.net\n"
+    exact = parse_blocklist_text(text)
     assert exact == {"ads.example.com", "tracker.net"}
-    assert suffixes == {".malware.example.org"}
 
 
 _BLOCKLIST_SINGLE = json.loads(
@@ -381,7 +370,6 @@ _MANIFEST_ENTRY = {
     "bloom_m": _BLOCKLIST_SINGLE["bloom_m"],
     "bloom_k": _BLOCKLIST_SINGLE["bloom_k"],
     "exact_count": _BLOCKLIST_SINGLE["exact_count"],
-    "suffixes": _BLOCKLIST_SINGLE["suffixes"],
     "source_urls": ["https://example.com/hosts.txt"],
 }
 
@@ -396,12 +384,30 @@ class _FakeArrayBuffer:
         return self._data
 
 
+class _FakeMetadata:
+    """Minimal stand-in for a JS metadata object returned by KV.getWithMetadata()."""
+
+    def __init__(self, data: dict) -> None:
+        self._data = data
+
+    def to_py(self) -> dict:
+        return self._data
+
+
+class _FakeKVResult:
+    """Minimal stand-in for the result of KV.getWithMetadata()."""
+
+    def __init__(self, value: object, metadata: object) -> None:
+        self.value = value
+        self.metadata = metadata
+
+
 class _MockKV:
     """Minimal KV binding stub for unit tests."""
 
     def __init__(
         self,
-        manifest: list | None = None,
+        metadata: dict | None = None,
         bloom_bytes: bytes | None = None,
         raise_error: bool = False,
     ) -> None:
@@ -409,37 +415,24 @@ class _MockKV:
         Initialize the mock KV binding.
 
         Parameters:
-        manifest (list | None): Manifest data to return on get(), or None to simulate
-            a missing key.
-        bloom_bytes (bytes | None): Raw bloom filter bytes for the bloom key.
-        raise_error (bool): When True, get() raises RuntimeError to simulate a KV failure.
+        metadata (dict | None): Metadata dict to return with getWithMetadata(), or None
+            to simulate a missing key.
+        bloom_bytes (bytes | None): Raw bloom filter bytes for the bloom value.
+        raise_error (bool): When True, getWithMetadata() raises RuntimeError to
+            simulate a KV failure.
         """
-        self._manifest = manifest
+        self._metadata = metadata
         self._bloom_bytes = bloom_bytes
         self._raise = raise_error
 
-    async def get(self, key: str, options: object = None) -> object:
-        """
-        Return manifest JSON or bloom ArrayBuffer depending on key, or raise/return None.
+        async def _get_with_metadata(key: str, options: object = None) -> object:
+            if self._raise:
+                raise RuntimeError("KV unavailable")
+            value = _FakeArrayBuffer(self._bloom_bytes) if self._bloom_bytes else None
+            meta = _FakeMetadata(self._metadata) if self._metadata else None
+            return _FakeKVResult(value=value, metadata=meta)
 
-        Parameters:
-        key (str): KV key being requested.
-        options (object): Ignored; present to match the KV API signature.
-
-        Returns:
-        object: JSON-encoded manifest string, _FakeArrayBuffer of bloom bytes, or None.
-        """
-        if self._raise:
-            raise RuntimeError("KV unavailable")
-        if key == "blocklist:manifest":
-            if self._manifest is None:
-                return None
-            return json.dumps(self._manifest)
-        if key == "blocklist:bloom":
-            if self._bloom_bytes is None:
-                return None
-            return _FakeArrayBuffer(self._bloom_bytes)
-        return None
+        self.getWithMetadata = _get_with_metadata
 
 
 def _make_post_request(name: str = "example.com") -> MagicMock:
@@ -542,7 +535,7 @@ def test_load_blocklist_from_kv_blocks_domain_in_filter(
 
     env = MagicMock()
     env.BLOCKLIST = _MockKV(
-        manifest=[_MANIFEST_ENTRY],
+        metadata=_MANIFEST_ENTRY,
         bloom_bytes=_BLOCKLIST_SINGLE_BIN,
     )
     result = asyncio.run(worker._load_blocklist_from_kv(env))
@@ -566,7 +559,7 @@ def test_load_blocklist_from_kv_passes_absent_domain(
 
     env = MagicMock()
     env.BLOCKLIST = _MockKV(
-        manifest=[_MANIFEST_ENTRY],
+        metadata=_MANIFEST_ENTRY,
         bloom_bytes=_BLOCKLIST_SINGLE_BIN,
     )
     result = asyncio.run(worker._load_blocklist_from_kv(env))
@@ -590,7 +583,7 @@ def test_load_blocklist_from_kv_concurrent_returns_none(
 
     env = MagicMock()
     env.BLOCKLIST = _MockKV(
-        manifest=[_MANIFEST_ENTRY],
+        metadata=_MANIFEST_ENTRY,
         bloom_bytes=_BLOCKLIST_SINGLE_BIN,
     )
     result = asyncio.run(worker._load_blocklist_from_kv(env))
@@ -671,7 +664,7 @@ def test_kv_loading_policy_block_returns_503(
 
     env = MagicMock()
     env.BLOCKLIST = _MockKV(
-        manifest=[_MANIFEST_ENTRY],
+        metadata=_MANIFEST_ENTRY,
         bloom_bytes=_BLOCKLIST_SINGLE_BIN,
     )
 

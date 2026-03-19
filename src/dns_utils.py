@@ -315,24 +315,21 @@ def _is_ip(token: str) -> bool:
     return bool(_IPV4_RE.match(token) or _IPV6_RE.match(token))
 
 
-def parse_blocklist_text(text: str) -> tuple[set[str], set[str]]:
+def parse_blocklist_text(text: str) -> set[str]:
     """
     Parse a community block list in hosts-file or plain domain-per-line format.
 
     Handles hosts-file lines with IPv4 or IPv6 addresses followed by one or
-    more domains (e.g. "0.0.0.0 a.example b.example" or "::1 example.com"),
-    wildcard entries ("*.example.com"), and plain domain-per-line format.
-    Comments (#) and blank lines are ignored.
+    more domains (e.g. "0.0.0.0 a.example b.example" or "::1 example.com")
+    and plain domain-per-line format. Comments (#) and blank lines are ignored.
 
     Parameters:
     text (str): Raw text content fetched from a block list URL or KV.
 
     Returns:
-    tuple[set[str], set[str]]: (exact domains, suffix strings)
-        Suffix strings use a leading dot: ".example.com".
+    set[str]: Exact domain names.
     """
     exact: set[str] = set()
-    suffixes: set[str] = set()
 
     for raw_line in text.splitlines():
         stripped: str = _COMMENT_RE.sub("", raw_line).strip()
@@ -348,18 +345,11 @@ def parse_blocklist_text(text: str) -> tuple[set[str], set[str]]:
 
             continue
 
-        if stripped.startswith("*."):
-            domain = stripped[2:].strip().lower().rstrip(".")
-            if "." in domain:
-                suffixes.add("." + domain)
-
-            continue
-
         domain = stripped.lower().rstrip(".")
         if "." in domain and " " not in domain:
             exact.add(domain)
 
-    return exact, suffixes
+    return exact
 
 
 def make_blocked_response(
