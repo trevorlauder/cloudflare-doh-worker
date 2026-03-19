@@ -4276,7 +4276,7 @@
                     "spec": {
                       "direction": "backward",
                       "editorMode": "code",
-                      "expr": "avg(quantile_over_time(0.5, {source=\"cloudflare-doh-worker\"} | json | elapsed_ms != \"\" | unwrap elapsed_ms [$__interval]))",
+                      "expr": "avg(quantile_over_time(0.5, {source=\"cloudflare-doh-worker\"} | json | elapsed_ms != \"\" | result_status !~ \"worker .*\" | unwrap elapsed_ms [$__interval]))",
                       "legendFormat": "P50",
                       "queryType": "range"
                     },
@@ -4298,7 +4298,7 @@
                     "spec": {
                       "direction": "backward",
                       "editorMode": "code",
-                      "expr": "avg(quantile_over_time(0.9, {source=\"cloudflare-doh-worker\"} | json | elapsed_ms != \"\" | unwrap elapsed_ms [$__interval]))",
+                      "expr": "avg(quantile_over_time(0.9, {source=\"cloudflare-doh-worker\"} | json | elapsed_ms != \"\" | result_status !~ \"worker .*\" | unwrap elapsed_ms [$__interval]))",
                       "legendFormat": "P90",
                       "queryType": "range"
                     },
@@ -4320,7 +4320,7 @@
                     "spec": {
                       "direction": "backward",
                       "editorMode": "code",
-                      "expr": "avg(quantile_over_time(0.99, {source=\"cloudflare-doh-worker\"} | json | elapsed_ms != \"\" | unwrap elapsed_ms [$__interval]))",
+                      "expr": "avg(quantile_over_time(0.99, {source=\"cloudflare-doh-worker\"} | json | elapsed_ms != \"\" | result_status !~ \"worker .*\" | unwrap elapsed_ms [$__interval]))",
                       "legendFormat": "P99",
                       "queryType": "range"
                     },
@@ -4342,7 +4342,7 @@
                     "spec": {
                       "direction": "backward",
                       "editorMode": "code",
-                      "expr": "avg(quantile_over_time(0.999, {source=\"cloudflare-doh-worker\"} | json | elapsed_ms != \"\" | unwrap elapsed_ms [$__interval]))",
+                      "expr": "avg(quantile_over_time(0.999, {source=\"cloudflare-doh-worker\"} | json | elapsed_ms != \"\" | result_status !~ \"worker .*\" | unwrap elapsed_ms [$__interval]))",
                       "legendFormat": "P999",
                       "queryType": "range"
                     },
@@ -4356,10 +4356,198 @@
             "transformations": []
           }
         },
-        "description": "Worker request latency from receipt to Loki dispatch",
+        "description": "Latency for requests forwarded to upstream DNS providers",
         "id": 54,
         "links": [],
-        "title": "Request Latency",
+        "title": "Upstream Request Latency",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "axisSoftMax": 300,
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "line",
+                  "fillOpacity": 5,
+                  "gradientMode": "none",
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  },
+                  "insertNulls": false,
+                  "lineInterpolation": "smooth",
+                  "lineWidth": 2,
+                  "pointSize": 5,
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
+                  "showPoints": "never",
+                  "showValues": false,
+                  "spanNulls": true,
+                  "stacking": {
+                    "group": "A",
+                    "mode": "none"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 80
+                    }
+                  ]
+                },
+                "unit": "ms"
+              },
+              "overrides": []
+            },
+            "options": {
+              "annotations": {
+                "multiLane": false
+              },
+              "legend": {
+                "calcs": [
+                  "mean"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23056592349"
+        }
+      }
+    },
+    "panel-61": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "avg(quantile_over_time(0.5, {source=\"cloudflare-doh-worker\"} | json | elapsed_ms != \"\" | result_status =~ \"worker .*\" | unwrap elapsed_ms [$__interval]))",
+                      "legendFormat": "P50",
+                      "queryType": "range"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "avg(quantile_over_time(0.9, {source=\"cloudflare-doh-worker\"} | json | elapsed_ms != \"\" | result_status =~ \"worker .*\" | unwrap elapsed_ms [$__interval]))",
+                      "legendFormat": "P90",
+                      "queryType": "range"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "B"
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "avg(quantile_over_time(0.99, {source=\"cloudflare-doh-worker\"} | json | elapsed_ms != \"\" | result_status =~ \"worker .*\" | unwrap elapsed_ms [$__interval]))",
+                      "legendFormat": "P99",
+                      "queryType": "range"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "C"
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "avg(quantile_over_time(0.999, {source=\"cloudflare-doh-worker\"} | json | elapsed_ms != \"\" | result_status =~ \"worker .*\" | unwrap elapsed_ms [$__interval]))",
+                      "legendFormat": "P999",
+                      "queryType": "range"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "D"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Latency for requests handled locally by worker config (blocked/allowed domains)",
+        "id": 61,
+        "links": [],
+        "title": "Worker Blocked/Allowed Latency",
         "vizConfig": {
           "group": "timeseries",
           "kind": "VizConfig",
@@ -5577,8 +5765,21 @@
                         "name": "panel-54"
                       },
                       "height": 8,
-                      "width": 24,
+                      "width": 12,
                       "x": 0,
+                      "y": 32
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-61"
+                      },
+                      "height": 8,
+                      "width": 12,
+                      "x": 12,
                       "y": 32
                     }
                   },
