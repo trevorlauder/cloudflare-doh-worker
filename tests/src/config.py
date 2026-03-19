@@ -44,7 +44,7 @@ RETRY_MAX_ATTEMPTS: int = 2
 
 CACHE_DNS: bool = True
 
-KV_ENABLED: bool = True
+BLOCKLIST_ENABLED: bool = True
 
 BLOCKLIST_LOADING_POLICY: Literal["block", "bypass"] = "block"
 

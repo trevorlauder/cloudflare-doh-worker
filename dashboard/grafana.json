@@ -43,7 +43,7 @@
                     "spec": {
                       "direction": "backward",
                       "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json [$__range]))",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json [$__auto]))",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -90,7 +90,7 @@
               "percentChangeColorMode": "standard",
               "reduceOptions": {
                 "calcs": [
-                  "lastNotNull"
+                  "sum"
                 ],
                 "fields": "",
                 "values": false
@@ -705,7 +705,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json timed_out_providers | timed_out_providers != \"\" [$__range]))",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json timed_out_providers | timed_out_providers != \"\" [$__auto]))",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -757,7 +757,7 @@
               "percentChangeColorMode": "standard",
               "reduceOptions": {
                 "calcs": [
-                  "lastNotNull"
+                  "sum"
                 ],
                 "fields": "",
                 "values": false
@@ -950,7 +950,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json | result_status=`worker blocked` [$__range]))",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json | result_status=`worker blocked` [$__auto]))",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -1002,7 +1002,7 @@
               "percentChangeColorMode": "standard",
               "reduceOptions": {
                 "calcs": [
-                  "lastNotNull"
+                  "sum"
                 ],
                 "fields": "",
                 "values": false
@@ -1176,7 +1176,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json | result_status=`blocked` [$__range]))",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json | result_status=`blocked` [$__auto]))",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -1227,7 +1227,7 @@
               "percentChangeColorMode": "standard",
               "reduceOptions": {
                 "calcs": [
-                  "lastNotNull"
+                  "sum"
                 ],
                 "fields": "",
                 "values": false
@@ -1260,7 +1260,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json | result_status=`worker allowed` [$__range]))",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json | result_status=`worker allowed` [$__auto]))",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -1312,7 +1312,7 @@
               "percentChangeColorMode": "standard",
               "reduceOptions": {
                 "calcs": [
-                  "lastNotNull"
+                  "sum"
                 ],
                 "fields": "",
                 "values": false
@@ -1485,7 +1485,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json | result_status=`error` [$__range]))",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json | result_status=`error` [$__auto]))",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -1537,7 +1537,7 @@
               "percentChangeColorMode": "standard",
               "reduceOptions": {
                 "calcs": [
-                  "lastNotNull"
+                  "sum"
                 ],
                 "fields": "",
                 "values": false
@@ -1570,7 +1570,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json rebind_providers | rebind_providers != \"\" [$__range]))",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json rebind_providers | rebind_providers != \"\" [$__auto]))",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -1622,7 +1622,7 @@
               "percentChangeColorMode": "standard",
               "reduceOptions": {
                 "calcs": [
-                  "lastNotNull"
+                  "sum"
                 ],
                 "fields": "",
                 "values": false
@@ -1816,7 +1816,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json failed_providers | failed_providers != `` [$__range]))",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json failed_providers | failed_providers != `` [$__auto]))",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -1868,7 +1868,7 @@
               "percentChangeColorMode": "standard",
               "reduceOptions": {
                 "calcs": [
-                  "lastNotNull"
+                  "sum"
                 ],
                 "fields": "",
                 "values": false
@@ -1901,7 +1901,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json | result_status=`possibly blocked` [$__range]))",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json | result_status=`possibly blocked` [$__auto]))",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -1952,7 +1952,7 @@
               "percentChangeColorMode": "standard",
               "reduceOptions": {
                 "calcs": [
-                  "lastNotNull"
+                  "sum"
                 ],
                 "fields": "",
                 "values": false
@@ -2147,7 +2147,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json retried_providers | retried_providers != `` [$__range]))",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json retried_providers | retried_providers != `` [$__auto]))",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -2199,7 +2199,7 @@
               "percentChangeColorMode": "standard",
               "reduceOptions": {
                 "calcs": [
-                  "lastNotNull"
+                  "sum"
                 ],
                 "fields": "",
                 "values": false
@@ -2394,7 +2394,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json connection_error_providers | connection_error_providers != \"\" [$__range]))",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json connection_error_providers | connection_error_providers != \"\" [$__auto]))",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -2446,7 +2446,7 @@
               "percentChangeColorMode": "standard",
               "reduceOptions": {
                 "calcs": [
-                  "lastNotNull"
+                  "sum"
                 ],
                 "fields": "",
                 "values": false
@@ -3005,7 +3005,7 @@
                     "spec": {
                       "direction": "backward",
                       "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json | result_status=`not blocked` [$__range]))",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json | result_status=`not blocked` [$__auto]))",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -3052,7 +3052,7 @@
               "percentChangeColorMode": "standard",
               "reduceOptions": {
                 "calcs": [
-                  "lastNotNull"
+                  "sum"
                 ],
                 "fields": "",
                 "values": false
@@ -3085,7 +3085,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json response_from | response_from = `cache` [$__range]))",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json response_from | response_from = `cache` [$__auto]))",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -3132,7 +3132,7 @@
               "percentChangeColorMode": "standard",
               "reduceOptions": {
                 "calcs": [
-                  "lastNotNull"
+                  "sum"
                 ],
                 "fields": "",
                 "values": false
@@ -3165,7 +3165,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json kv_loading | kv_loading = `true` [$__range]))",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json kv_loading | kv_loading = `true` [$__auto]))",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -3217,7 +3217,7 @@
               "percentChangeColorMode": "standard",
               "reduceOptions": {
                 "calcs": [
-                  "lastNotNull"
+                  "sum"
                 ],
                 "fields": "",
                 "values": false

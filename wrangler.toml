@@ -34,4 +34,4 @@ invocation_logs = false
 # - ADMIN_TOKEN       (required to enable /config endpoint)
 
 [[kv_namespaces]]
-binding = "BLOCK_LIST"
+binding = "BLOCKLIST"

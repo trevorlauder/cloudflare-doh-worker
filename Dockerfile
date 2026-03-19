@@ -41,7 +41,7 @@ COPY --chown=app:app Makefile ./
 COPY --chown=app:app wrangler.toml .
 COPY --chown=app:app entrypoint.sh entrypoint.sh
 
-RUN touch src/config.py \
+RUN echo 'BLOCKLIST_ENABLED = True' > src/config.py \
     && uv run python scripts/build_blocklist.py --skip-download \
     && rm src/config.py
 
