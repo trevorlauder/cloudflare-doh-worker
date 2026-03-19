@@ -8,7 +8,7 @@ Download community block lists and write a single bloom filter file.
 Reads URLs from blocklist_sources.yaml, fetches each URL, parses hosts-file
 or plain domain-per-line format, deduplicates across all sources, and writes
 a single blocklist/bloom.json. The file contains a bloom filter of unique
-exact domains and a list of wildcard suffixes merged from all sources.
+exact domains merged from all sources.
 Use upload_blocklist.py to upload this file to Cloudflare KV.
 
 Usage:
@@ -156,9 +156,9 @@ def _fp_check(filters: list[Bloom], num_probes: int) -> float:
     return false_hits / num_probes
 
 
-def fetch_and_parse_url(url: str) -> tuple[set[str], set[str], str]:
+def fetch_and_parse_url(url: str) -> tuple[set[str], str]:
     """
-    Fetch and parse one block list URL into domain sets.
+    Fetch and parse one block list URL into a domain set.
 
     Filters out bare IP addresses from the exact domain set.
 
@@ -166,22 +166,19 @@ def fetch_and_parse_url(url: str) -> tuple[set[str], set[str], str]:
     url (str): Block list URL to fetch and parse.
 
     Returns:
-    tuple[set[str], set[str], str]: (exact domains, wildcard suffixes with leading dot, raw text)
+    tuple[set[str], str]: (exact domains, raw text)
     """
     text: str = fetch_url(url)
-    exact: set[str]
-    suffixes: set[str]
-    exact, suffixes = parse_blocklist_text(text)
+    exact: set[str] = parse_blocklist_text(text)
     exact = {domain for domain in exact if not _IP_RE.match(domain)}
     _console.print(
-        f"  [green]→ {len(exact):,} exact domains, {len(suffixes):,} wildcard suffixes[/green]",
+        f"  [green]→ {len(exact):,} exact domains[/green]",
     )
-    return exact, suffixes, text
+    return exact, text
 
 
 def build_bloom_json(
     all_exact: set[str],
-    all_suffixes: set[str],
     fp_rate: float,
     source_urls: list[str] | None = None,
 ) -> tuple[str, bytes, int, Bloom]:
@@ -190,7 +187,6 @@ def build_bloom_json(
 
     Parameters:
     all_exact (set[str]): Deduplicated set of exact domains across all sources.
-    all_suffixes (set[str]): Deduplicated set of wildcard suffixes across all sources.
     fp_rate (float): Target false-positive rate for the bloom filter.
     source_urls (list[str] | None): Original source URLs included in the output for
         traceability. Stored in bloom.json and surfaced via the /config endpoint.
@@ -213,7 +209,6 @@ def build_bloom_json(
                 "bloom_m": num_bits,
                 "bloom_k": num_hashes,
                 "exact_count": len(all_exact),
-                "suffixes": sorted(all_suffixes),
                 "source_urls": source_urls or [],
             },
             separators=(",", ":"),
@@ -228,7 +223,7 @@ def verify_bloom_filter(
     bit_array: bytes | bytearray,
     num_bits: int,
     num_hashes: int,
-    per_source: list[tuple[set[str], set[str]]],
+    per_source: list[set[str]],
 ) -> None:
     """
     Verify that every domain from every original source is present in the bloom filter.
@@ -240,16 +235,16 @@ def verify_bloom_filter(
     bit_array (bytes | bytearray): Bloom filter bit array.
     num_bits (int): Number of bits in the filter (m).
     num_hashes (int): Number of hash functions (k).
-    per_source (list[tuple[set[str], set[str]]]): Per-source (exact, suffixes) sets as parsed.
+    per_source (list[set[str]]): Per-source exact domain sets as parsed.
     """
-    total: int = sum(len(exact) for exact, _ in per_source)
+    total: int = sum(len(exact) for exact in per_source)
     _console.print(
         f"\n[cyan]Verifying all {total:,} domains from {len(per_source)} source(s) "
         f"against bloom filter ...[/cyan]",
     )
     missed: list[str] = [
         domain
-        for exact, _ in per_source
+        for exact in per_source
         for domain in exact
         if not _bloom_contains(
             bit_array=bit_array,
@@ -351,7 +346,7 @@ def main() -> None:
         except ValueError:
             pass
 
-    per_source: list[tuple[set[str], set[str]]] = []
+    per_source: list[set[str]] = []
     for i, url in enumerate(urls):
         _console.print(f"\n[bold cyan]\\[{i}][/bold cyan] {url}")
         txt_path: Path = _BLOCKLIST_DIR / f"{i}.txt"
@@ -363,21 +358,18 @@ def main() -> None:
                 raise SystemExit(1)
             _console.print("  [yellow]Using cached file[/yellow]")
             raw_text: str = txt_path.read_text(encoding="utf-8")
-            exact: set[str]
-            suffixes: set[str]
-            exact, suffixes = parse_blocklist_text(raw_text)
+            exact: set[str] = parse_blocklist_text(raw_text)
             exact = {domain for domain in exact if not _IP_RE.match(domain)}
             _console.print(
-                f"  [green]→ {len(exact):,} exact domains, {len(suffixes):,} wildcard suffixes[/green]",
+                f"  [green]→ {len(exact):,} exact domains[/green]",
             )
         else:
-            exact, suffixes, raw_text = fetch_and_parse_url(url)
+            exact, raw_text = fetch_and_parse_url(url)
             txt_path.write_text(raw_text, encoding="utf-8")
-        per_source.append((exact, suffixes))
+        per_source.append(exact)
 
-    total_before: int = sum(len(exact) for exact, _ in per_source)
-    all_exact: set[str] = set().union(*(exact for exact, _ in per_source))
-    all_suffixes: set[str] = set().union(*(suffixes for _, suffixes in per_source))
+    total_before: int = sum(len(exact) for exact in per_source)
+    all_exact: set[str] = set().union(*per_source)
     total_after: int = len(all_exact)
     removed: int = total_before - total_after
     removed_pct: float = removed / total_before * 100 if total_before else 0.0
@@ -399,7 +391,6 @@ def main() -> None:
     bloom: Bloom
     payload, bit_array, num_hashes, bloom = build_bloom_json(
         all_exact=all_exact,
-        all_suffixes=all_suffixes,
         fp_rate=args.fp_rate,
         source_urls=urls,
     )

@@ -149,7 +149,7 @@ urls:
   - https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
 ```
 
-Each URL should point to a hosts-file format or plain domain-per-line list. Wildcards (`*.example.com`) are supported on their own line.
+Each URL should point to a hosts-file format or plain domain-per-line list.
 
 Then run:
 
@@ -269,7 +269,7 @@ Queries for domains on the worker's own blocklist never leave the worker. They h
 
 ### How it works
 
-- **Blocklist**: supports exact matches and wildcards (`*.example.com`). Matched domains return a synthetic `NXDOMAIN` without querying any upstream providers.
+- **Blocklist**: matched domains return a synthetic `NXDOMAIN` without querying any upstream providers.
 
 - **Allowlist**: uses the same matching rules. Matched domains skip fan-out and go to `BYPASS_PROVIDER` (which should be non-filtering). If a domain is in both lists, the allowlist takes precedence and the domain will be resolved, not blocked.
 

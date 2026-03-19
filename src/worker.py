@@ -195,42 +195,41 @@ async def _load_blocklist_from_kv(env: object) -> BlocklistCache | None:
             _kv_blocklist_cache = _EMPTY_BLOCKLIST
             return _kv_blocklist_cache
 
-        manifest_key: str = "blocklist:manifest"
+        bloom_key: str = "blocklist:bloom"
 
         try:
-            manifest_json: str | None = await kv.get(manifest_key)
+            result: object = await kv.getWithMetadata(
+                bloom_key,
+                to_js({"type": "arrayBuffer"}),
+            )
         except Exception:
             logger.warning(
-                "Failed to read KV block list manifest %r, community block list disabled",
-                manifest_key,
+                "Failed to read KV bloom filter %r, community block list disabled",
+                bloom_key,
                 exc_info=True,
             )
-
             _kv_blocklist_cache = _EMPTY_BLOCKLIST
             return _kv_blocklist_cache
 
-        if not manifest_json:
-            logger.warning(
-                "KV block list manifest %r is empty or not found, community block list disabled",
-                manifest_key,
-            )
+        bloom_buf: object | None = result.value
+        metadata: object | None = result.metadata
 
+        if bloom_buf is None or metadata is None:
+            logger.warning(
+                "KV bloom filter %r missing value or metadata, "
+                "community block list disabled",
+                bloom_key,
+            )
             _kv_blocklist_cache = _EMPTY_BLOCKLIST
             return _kv_blocklist_cache
 
         try:
-            manifest: list = json.loads(manifest_json)
+            entry: dict = metadata.to_py()
         except Exception:
-            logger.warning("Failed to parse blocklist manifest JSON", exc_info=True)
-            _kv_blocklist_cache = _EMPTY_BLOCKLIST
-            return _kv_blocklist_cache
-
-        if not manifest:
-            logger.warning("Blocklist manifest is empty, community block list disabled")
-            _kv_blocklist_cache = _EMPTY_BLOCKLIST
-            return _kv_blocklist_cache
-
-        entry: dict = manifest[0]
+            entry = {
+                k: getattr(metadata, k, None)
+                for k in ("bloom_m", "bloom_k", "exact_count", "source_urls")
+            }
 
         entry_source_urls: list = entry.get("source_urls", [])
         if entry_source_urls:
@@ -242,49 +241,20 @@ async def _load_blocklist_from_kv(env: object) -> BlocklistCache | None:
         bloom_m: int = int(entry.get("bloom_m", 0))
         bloom_k: int = int(entry.get("bloom_k", 0))
         exact_count: int = int(entry.get("exact_count", 0))
-        suffixes_list: list = entry.get("suffixes", [])
 
-        suffixes_tuple: tuple[str, ...] = tuple(sorted(suffixes_list))
-        total_domain_count: int = exact_count + len(suffixes_list)
+        bit_array: bytearray = bytearray(bloom_buf.to_bytes())
 
         if bloom_m and bloom_k:
-            bloom_key: str = "blocklist:bloom"
-            try:
-                bloom_buf: object | None = await kv.get(
-                    bloom_key,
-                    to_js({"type": "arrayBuffer"}),
-                )
-            except Exception:
-                logger.warning(
-                    "Failed to read KV bloom filter %r, community block list disabled",
-                    bloom_key,
-                    exc_info=True,
-                )
-                _kv_blocklist_cache = _EMPTY_BLOCKLIST
-                return _kv_blocklist_cache
-
-            if bloom_buf is None:
-                logger.warning(
-                    "KV bloom filter %r is empty or not found, community block list disabled",
-                    bloom_key,
-                )
-                _kv_blocklist_cache = _EMPTY_BLOCKLIST
-                return _kv_blocklist_cache
-
-            bit_array: bytearray = bytearray(bloom_buf.to_bytes())
             fp_rate: float = (
                 (1.0 - math.exp(-bloom_k * exact_count / bloom_m)) ** bloom_k
                 if exact_count > 0
                 else 0.0
             )
         else:
-            bit_array: bytearray = bytearray()
             fp_rate: float = 0.0
 
         def _check(name: str) -> bool:
             normalized: str = name.rstrip(".").lower()
-            if any(normalized.endswith(suffix) for suffix in suffixes_tuple):
-                return True
             if not bit_array:
                 return False
             return _bloom_contains(bit_array, bloom_m, bloom_k, normalized)
@@ -292,16 +262,14 @@ async def _load_blocklist_from_kv(env: object) -> BlocklistCache | None:
         _kv_blocklist_cache = BlocklistCache(
             check=_check,
             manifest_urls=tuple(manifest_urls),
-            domain_count=total_domain_count,
+            domain_count=exact_count,
             fp_rate=fp_rate,
             bloom_size_bytes=len(bit_array),
         )
 
         logger.info(
-            "Loaded KV block list: %d domains, %d wildcard suffixes, "
-            "theoretical FP rate %.2e (2 KV reads)",
-            total_domain_count,
-            len(suffixes_tuple),
+            "Loaded KV block list: %d domains, theoretical FP rate %.2e",
+            exact_count,
             fp_rate,
         )
 

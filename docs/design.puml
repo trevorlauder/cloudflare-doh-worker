@@ -16,10 +16,23 @@ end
 
 "Cloudflare Worker" -[#gray]-> "Grafana Loki": POST log entry (async, if configured)
 "Cloudflare Worker" -> "DNS Client": Cloudflare Worker DNS Response
-else Domain in BLOCKED_DOMAINS or community blocklist
+else Domain in BLOCKED_DOMAINS
   "Cloudflare Worker" -[#gray]-> "Grafana Loki": POST log entry (async, if configured)
   "Cloudflare Worker" -> "DNS Client": NXDOMAIN (synthetic)
 else Domain not in ALLOWED_DOMAINS or BLOCKED_DOMAINS
+
+opt KV blocklist enabled (cold start)
+  "Cloudflare Worker" -> "Cloudflare KV": getWithMetadata blocklist:bloom
+  "Cloudflare Worker" <- "Cloudflare KV": Bloom filter + metadata (bloom params)
+  note over "Cloudflare Worker": Cache bloom filter in memory
+end
+
+note over "Cloudflare Worker": Check KV blocklist (bloom filter)\n\nIf loading in progress:\n  block policy = 503 Retry-After\n  bypass policy = skip check
+
+alt Domain in KV blocklist
+  "Cloudflare Worker" -[#gray]-> "Grafana Loki": POST log entry (async, if configured)
+  "Cloudflare Worker" -> "DNS Client": NXDOMAIN (synthetic)
+else Domain not blocked
 group Parallel
   "Cloudflare Worker" -> "Main Provider": GET/POST https://main-provider/dns-query
   "Cloudflare Worker" <- "Main Provider": Main Provider DNS Response
@@ -33,6 +46,7 @@ note over "Cloudflare Worker": Select winner: blocked > possibly blocked\n> main
 
 "Cloudflare Worker" -[#gray]-> "Grafana Loki": POST log entry (async, if configured)
 "Cloudflare Worker" -> "DNS Client": Cloudflare Worker DNS Response
+end
 end
 
 @enduml

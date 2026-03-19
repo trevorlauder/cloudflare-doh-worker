@@ -1,6 +1,5 @@
 {
   "bloom_m": 40,
   "bloom_k": 23,
-  "exact_count": 1,
-  "suffixes": []
+  "exact_count": 1
 }

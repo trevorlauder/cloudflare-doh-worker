@@ -3,11 +3,13 @@
 # SPDX-License-Identifier: MIT
 
 """
-Upload block list data to Cloudflare KV as a single manifest key.
+Upload block list data to Cloudflare KV.
 
-Loads blocklist/bloom.json (built by build_blocklist.py) and uploads it
-as a single blocklist:manifest KV key with all bloom filter data embedded.
-A SHA-256 hash is checked before uploading. Unchanged content is skipped.
+Loads blocklist/bloom.json and blocklist/bloom.bin (built by build_blocklist.py)
+and uploads the bloom binary as the blocklist:bloom KV value with manifest fields
+and a SHA-256 content hash stored as KV metadata (retrieved in a single
+getWithMetadata call by the worker). The hash in the metadata is compared via
+kv key list to skip redundant uploads when content has not changed.
 
 Usage:
     uv run python scripts/upload_blocklist.py [options]
@@ -19,10 +21,11 @@ Options:
 Prerequisites:
     A KV namespace must exist and be bound in wrangler.toml as BLOCKLIST.
     The namespace must be dedicated exclusively to blocklist data. Any key
-    that is not blocklist:manifest or blocklist:manifest.hash will be deleted
-    on every run. Do not store unrelated keys in this namespace.
+    that is not blocklist:bloom will be deleted on every run. Do not store
+    unrelated keys in this namespace.
     wrangler (uv run pywrangler) must be available on PATH.
-    Run scripts/build_blocklist.py first to generate blocklist/bloom.json.
+    Run scripts/build_blocklist.py first to generate blocklist/bloom.json
+    and blocklist/bloom.bin.
 """
 
 import argparse
@@ -105,58 +108,39 @@ def _pywrangler(
     )
 
 
-def get_kv_hash(binding: str, hash_key: str, *, remote: bool = True) -> str | None:
+def _list_kv_entries(*, remote: bool) -> list[dict]:
     """
-    Fetch the stored content hash from KV, if it exists.
+    List all key entries in the KV namespace.
+
+    Returns the parsed JSON array from wrangler, where each entry has at least
+    a "name" field and optionally a "metadata" field.
 
     Parameters:
-    binding (str): KV namespace binding name.
-    hash_key (str): KV key holding the stored hash.
-    remote (bool): If True, target the Cloudflare edge. If False, target local dev KV.
+    remote (bool): Target Cloudflare edge if True, local dev KV if False.
 
     Returns:
-    str | None: The stored hash string, or None if not found or on error.
+    list[dict]: Parsed key entries, or empty list on error.
     """
-    result = _pywrangler(
+    result: subprocess.CompletedProcess[str] = _pywrangler(
         "kv",
         "key",
-        "get",
+        "list",
         "--binding",
-        binding,
-        hash_key,
+        _BINDING,
         remote=remote,
         capture=True,
     )
 
-    if result.returncode != 0:
-        return None
+    if not (result.returncode == 0 and result.stdout.strip()):
+        return []
 
-    return result.stdout.strip() or None
-
-
-def upload_to_kv(text: str, binding: str, key: str, *, remote: bool = True) -> None:
-    """
-    Upload text to Cloudflare KV using wrangler.
-
-    Parameters:
-    text (str): Content to upload.
-    binding (str): KV namespace binding name (must match wrangler.toml).
-    key (str): KV key name to write.
-    remote (bool): Pass False to target local dev KV instead of the Cloudflare edge.
-
-    Raises:
-    SystemExit: If wrangler exits with a non-zero code.
-    """
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        suffix=".txt",
-        delete=False,
-        encoding="utf-8",
-    ) as f:
-        f.write(text)
-        tmp_path = Path(f.name)
-
-    _upload_path_to_kv(tmp_path, binding=binding, key=key, remote=remote)
+    try:
+        return json.loads(result.stdout)
+    except Exception:
+        _err.print(
+            "[yellow]WARNING: failed to parse KV key list[/yellow]",
+        )
+        return []
 
 
 def upload_bytes_to_kv(
@@ -165,6 +149,7 @@ def upload_bytes_to_kv(
     key: str,
     *,
     remote: bool = True,
+    metadata: str | None = None,
 ) -> None:
     """
     Upload raw bytes to Cloudflare KV using wrangler.
@@ -174,6 +159,7 @@ def upload_bytes_to_kv(
     binding (str): KV namespace binding name (must match wrangler.toml).
     key (str): KV key name to write.
     remote (bool): Pass False to target local dev KV instead of the Cloudflare edge.
+    metadata (str | None): Optional JSON metadata string to attach to the key.
 
     Raises:
     SystemExit: If wrangler exits with a non-zero code.
@@ -186,7 +172,13 @@ def upload_bytes_to_kv(
         f.write(data)
         tmp_path = Path(f.name)
 
-    _upload_path_to_kv(tmp_path, binding=binding, key=key, remote=remote)
+    _upload_path_to_kv(
+        tmp_path,
+        binding=binding,
+        key=key,
+        remote=remote,
+        metadata=metadata,
+    )
 
 
 def _upload_path_to_kv(
@@ -195,9 +187,17 @@ def _upload_path_to_kv(
     key: str,
     *,
     remote: bool = True,
+    metadata: str | None = None,
 ) -> None:
     """
     Upload a file at tmp_path to Cloudflare KV, then delete the temp file.
+
+    Parameters:
+    tmp_path (Path): Path to the temporary file to upload.
+    binding (str): KV namespace binding name.
+    key (str): KV key name to write.
+    remote (bool): Target Cloudflare edge if True, local dev KV if False.
+    metadata (str | None): Optional JSON metadata string to attach to the key.
 
     Raises:
     SystemExit: If wrangler exits with a non-zero code.
@@ -209,6 +209,8 @@ def _upload_path_to_kv(
         f"\n[cyan]Uploading to KV binding={binding!r} key={key!r} ({target}) ...[/cyan]",
     )
 
+    metadata_args: tuple[str, ...] = ("--metadata", metadata) if metadata else ()
+
     try:
         result = _pywrangler(
             "kv",
@@ -219,6 +221,7 @@ def _upload_path_to_kv(
             key,
             "--path",
             str(tmp_path),
+            *metadata_args,
             remote=remote,
             capture=True,
         )
@@ -236,13 +239,19 @@ def _upload_path_to_kv(
     _console.print("[green]Upload complete.[/green]")
 
 
-def _upload_blocklist(args: argparse.Namespace, *, remote: bool) -> set[str]:
+def _upload_blocklist(
+    args: argparse.Namespace,
+    *,
+    remote: bool,
+    kv_entries: list[dict],
+) -> set[str]:
     """
     Upload blocklist data to KV if bloom files exist and content has changed.
 
     Parameters:
     args (argparse.Namespace): Parsed CLI arguments (uses dry_run).
     remote (bool): Target Cloudflare edge if True, local dev KV if False.
+    kv_entries (list[dict]): Existing KV key entries from _list_kv_entries().
 
     Returns:
     set[str]: The set of KV keys that should be kept (not deleted).
@@ -258,51 +267,46 @@ def _upload_blocklist(args: argparse.Namespace, *, remote: bool) -> set[str]:
 
     entry: dict = json.loads(bloom_json_path.read_text(encoding="utf-8"))
     bloom_bytes: bytes = bloom_path.read_bytes()
-    manifest: list[dict] = [entry]
 
-    manifest_key: str = "blocklist:manifest"
     bloom_key: str = "blocklist:bloom"
-    manifest_json: str = json.dumps(manifest, separators=(",", ":"))
-    manifest_hash_key: str = f"{manifest_key}.hash"
-    content_hash: str = hashlib.sha256(manifest_json.encode()).hexdigest()
+    content_hash: str = hashlib.sha256(bloom_bytes).hexdigest()
+    entry["hash"] = content_hash
+    metadata_json: str = json.dumps(entry, separators=(",", ":"))
 
-    stored_hash: str | None = get_kv_hash(
-        binding=_BINDING,
-        hash_key=manifest_hash_key,
-        remote=remote,
-    )
+    metadata_size: int = len(metadata_json.encode())
+    if metadata_size > 1024:
+        _err.print(
+            f"[red]ERROR: KV metadata is {metadata_size} bytes, exceeds 1024-byte limit. "
+            f"Reduce the number of source URLs.[/red]",
+        )
+        raise SystemExit(1)
+
+    stored_hash: str | None = None
+    for kv_entry in kv_entries:
+        if kv_entry.get("name") == bloom_key:
+            metadata: dict = kv_entry.get("metadata") or {}
+            stored_hash = metadata.get("hash")
+            break
+
     if stored_hash == content_hash:
         _console.print(
-            f"[yellow]{manifest_key} unchanged, skipping upload.[/yellow]",
+            f"[yellow]{bloom_key} unchanged, skipping upload.[/yellow]",
         )
     elif args.dry_run:
         _console.print(
-            f"[yellow]Would upload {manifest_key} ({len(manifest_json)} bytes)[/yellow]",
-        )
-        _console.print(
-            f"[yellow]Would upload {bloom_key} ({len(bloom_bytes):,} bytes binary)[/yellow]",
+            f"[yellow]Would upload {bloom_key} ({len(bloom_bytes):,} bytes binary, "
+            f"{metadata_size} bytes metadata)[/yellow]",
         )
     else:
-        upload_to_kv(
-            text=manifest_json,
-            binding=_BINDING,
-            key=manifest_key,
-            remote=remote,
-        )
         upload_bytes_to_kv(
             data=bloom_bytes,
             binding=_BINDING,
             key=bloom_key,
             remote=remote,
-        )
-        upload_to_kv(
-            text=content_hash,
-            binding=_BINDING,
-            key=manifest_hash_key,
-            remote=remote,
+            metadata=metadata_json,
         )
 
-    return {manifest_key, bloom_key, manifest_hash_key}
+    return {bloom_key}
 
 
 def _delete_unknown_keys(
@@ -310,40 +314,20 @@ def _delete_unknown_keys(
     *,
     dry_run: bool,
     remote: bool,
+    kv_entries: list[dict],
 ) -> None:
     """
-    List all keys in the KV namespace and delete any not in known_keys.
+    Delete any keys not in known_keys from the KV namespace.
 
     Parameters:
     known_keys (set[str]): Keys that should be preserved.
     dry_run (bool): If True, print what would be deleted without making changes.
     remote (bool): Target Cloudflare edge if True, local dev KV if False.
+    kv_entries (list[dict]): Existing KV key entries from _list_kv_entries().
     """
-    list_result: subprocess.CompletedProcess[str] = _pywrangler(
-        "kv",
-        "key",
-        "list",
-        "--binding",
-        _BINDING,
-        remote=remote,
-        capture=True,
-    )
-
-    if not (list_result.returncode == 0 and list_result.stdout.strip()):
-        return
-
-    try:
-        all_keys: list[str] = [
-            entry["name"] for entry in json.loads(list_result.stdout)
-        ]
-    except Exception:
-        _err.print(
-            "[yellow]WARNING: failed to parse KV key list; skipping stale key cleanup[/yellow]",
-        )
-        return
-
-    for key in all_keys:
-        if key not in known_keys:
+    for kv_entry in kv_entries:
+        key: str = kv_entry.get("name", "")
+        if key and key not in known_keys:
             if dry_run:
                 _console.print(f"[yellow]Would delete stale key {key}[/yellow]")
             else:
@@ -362,7 +346,7 @@ def _delete_unknown_keys(
 
 def main() -> None:
     """
-    Entry point: build a single manifest with embedded bloom data and upload to KV.
+    Entry point: upload bloom binary with metadata to KV.
     """
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -389,15 +373,22 @@ def main() -> None:
 
     from config import BLOCKLIST_ENABLED
 
+    kv_entries: list[dict] = _list_kv_entries(remote=remote)
+
     if not BLOCKLIST_ENABLED:
         _console.print(
             "[yellow]BLOCKLIST_ENABLED is False, deleting all keys from KV.[/yellow]",
         )
         known_keys: set[str] = set()
     else:
-        known_keys = _upload_blocklist(args=args, remote=remote)
+        known_keys = _upload_blocklist(args=args, remote=remote, kv_entries=kv_entries)
 
-    _delete_unknown_keys(known_keys=known_keys, dry_run=args.dry_run, remote=remote)
+    _delete_unknown_keys(
+        known_keys=known_keys,
+        dry_run=args.dry_run,
+        remote=remote,
+        kv_entries=kv_entries,
+    )
 
 
 if __name__ == "__main__":
