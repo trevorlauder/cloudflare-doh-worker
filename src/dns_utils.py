@@ -673,6 +673,7 @@ async def send_doh_requests_fanout(
     accept: str,
     body_bytes: bytes | None = None,
     query: str = "",
+    safety_timeout_ms: int = 0,
 ) -> list:
     """
     Fan out DNS queries to multiple providers and collect results.
@@ -685,6 +686,10 @@ async def send_doh_requests_fanout(
     accept (str): Accept header value.
     body_bytes (bytes | None): DNS wire-format body for POST requests.
     query (str): Query string for GET JSON requests.
+    safety_timeout_ms (int): Overall safety timeout in milliseconds.
+        When positive, all fetches use this as their AbortSignal timeout
+        instead of config.TIMEOUT_MS, enforcing a hard deadline across
+        the entire fanout including retries.
 
     Returns:
     list[ProviderResult]: One result per queried provider.
@@ -698,7 +703,8 @@ async def send_doh_requests_fanout(
     if not doh_providers:
         return []
 
-    abort_signal: object = AbortSignal.timeout(config.TIMEOUT_MS)
+    timeout_ms: int = safety_timeout_ms if safety_timeout_ms > 0 else config.TIMEOUT_MS
+    abort_signal: object = AbortSignal.timeout(timeout_ms)
     is_json: bool = accept == "application/dns-json"
     is_json_query: bool = is_json and body_bytes is None
 

@@ -307,18 +307,42 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    urls: list[str] = load_urls()
-    if not urls:
+    from config import BLOCKLIST_ENABLED
+
+    if not BLOCKLIST_ENABLED:
         _console.print(
-            "[yellow]No URLs configured in blocklist_sources.yaml, cleaning up blocklist files.[/yellow]",
+            "[yellow]BLOCKLIST_ENABLED is False, cleaning up blocklist files.[/yellow]",
         )
-        for stale in sorted(_BLOCKLIST_DIR.glob("*.txt")):
-            stale.unlink()
-            _console.print(f"[yellow]Removed {stale.name}[/yellow]")
-            _console.print(f"[yellow]Removed {stale.name}[/yellow]")
+        urls: list[str] = []
+    else:
+        urls = load_urls()
+
+    if not urls:
+        if BLOCKLIST_ENABLED:
+            _console.print(
+                "[yellow]No URLs configured in blocklist_sources.yaml, cleaning up blocklist files.[/yellow]",
+            )
+        if _BLOCKLIST_DIR.exists():
+            for stale in sorted(_BLOCKLIST_DIR.glob("*.txt")):
+                stale.unlink()
+                _console.print(f"[yellow]Removed {stale.name}[/yellow]")
+            for path in (_BLOOM_JSON_PATH, _BLOOM_PATH):
+                if path.exists():
+                    path.unlink()
+                    _console.print(f"[yellow]Removed {path.name}[/yellow]")
         return
 
     _BLOCKLIST_DIR.mkdir(exist_ok=True)
+
+    if args.skip_download:
+        txt_count: int = len(list(_BLOCKLIST_DIR.glob("*.txt")))
+        if txt_count != len(urls):
+            _err.print(
+                f"[red]ERROR: blocklist/ has {txt_count} .txt file(s) "
+                f"but blocklist_sources.yaml has {len(urls)} URL(s)[/red]",
+            )
+            raise SystemExit(1)
+
     for stale in sorted(_BLOCKLIST_DIR.glob("*.txt")):
         try:
             if int(stale.stem) >= len(urls):

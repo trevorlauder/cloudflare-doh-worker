@@ -3,7 +3,6 @@
 
 """Cloudflare Worker entrypoint for the DNS-over-HTTPS proxy."""
 
-import asyncio
 import base64
 from collections.abc import Callable
 import hmac
@@ -110,7 +109,7 @@ _CONFIG_TYPE_RULES: list[tuple[str, type | tuple]] = [
     ("RETRY_MAX_ATTEMPTS", int),
     ("REBIND_PROTECTION", bool),
     ("CACHE_DNS", bool),
-    ("KV_ENABLED", bool),
+    ("BLOCKLIST_ENABLED", bool),
     ("BLOCKLIST_LOADING_POLICY", str),
     ("BLOCKED_DOMAINS", list),
     ("ALLOWED_DOMAINS", list),
@@ -184,7 +183,7 @@ async def _load_blocklist_from_kv(env: object) -> BlocklistCache | None:
     _kv_blocklist_loading = True
 
     try:
-        binding: str = "BLOCK_LIST"
+        binding: str = "BLOCKLIST"
         kv: object | None = getattr(env, binding, None)
 
         if kv is None:
@@ -1222,7 +1221,7 @@ async def _handle_request(
 
     blocklist_bypassed: bool = False
     blocklist_loading_503: bool = False
-    if not name or config_allowed or config_blocked or not config.KV_ENABLED:
+    if not name or config_allowed or config_blocked or not config.BLOCKLIST_ENABLED:
         kv_blocklist: BlocklistCache = _EMPTY_BLOCKLIST
     else:
         kv_blocklist = await _load_blocklist_from_kv(env)
@@ -1279,24 +1278,19 @@ async def _handle_request(
                 final_response = cached_response
 
         if final_response is None:
-            safety_seconds: float = config.TIMEOUT_MS / 1000 + 2
+            safety_timeout_ms: int = config.TIMEOUT_MS + 2000
 
             try:
-                results = await asyncio.wait_for(
-                    send_doh_requests_fanout(
-                        doh_providers=doh_providers,
-                        method=method,
-                        accept=accept,
-                        body_bytes=body_bytes,
-                        query=query,
-                    ),
-                    timeout=safety_seconds,
+                results = await send_doh_requests_fanout(
+                    doh_providers=doh_providers,
+                    method=method,
+                    accept=accept,
+                    body_bytes=body_bytes,
+                    query=query,
+                    safety_timeout_ms=safety_timeout_ms,
                 )
-            except TimeoutError:
-                logger.warning(
-                    "send_doh_requests_fanout safety timeout (%.0fs)",
-                    safety_seconds,
-                )
+            except Exception:
+                logger.exception("send_doh_requests_fanout failed")
 
                 error = True
 

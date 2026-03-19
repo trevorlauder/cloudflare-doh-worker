@@ -521,7 +521,7 @@ def test_load_blocklist_from_kv_kv_error_returns_empty(
     monkeypatch.setattr(worker, "_kv_blocklist_loading", False)
 
     env = MagicMock()
-    env.BLOCK_LIST = _MockKV(raise_error=True)
+    env.BLOCKLIST = _MockKV(raise_error=True)
     result = asyncio.run(worker._load_blocklist_from_kv(env))
 
     assert result is not None
@@ -541,7 +541,7 @@ def test_load_blocklist_from_kv_blocks_domain_in_filter(
     monkeypatch.setattr(worker, "_kv_blocklist_loading", False)
 
     env = MagicMock()
-    env.BLOCK_LIST = _MockKV(
+    env.BLOCKLIST = _MockKV(
         manifest=[_MANIFEST_ENTRY],
         bloom_bytes=_BLOCKLIST_SINGLE_BIN,
     )
@@ -565,7 +565,7 @@ def test_load_blocklist_from_kv_passes_absent_domain(
     monkeypatch.setattr(worker, "_kv_blocklist_loading", False)
 
     env = MagicMock()
-    env.BLOCK_LIST = _MockKV(
+    env.BLOCKLIST = _MockKV(
         manifest=[_MANIFEST_ENTRY],
         bloom_bytes=_BLOCKLIST_SINGLE_BIN,
     )
@@ -589,7 +589,7 @@ def test_load_blocklist_from_kv_concurrent_returns_none(
     monkeypatch.setattr(worker, "_kv_blocklist_loading", True)
 
     env = MagicMock()
-    env.BLOCK_LIST = _MockKV(
+    env.BLOCKLIST = _MockKV(
         manifest=[_MANIFEST_ENTRY],
         bloom_bytes=_BLOCKLIST_SINGLE_BIN,
     )
@@ -670,7 +670,7 @@ def test_kv_loading_policy_block_returns_503(
     )
 
     env = MagicMock()
-    env.BLOCK_LIST = _MockKV(
+    env.BLOCKLIST = _MockKV(
         manifest=[_MANIFEST_ENTRY],
         bloom_bytes=_BLOCKLIST_SINGLE_BIN,
     )
@@ -836,9 +836,9 @@ def test_verify_kv_binding_valid(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """_verify_kv_binding succeeds when wrangler.toml has the BLOCK_LIST binding."""
+    """_verify_kv_binding succeeds when wrangler.toml has the BLOCKLIST binding."""
     toml = tmp_path / "wrangler.toml"
-    toml.write_text('[[kv_namespaces]]\nbinding = "BLOCK_LIST"\n')
+    toml.write_text('[[kv_namespaces]]\nbinding = "BLOCKLIST"\n')
     monkeypatch.setattr(upload_blocklist, "_ROOT", tmp_path)
     upload_blocklist._verify_kv_binding()
 
@@ -847,7 +847,7 @@ def test_verify_kv_binding_missing_binding(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """_verify_kv_binding exits when wrangler.toml has no BLOCK_LIST binding."""
+    """_verify_kv_binding exits when wrangler.toml has no BLOCKLIST binding."""
     toml = tmp_path / "wrangler.toml"
     toml.write_text('[[kv_namespaces]]\nbinding = "OTHER_NS"\n')
     monkeypatch.setattr(upload_blocklist, "_ROOT", tmp_path)

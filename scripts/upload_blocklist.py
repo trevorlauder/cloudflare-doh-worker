@@ -17,7 +17,7 @@ Options:
     --local         Upload to the local wrangler dev KV store (omits --remote).
 
 Prerequisites:
-    A KV namespace must exist and be bound in wrangler.toml as BLOCK_LIST.
+    A KV namespace must exist and be bound in wrangler.toml as BLOCKLIST.
     The namespace must be dedicated exclusively to blocklist data. Any key
     that is not blocklist:manifest or blocklist:manifest.hash will be deleted
     on every run. Do not store unrelated keys in this namespace.
@@ -31,6 +31,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import tomllib
 
@@ -40,12 +41,13 @@ _console = Console()
 _err = Console(stderr=True)
 
 _ROOT = Path(__file__).resolve().parents[1]
-_BINDING = "BLOCK_LIST"
+sys.path.insert(0, str(_ROOT / "src"))
+_BINDING = "BLOCKLIST"
 
 
 def _verify_kv_binding() -> None:
     """
-    Verify that wrangler.toml contains a KV namespace bound to BLOCK_LIST.
+    Verify that wrangler.toml contains a KV namespace bound to BLOCKLIST.
 
     Exits with an error if the binding is missing, preventing accidental
     operations against the wrong namespace.
@@ -234,6 +236,130 @@ def _upload_path_to_kv(
     _console.print("[green]Upload complete.[/green]")
 
 
+def _upload_blocklist(args: argparse.Namespace, *, remote: bool) -> set[str]:
+    """
+    Upload blocklist data to KV if bloom files exist and content has changed.
+
+    Parameters:
+    args (argparse.Namespace): Parsed CLI arguments (uses dry_run).
+    remote (bool): Target Cloudflare edge if True, local dev KV if False.
+
+    Returns:
+    set[str]: The set of KV keys that should be kept (not deleted).
+    """
+    bloom_json_path: Path = _ROOT / "blocklist" / "bloom.json"
+    bloom_path: Path = _ROOT / "blocklist" / "bloom.bin"
+
+    if not (bloom_json_path.exists() and bloom_path.exists()):
+        _console.print(
+            "[yellow]No blocklist files found, will delete all keys from KV.[/yellow]",
+        )
+        return set()
+
+    entry: dict = json.loads(bloom_json_path.read_text(encoding="utf-8"))
+    bloom_bytes: bytes = bloom_path.read_bytes()
+    manifest: list[dict] = [entry]
+
+    manifest_key: str = "blocklist:manifest"
+    bloom_key: str = "blocklist:bloom"
+    manifest_json: str = json.dumps(manifest, separators=(",", ":"))
+    manifest_hash_key: str = f"{manifest_key}.hash"
+    content_hash: str = hashlib.sha256(manifest_json.encode()).hexdigest()
+
+    stored_hash: str | None = get_kv_hash(
+        binding=_BINDING,
+        hash_key=manifest_hash_key,
+        remote=remote,
+    )
+    if stored_hash == content_hash:
+        _console.print(
+            f"[yellow]{manifest_key} unchanged, skipping upload.[/yellow]",
+        )
+    elif args.dry_run:
+        _console.print(
+            f"[yellow]Would upload {manifest_key} ({len(manifest_json)} bytes)[/yellow]",
+        )
+        _console.print(
+            f"[yellow]Would upload {bloom_key} ({len(bloom_bytes):,} bytes binary)[/yellow]",
+        )
+    else:
+        upload_to_kv(
+            text=manifest_json,
+            binding=_BINDING,
+            key=manifest_key,
+            remote=remote,
+        )
+        upload_bytes_to_kv(
+            data=bloom_bytes,
+            binding=_BINDING,
+            key=bloom_key,
+            remote=remote,
+        )
+        upload_to_kv(
+            text=content_hash,
+            binding=_BINDING,
+            key=manifest_hash_key,
+            remote=remote,
+        )
+
+    return {manifest_key, bloom_key, manifest_hash_key}
+
+
+def _delete_unknown_keys(
+    known_keys: set[str],
+    *,
+    dry_run: bool,
+    remote: bool,
+) -> None:
+    """
+    List all keys in the KV namespace and delete any not in known_keys.
+
+    Parameters:
+    known_keys (set[str]): Keys that should be preserved.
+    dry_run (bool): If True, print what would be deleted without making changes.
+    remote (bool): Target Cloudflare edge if True, local dev KV if False.
+    """
+    list_result: subprocess.CompletedProcess[str] = _pywrangler(
+        "kv",
+        "key",
+        "list",
+        "--binding",
+        _BINDING,
+        remote=remote,
+        capture=True,
+    )
+
+    if not (list_result.returncode == 0 and list_result.stdout.strip()):
+        return
+
+    try:
+        all_keys: list[str] = [
+            entry["name"] for entry in json.loads(list_result.stdout)
+        ]
+    except Exception:
+        _err.print(
+            "[yellow]WARNING: failed to parse KV key list; skipping stale key cleanup[/yellow]",
+        )
+        return
+
+    for key in all_keys:
+        if key not in known_keys:
+            if dry_run:
+                _console.print(f"[yellow]Would delete stale key {key}[/yellow]")
+            else:
+                _console.print(f"[cyan]Deleting stale key {key} from KV ...[/cyan]")
+                _pywrangler(
+                    "kv",
+                    "key",
+                    "delete",
+                    "--binding",
+                    _BINDING,
+                    key,
+                    remote=remote,
+                    capture=True,
+                )
+
+
 def main() -> None:
     """
     Entry point: build a single manifest with embedded bloom data and upload to KV.
@@ -261,100 +387,17 @@ def main() -> None:
 
     _verify_kv_binding()
 
-    bloom_json_path: Path = _ROOT / "blocklist" / "bloom.json"
-    bloom_path: Path = _ROOT / "blocklist" / "bloom.bin"
-    has_blocklist: bool = bloom_json_path.exists() and bloom_path.exists()
+    from config import BLOCKLIST_ENABLED
 
-    if has_blocklist:
-        entry: dict = json.loads(bloom_json_path.read_text(encoding="utf-8"))
-        bloom_bytes: bytes = bloom_path.read_bytes()
-        manifest: list[dict] = [entry]
-
-        manifest_key: str = "blocklist:manifest"
-        bloom_key: str = "blocklist:bloom"
-        manifest_json: str = json.dumps(manifest, separators=(",", ":"))
-        manifest_hash_key: str = f"{manifest_key}.hash"
-        content_hash: str = hashlib.sha256(manifest_json.encode()).hexdigest()
-
-        stored_hash: str | None = get_kv_hash(
-            binding=_BINDING,
-            hash_key=manifest_hash_key,
-            remote=remote,
-        )
-        if stored_hash == content_hash:
-            _console.print(
-                f"[yellow]{manifest_key} unchanged, skipping upload.[/yellow]",
-            )
-        elif args.dry_run:
-            _console.print(
-                f"[yellow]Would upload {manifest_key} ({len(manifest_json)} bytes)[/yellow]",
-            )
-            _console.print(
-                f"[yellow]Would upload {bloom_key} ({len(bloom_bytes):,} bytes binary)[/yellow]",
-            )
-        else:
-            upload_to_kv(
-                text=manifest_json,
-                binding=_BINDING,
-                key=manifest_key,
-                remote=remote,
-            )
-            upload_bytes_to_kv(
-                data=bloom_bytes,
-                binding=_BINDING,
-                key=bloom_key,
-                remote=remote,
-            )
-            upload_to_kv(
-                text=content_hash,
-                binding=_BINDING,
-                key=manifest_hash_key,
-                remote=remote,
-            )
-
-        known_keys: set[str] = {manifest_key, bloom_key, manifest_hash_key}
-    else:
+    if not BLOCKLIST_ENABLED:
         _console.print(
-            "[yellow]No blocklist files found, will delete all keys from KV.[/yellow]",
+            "[yellow]BLOCKLIST_ENABLED is False, deleting all keys from KV.[/yellow]",
         )
         known_keys: set[str] = set()
+    else:
+        known_keys = _upload_blocklist(args=args, remote=remote)
 
-    list_result: subprocess.CompletedProcess[str] = _pywrangler(
-        "kv",
-        "key",
-        "list",
-        "--binding",
-        _BINDING,
-        remote=remote,
-        capture=True,
-    )
-
-    if list_result.returncode == 0 and list_result.stdout.strip():
-        try:
-            all_keys: list[str] = [
-                entry["name"] for entry in json.loads(list_result.stdout)
-            ]
-        except Exception:
-            _err.print(
-                "[yellow]WARNING: failed to parse KV key list; skipping stale key cleanup[/yellow]",
-            )
-            all_keys: list[str] = []
-        for key in all_keys:
-            if key not in known_keys:
-                if args.dry_run:
-                    _console.print(f"[yellow]Would delete stale key {key}[/yellow]")
-                else:
-                    _console.print(f"[cyan]Deleting stale key {key} from KV ...[/cyan]")
-                    _pywrangler(
-                        "kv",
-                        "key",
-                        "delete",
-                        "--binding",
-                        _BINDING,
-                        key,
-                        remote=remote,
-                        capture=True,
-                    )
+    _delete_unknown_keys(known_keys=known_keys, dry_run=args.dry_run, remote=remote)
 
 
 if __name__ == "__main__":
