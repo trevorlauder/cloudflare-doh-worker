@@ -624,17 +624,19 @@ def test_post_dns_wire_with_ipv6_ecs_no_truncation():
     )
 
 
-_KV_BLOCKLIST_ENABLED = (Path(__file__).parent.parent / "blocklist" / "0.json").exists()
-_KV_FP_CHECK_N = int(os.environ.get("KV_FP_CHECK_PROBES", "100"))
+_BLOCKLIST_ENABLED = (
+    Path(__file__).parent.parent / "blocklist" / "bloom.json"
+).exists()
+_FP_CHECK_N = int(os.environ.get("FP_CHECK_PROBES", "100"))
 
 
-@pytest.mark.skipif(not _KV_BLOCKLIST_ENABLED, reason="blocklist/0.json not present")
-def test_kv_blocklist_domain_returns_nxdomain():
+@pytest.mark.skipif(not _BLOCKLIST_ENABLED, reason="blocklist/bloom.json not present")
+def test_blocklist_domain_returns_nxdomain():
     status, headers, body = _post_wire(_build_dns_wire("analytics.archive.org"))
     assert status == 200
     msg = dns.message.from_wire(body)
     assert msg.rcode() == dns.rcode.NXDOMAIN, (
-        f"expected NXDOMAIN for analytics.archive.org (KV blocklist), got {dns.rcode.to_text(msg.rcode())}"
+        f"expected NXDOMAIN for analytics.archive.org (blocklist), got {dns.rcode.to_text(msg.rcode())}"
     )
     if DEBUG:
         config_blocked = headers.get("cloudflare-doh-worker-config-blocked", "")
@@ -643,35 +645,35 @@ def test_kv_blocklist_domain_returns_nxdomain():
         )
 
 
-@pytest.mark.skipif(not _KV_BLOCKLIST_ENABLED, reason="blocklist/0.json not present")
+@pytest.mark.skipif(not _BLOCKLIST_ENABLED, reason="blocklist/bloom.json not present")
 @pytest.mark.skipif(
     not MOCK_DOH_ENABLED,
     reason="requires mock-doh upstream to guarantee NOERROR for absent domains",
 )
-def test_kv_blocklist_false_positive_rate():
+def test_blocklist_false_positive_rate():
     """
-    Query the worker with KV_FP_CHECK_PROBES absent domains and assert none are falsely blocked.
+    Query the worker with FP_CHECK_PROBES absent domains and assert none are falsely blocked.
 
     Uses deterministic {i}.fp-probe.invalid probe names matching the build script convention.
     The reserved .invalid TLD cannot appear in any real blocklist, and because mock-doh always
-    returns NOERROR, any NXDOMAIN response can only come from the worker's KV bloom filter.
+    returns NOERROR, any NXDOMAIN response can only come from the worker's bloom filter.
 
-    Set KV_FP_CHECK_PROBES env var to override the default probe count (default: 1000).
+    Set FP_CHECK_PROBES env var to override the default probe count (default: 1000).
 
     Returns:
     None
     """
     false_hits = []
-    for i in range(_KV_FP_CHECK_N):
+    for i in range(_FP_CHECK_N):
         probe = f"{i}.fp-probe.invalid"
         _, _, body = _post_wire(_build_dns_wire(probe))
         if dns.message.from_wire(body).rcode() == dns.rcode.NXDOMAIN:
             false_hits.append(probe)
 
-    rate = len(false_hits) / _KV_FP_CHECK_N
+    rate = len(false_hits) / _FP_CHECK_N
     assert not false_hits, (
-        f"KV blocklist false-positive rate {rate:.2e} "
-        f"({len(false_hits)} hits / {_KV_FP_CHECK_N} probes): {false_hits[:5]!r}"
+        f"Blocklist false-positive rate {rate:.2e} "
+        f"({len(false_hits)} hits / {_FP_CHECK_N} probes): {false_hits[:5]!r}"
     )
 
 

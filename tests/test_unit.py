@@ -9,21 +9,16 @@ import math
 from multiprocessing import Pool
 import os
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
-import urllib.parse
+from unittest.mock import MagicMock
 
 from conftest import _workers_stub
-import dns.message
-import dns.rdatatype
 import pytest
-import upload_blocklist
 
 import config
 from dns_utils import (
-    DnsParseResult,
     ProviderResult,
-    Question,
     _bloom_contains,
+    _bloom_hash,
     parse_blocklist_text,
 )
 import worker
@@ -218,13 +213,11 @@ def test_validate_types_none_skipped(monkeypatch: pytest.MonkeyPatch):
 
 def test_validate_config_no_allowed_domains(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(config, "ALLOWED_DOMAINS", [])
-    monkeypatch.setattr(config, "BLOCKLIST_LOADING_POLICY", "block")
     _validate_config()
 
 
 def test_validate_config_valid(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(config, "ALLOWED_DOMAINS", ["example.com"])
-    monkeypatch.setattr(config, "BLOCKLIST_LOADING_POLICY", "block")
     monkeypatch.setattr(
         config,
         "BYPASS_PROVIDER",
@@ -236,7 +229,6 @@ def test_validate_config_valid(monkeypatch: pytest.MonkeyPatch):
 
 def test_validate_config_bypass_missing_url(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(config, "ALLOWED_DOMAINS", ["example.com"])
-    monkeypatch.setattr(config, "BLOCKLIST_LOADING_POLICY", "block")
     monkeypatch.setattr(config, "BYPASS_PROVIDER", {})
     with pytest.raises(ValueError, match="url"):
         _validate_config()
@@ -244,22 +236,9 @@ def test_validate_config_bypass_missing_url(monkeypatch: pytest.MonkeyPatch):
 
 def test_validate_config_bypass_empty_url(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(config, "ALLOWED_DOMAINS", ["example.com"])
-    monkeypatch.setattr(config, "BLOCKLIST_LOADING_POLICY", "block")
     monkeypatch.setattr(config, "BYPASS_PROVIDER", {"url": ""})
     with pytest.raises(ValueError, match="url"):
         _validate_config()
-
-
-def test_validate_config_invalid_loading_policy(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(config, "BLOCKLIST_LOADING_POLICY", "typo")
-    with pytest.raises(ValueError, match="BLOCKLIST_LOADING_POLICY"):
-        _validate_config()
-
-
-def test_validate_config_bypass_loading_policy(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(config, "ALLOWED_DOMAINS", [])
-    monkeypatch.setattr(config, "BLOCKLIST_LOADING_POLICY", "bypass")
-    _validate_config()
 
 
 def test_negotiate_accept_json():
@@ -366,368 +345,284 @@ _BLOCKLIST_SINGLE_BIN = (
     Path(__file__).parent / "configs" / "blocklist_single.bin"
 ).read_bytes()
 
-_MANIFEST_ENTRY = {
-    "bloom_m": _BLOCKLIST_SINGLE["bloom_m"],
-    "bloom_k": _BLOCKLIST_SINGLE["bloom_k"],
-    "exact_count": _BLOCKLIST_SINGLE["exact_count"],
-    "source_urls": ["https://example.com/hosts.txt"],
-}
 
-
-class _FakeArrayBuffer:
-    """Minimal stand-in for a JS ArrayBuffer returned by KV.get(..., {type: 'arrayBuffer'})."""
-
-    def __init__(self, data: bytes) -> None:
-        self._data = data
-
-    def to_bytes(self) -> bytes:
-        return self._data
-
-
-class _FakeMetadata:
-    """Minimal stand-in for a JS metadata object returned by KV.getWithMetadata()."""
-
-    def __init__(self, data: dict) -> None:
-        self._data = data
-
-    def to_py(self) -> dict:
-        return self._data
-
-
-class _FakeKVResult:
-    """Minimal stand-in for the result of KV.getWithMetadata()."""
-
-    def __init__(self, value: object, metadata: object) -> None:
-        self.value = value
-        self.metadata = metadata
-
-
-class _MockKV:
-    """Minimal KV binding stub for unit tests."""
+class _FakeAssetResponse:
+    """Minimal stand-in for a response from env.ASSETS.fetch()."""
 
     def __init__(
         self,
-        metadata: dict | None = None,
+        body: str | bytes = b"",
+        status: int = 200,
+    ) -> None:
+        self._body = body
+        self.status = status
+
+    async def text(self) -> str:
+        if isinstance(self._body, bytes):
+            return self._body.decode()
+        return self._body
+
+    async def bytes(self) -> bytes:
+        if isinstance(self._body, bytes):
+            return self._body
+        return self._body.encode()
+
+
+class _MockAssets:
+    """Minimal ASSETS binding stub for unit tests."""
+
+    def __init__(
+        self,
+        json_body: str | None = None,
         bloom_bytes: bytes | None = None,
         raise_error: bool = False,
+        json_status: int = 200,
+        bin_status: int = 200,
     ) -> None:
-        """
-        Initialize the mock KV binding.
-
-        Parameters:
-        metadata (dict | None): Metadata dict to return with getWithMetadata(), or None
-            to simulate a missing key.
-        bloom_bytes (bytes | None): Raw bloom filter bytes for the bloom value.
-        raise_error (bool): When True, getWithMetadata() raises RuntimeError to
-            simulate a KV failure.
-        """
-        self._metadata = metadata
+        self._json_body = json_body
         self._bloom_bytes = bloom_bytes
         self._raise = raise_error
+        self._json_status = json_status
+        self._bin_status = bin_status
 
-        async def _get_with_metadata(key: str, options: object = None) -> object:
-            if self._raise:
-                raise RuntimeError("KV unavailable")
-            value = _FakeArrayBuffer(self._bloom_bytes) if self._bloom_bytes else None
-            meta = _FakeMetadata(self._metadata) if self._metadata else None
-            return _FakeKVResult(value=value, metadata=meta)
-
-        self.getWithMetadata = _get_with_metadata
-
-
-def _make_post_request(name: str = "example.com") -> MagicMock:
-    """
-    Build a minimal mock POST DoH request carrying a wire-format A query.
-
-    Parameters:
-    name (str): Domain name to query.
-
-    Returns:
-    MagicMock: Mock request object with method, headers, and bytes().
-    """
-    msg = dns.message.make_query(name, dns.rdatatype.A)
-    wire = msg.to_wire()
-
-    req = MagicMock()
-    req.method = "POST"
-
-    def _headers_get(key: str, default: object = None) -> object:
-        return {
-            "accept": "application/dns-message",
-            "content-type": "application/dns-message",
-            "cf-connecting-ip": "127.0.0.1",
-        }.get(key.lower(), default)
-
-    req.headers.get = _headers_get
-    req.bytes = AsyncMock(return_value=wire)
-    return req
+    async def fetch(self, url: str) -> _FakeAssetResponse:
+        if self._raise:
+            raise RuntimeError("Assets unavailable")
+        if "bloom.json" in url:
+            return _FakeAssetResponse(
+                body=self._json_body or "",
+                status=self._json_status,
+            )
+        if "bloom.bin" in url:
+            return _FakeAssetResponse(
+                body=self._bloom_bytes or b"",
+                status=self._bin_status,
+            )
+        return _FakeAssetResponse(status=404)
 
 
-def _minimal_cfg() -> worker._ResolvedConfig:
-    """
-    Return a minimal _ResolvedConfig suitable for handler unit tests.
-
-    Returns:
-    worker._ResolvedConfig: Config with no special endpoints and default providers.
-    """
-    return worker._ResolvedConfig(
-        health_endpoint=None,
-        config_endpoint=None,
-        loki_url="",
-        provider_lists=worker._PROVIDER_LISTS,
-        bypass_provider_list=worker._BYPASS_PROVIDER_LIST,
-        full_config={},
-    )
-
-
-def test_load_blocklist_from_kv_no_binding_returns_empty(
+def test_load_blocklist_from_assets_no_binding_returns_empty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """
-    When no KV binding is present on env, _load_blocklist_from_kv returns _EMPTY_BLOCKLIST.
-
-    Returns:
-    None
-    """
-    monkeypatch.setattr(worker, "_kv_blocklist_cache", None)
-    monkeypatch.setattr(worker, "_kv_blocklist_loading", False)
+    """When no ASSETS binding is present, returns _EMPTY_BLOCKLIST."""
+    monkeypatch.setattr(worker, "_blocklist_cache", None)
 
     env = MagicMock(spec=[])
-    result = asyncio.run(worker._load_blocklist_from_kv(env))
+    result = asyncio.run(worker._load_blocklist_from_assets(env))
 
     assert result is not None
     assert result.domain_count == 0
     assert not result.check("apple.ca")
 
 
-def test_load_blocklist_from_kv_kv_error_returns_empty(
+def test_load_blocklist_from_assets_fetch_error_returns_empty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """
-    When KV.get() raises, _load_blocklist_from_kv returns _EMPTY_BLOCKLIST rather than
-    propagating the error.
-
-    Returns:
-    None
-    """
-    monkeypatch.setattr(worker, "_kv_blocklist_cache", None)
-    monkeypatch.setattr(worker, "_kv_blocklist_loading", False)
+    """When assets.fetch() raises, returns _EMPTY_BLOCKLIST."""
+    monkeypatch.setattr(worker, "_blocklist_cache", None)
 
     env = MagicMock()
-    env.BLOCKLIST = _MockKV(raise_error=True)
-    result = asyncio.run(worker._load_blocklist_from_kv(env))
+    env.ASSETS = _MockAssets(raise_error=True)
+    result = asyncio.run(worker._load_blocklist_from_assets(env))
 
     assert result is not None
     assert result.domain_count == 0
 
 
-def test_load_blocklist_from_kv_blocks_domain_in_filter(
+def test_load_blocklist_from_assets_json_404_returns_empty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """
-    When the manifest contains a bloom filter with apple.ca, check('apple.ca') returns True.
-
-    Returns:
-    None
-    """
-    monkeypatch.setattr(worker, "_kv_blocklist_cache", None)
-    monkeypatch.setattr(worker, "_kv_blocklist_loading", False)
+    """When bloom.json returns non-200, returns _EMPTY_BLOCKLIST."""
+    monkeypatch.setattr(worker, "_blocklist_cache", None)
 
     env = MagicMock()
-    env.BLOCKLIST = _MockKV(
-        metadata=_MANIFEST_ENTRY,
+    env.ASSETS = _MockAssets(json_status=404)
+    result = asyncio.run(worker._load_blocklist_from_assets(env))
+
+    assert result is not None
+    assert result.domain_count == 0
+
+
+def test_load_blocklist_from_assets_bin_404_returns_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When bloom.bin returns non-200, returns _EMPTY_BLOCKLIST."""
+    monkeypatch.setattr(worker, "_blocklist_cache", None)
+
+    env = MagicMock()
+    env.ASSETS = _MockAssets(
+        json_body=json.dumps(_BLOCKLIST_SINGLE),
+        bin_status=404,
+    )
+    result = asyncio.run(worker._load_blocklist_from_assets(env))
+
+    assert result is not None
+    assert result.domain_count == 0
+
+
+def test_load_blocklist_from_assets_blocks_domain_in_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When assets contain a bloom filter with apple.ca, check('apple.ca') returns True."""
+    monkeypatch.setattr(worker, "_blocklist_cache", None)
+
+    manifest = {**_BLOCKLIST_SINGLE, "source_urls": ["https://example.com/hosts.txt"]}
+    env = MagicMock()
+    env.ASSETS = _MockAssets(
+        json_body=json.dumps(manifest),
         bloom_bytes=_BLOCKLIST_SINGLE_BIN,
     )
-    result = asyncio.run(worker._load_blocklist_from_kv(env))
+    result = asyncio.run(worker._load_blocklist_from_assets(env))
 
     assert result is not None
     assert result.check("apple.ca")
     assert result.manifest_urls == ("https://example.com/hosts.txt",)
 
 
-def test_load_blocklist_from_kv_passes_absent_domain(
+def test_load_blocklist_from_assets_passes_absent_domain(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """
-    A domain not in the bloom filter does not trigger check().
-
-    Returns:
-    None
-    """
-    monkeypatch.setattr(worker, "_kv_blocklist_cache", None)
-    monkeypatch.setattr(worker, "_kv_blocklist_loading", False)
+    """A domain not in the bloom filter does not trigger check()."""
+    monkeypatch.setattr(worker, "_blocklist_cache", None)
 
     env = MagicMock()
-    env.BLOCKLIST = _MockKV(
-        metadata=_MANIFEST_ENTRY,
+    env.ASSETS = _MockAssets(
+        json_body=json.dumps(_BLOCKLIST_SINGLE),
         bloom_bytes=_BLOCKLIST_SINGLE_BIN,
     )
-    result = asyncio.run(worker._load_blocklist_from_kv(env))
+    result = asyncio.run(worker._load_blocklist_from_assets(env))
 
     assert result is not None
     assert not result.check("safe.example.net")
 
 
-def test_load_blocklist_from_kv_concurrent_returns_none(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """
-    When _kv_blocklist_loading is True (another coroutine is loading), returns None
-    so the caller can apply the BLOCKLIST_LOADING_POLICY.
+def _build_test_shards(
+    domains: list[str],
+    shard_count: int,
+) -> tuple[dict, dict[int, bytes]]:
+    """Build sharded bloom filter test fixtures from a list of domains."""
+    from rbloom import Bloom
 
-    Returns:
-    None
-    """
-    monkeypatch.setattr(worker, "_kv_blocklist_cache", None)
-    monkeypatch.setattr(worker, "_kv_blocklist_loading", True)
+    buckets: list[set[str]] = [set() for _ in range(shard_count)]
+    for domain in domains:
+        idx = abs(_bloom_hash(domain)) % shard_count
+        buckets[idx].add(domain)
 
-    env = MagicMock()
-    env.BLOCKLIST = _MockKV(
-        metadata=_MANIFEST_ENTRY,
-        bloom_bytes=_BLOCKLIST_SINGLE_BIN,
-    )
-    result = asyncio.run(worker._load_blocklist_from_kv(env))
+    shard_data: dict[int, bytes] = {}
+    shard_m: list[int] = []
+    num_hashes: int = 0
 
-    assert result is None
+    for i, bucket in enumerate(buckets):
+        bloom = Bloom(max(len(bucket), 1), 1e-10, _bloom_hash)
+        for domain in bucket:
+            bloom.add(domain)
+        raw = bloom.save_bytes()
+        num_hashes = int.from_bytes(raw[:8], "little")
+        shard_data[i] = raw[8:]
+        shard_m.append(bloom.size_in_bits)
+
+    manifest = {
+        "bloom_k": num_hashes,
+        "exact_count": len(domains),
+        "source_urls": ["https://example.com/hosts.txt"],
+        "bloom_shards": shard_count,
+        "shard_m": shard_m,
+    }
+    return manifest, shard_data
 
 
-class _FakeResponse:
-    """
-    Minimal stand-in for workers.Response that works with isinstance().
-
-    Using this instead of the MagicMock stub lets worker.py do isinstance(parsed, Response)
-    without a TypeError, and lets tests check the returned response's status directly.
-    """
+class _MockShardedAssets:
+    """ASSETS binding stub for sharded bloom filter tests."""
 
     def __init__(
         self,
-        body: object = "",
-        status: int = 200,
-        headers: dict | None = None,
+        json_body: str | None = None,
+        shards: dict[int, bytes] | None = None,
+        raise_error: bool = False,
     ) -> None:
-        """
-        Initialize a fake response.
+        self._json_body = json_body
+        self._shards = shards or {}
+        self._raise = raise_error
 
-        Parameters:
-        body (object): Response body.
-        status (int): HTTP status code.
-        headers (dict | None): Optional response headers.
-        """
-        self.body = body
-        self.status = status
-        self.headers = headers or {}
+    async def fetch(self, url: str) -> _FakeAssetResponse:
+        if self._raise:
+            raise RuntimeError("Assets unavailable")
+        if "bloom.json" in url:
+            return _FakeAssetResponse(body=self._json_body or "", status=200)
+        import re as _re
 
-
-def _policy_parsed_result(name: str = "ads.example.com") -> DnsParseResult:
-    """
-    Build a minimal DnsParseResult representing a successful parse of a query for name.
-
-    Parameters:
-    name (str): Domain name being queried.
-
-    Returns:
-    DnsParseResult: Parsed result with the given name.
-    """
-    return DnsParseResult(
-        question=Question(name=name, type="A"),
-        body_bytes=b"",
-        ecs_description="",
-        request_wire=None,
-        parsed_request=None,
-    )
+        m = _re.search(r"shard_(\d+)\.bin", url)
+        if m:
+            idx = int(m.group(1))
+            if idx in self._shards:
+                return _FakeAssetResponse(body=self._shards[idx], status=200)
+            return _FakeAssetResponse(status=404)
+        return _FakeAssetResponse(status=404)
 
 
-def test_kv_loading_policy_block_returns_503(
+def test_check_sharded_blocklist_blocks_domain(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """
-    When BLOCKLIST_LOADING_POLICY is 'block' and the blocklist is still loading,
-    _handle_request returns HTTP 503 with Retry-After: 1.
+    """Sharded lookup finds a domain present in the correct shard."""
+    monkeypatch.setattr(worker, "_sharded_meta", None)
 
-    Returns:
-    None
-    """
-    monkeypatch.setattr(worker, "_kv_blocklist_cache", None)
-    monkeypatch.setattr(worker, "_kv_blocklist_loading", True)
-    monkeypatch.setattr(config, "BLOCKLIST_LOADING_POLICY", "block")
-    monkeypatch.setattr(config, "BLOCKED_DOMAINS", [])
-    monkeypatch.setattr(config, "ALLOWED_DOMAINS", [])
-    monkeypatch.setattr(config, "CACHE_DNS", False)
-
-    monkeypatch.setattr(worker, "Response", _FakeResponse)
-
-    monkeypatch.setattr(
-        worker,
-        "_parse_dns_request",
-        AsyncMock(return_value=_policy_parsed_result()),
+    manifest, shards = _build_test_shards(["apple.ca"], shard_count=4)
+    env = MagicMock()
+    env.ASSETS = _MockShardedAssets(
+        json_body=json.dumps(manifest),
+        shards=shards,
     )
+
+    result = asyncio.run(worker._check_sharded_blocklist("apple.ca", env))
+    assert result is True
+
+
+def test_check_sharded_blocklist_passes_absent_domain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sharded lookup does not match a domain not in any shard."""
+    monkeypatch.setattr(worker, "_sharded_meta", None)
+
+    manifest, shards = _build_test_shards(["apple.ca"], shard_count=4)
+    env = MagicMock()
+    env.ASSETS = _MockShardedAssets(
+        json_body=json.dumps(manifest),
+        shards=shards,
+    )
+
+    result = asyncio.run(worker._check_sharded_blocklist("safe.example.net", env))
+    assert result is False
+
+
+def test_check_sharded_blocklist_missing_shard_returns_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When a shard file returns 404, the check returns False."""
+    monkeypatch.setattr(worker, "_sharded_meta", None)
+
+    manifest, shards = _build_test_shards(["apple.ca"], shard_count=4)
+    target_shard = abs(_bloom_hash("apple.ca")) % 4
+    del shards[target_shard]
 
     env = MagicMock()
-    env.BLOCKLIST = _MockKV(
-        metadata=_MANIFEST_ENTRY,
-        bloom_bytes=_BLOCKLIST_SINGLE_BIN,
+    env.ASSETS = _MockShardedAssets(
+        json_body=json.dumps(manifest),
+        shards=shards,
     )
 
-    response = asyncio.run(
-        worker._handle_request(
-            request=MagicMock(),
-            endpoint="/dns-query",
-            doh_providers=next(iter(_minimal_cfg().provider_lists.values())),
-            cfg=_minimal_cfg(),
-            env=env,
-            ctx=MagicMock(),
-            parsed_url=urllib.parse.urlparse("https://localhost/dns-query"),
-        ),
-    )
-
-    assert response.status == 503, f"Expected 503, got {response.status}"
-    assert response.headers.get("Retry-After") == "1"
+    result = asyncio.run(worker._check_sharded_blocklist("apple.ca", env))
+    assert result is False
 
 
-def test_kv_loading_policy_bypass_does_not_503(
+def test_check_sharded_blocklist_no_assets_returns_false(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """
-    When BLOCKLIST_LOADING_POLICY is 'bypass' and the blocklist is still loading,
-    _handle_request fans out to DNS providers and does not return 503.
+    """When ASSETS binding is missing, the check returns False."""
+    monkeypatch.setattr(worker, "_sharded_meta", None)
 
-    Returns:
-    None
-    """
-    monkeypatch.setattr(worker, "_kv_blocklist_cache", None)
-    monkeypatch.setattr(worker, "_kv_blocklist_loading", True)
-    monkeypatch.setattr(config, "BLOCKLIST_LOADING_POLICY", "bypass")
-    monkeypatch.setattr(config, "BLOCKED_DOMAINS", [])
-    monkeypatch.setattr(config, "ALLOWED_DOMAINS", [])
-    monkeypatch.setattr(config, "CACHE_DNS", False)
-
-    monkeypatch.setattr(worker, "Response", _FakeResponse)
-
-    monkeypatch.setattr(
-        worker,
-        "_parse_dns_request",
-        AsyncMock(return_value=_policy_parsed_result()),
-    )
-
-    monkeypatch.setattr(
-        worker,
-        "send_doh_requests_fanout",
-        AsyncMock(return_value=[_result(failed=False)]),
-    )
-
-    response = asyncio.run(
-        worker._handle_request(
-            request=MagicMock(),
-            endpoint="/dns-query",
-            doh_providers=next(iter(_minimal_cfg().provider_lists.values())),
-            cfg=_minimal_cfg(),
-            env=MagicMock(),
-            ctx=MagicMock(),
-            parsed_url=urllib.parse.urlparse("https://localhost/dns-query"),
-        ),
-    )
-
-    assert response.status != 503, f"Expected non-503, got {response.status}"
+    env = MagicMock(spec=[])
+    result = asyncio.run(worker._check_sharded_blocklist("apple.ca", env))
+    assert result is False
 
 
 def test_bloom_contains_inserted_domain() -> None:
@@ -742,12 +637,7 @@ def test_bloom_contains_inserted_domain() -> None:
 
 
 def test_bloom_contains_absent_domain() -> None:
-    """
-    Domain not inserted into the bloom filter is not found.
-
-    Returns:
-    None
-    """
+    """Domain not inserted into the bloom filter is not found."""
     bit_array = bytearray(_BLOCKLIST_SINGLE_BIN)
     assert not _bloom_contains(
         bit_array,
@@ -765,7 +655,7 @@ def _init_fp_bloom_worker(all_filters: list[tuple[bytes, int, int]]) -> None:
     _fp_worker_filters = all_filters
 
 
-def _fp_bloom_chunk(chunk_range: tuple) -> int:
+def _fp_bloom_chunk(chunk_range: tuple[int, int]) -> int:
     start, end = chunk_range
 
     return sum(
@@ -790,18 +680,32 @@ def test_bloom_false_positive_rate() -> None:
     Loads the bloom filter from blocklist/bloom.json and probes 10,000,000
     deterministic absent domains across all CPU cores. The measured rate must not exceed
     the theoretical rate derived from the filter's k, m, and exact_count.
-
-    Returns:
-    None
     """
-    bloom_json_path = Path(__file__).parent.parent / "blocklist" / "bloom.json"
-    bloom_bin_path = Path(__file__).parent.parent / "blocklist" / "bloom.bin"
+    blocklist_dir = Path(__file__).parent.parent / "blocklist"
+    bloom_json_path = blocklist_dir / "bloom.json"
+    bloom_bin_path = blocklist_dir / "bloom.bin"
+
     bloom_json = json.loads(bloom_json_path.read_text())
     num_hashes = bloom_json["bloom_k"]
-    num_bits = bloom_json["bloom_m"]
     exact_count = bloom_json["exact_count"]
+
+    shard_count = bloom_json.get("bloom_shards", 0)
+    if shard_count:
+        shard_m_list = bloom_json["shard_m"]
+        all_filters = [
+            (
+                (blocklist_dir / f"shard_{i}.bin").read_bytes(),
+                shard_m_list[i],
+                num_hashes,
+            )
+            for i in range(shard_count)
+        ]
+        num_bits = sum(shard_m_list)
+    else:
+        num_bits = bloom_json["bloom_m"]
+        all_filters = [(bloom_bin_path.read_bytes(), num_bits, num_hashes)]
+
     theoretical = (1.0 - math.exp(-num_hashes * exact_count / num_bits)) ** num_hashes
-    all_filters = [(bloom_bin_path.read_bytes(), num_bits, num_hashes)]
 
     num_probes = 10_000_000
     num_workers = os.cpu_count() or 1
@@ -823,48 +727,3 @@ def test_bloom_false_positive_rate() -> None:
     assert measured <= theoretical, (
         f"false positive rate {measured:.2e} exceeds theoretical {theoretical:.2e}"
     )
-
-
-def test_verify_kv_binding_valid(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """_verify_kv_binding succeeds when wrangler.toml has the BLOCKLIST binding."""
-    toml = tmp_path / "wrangler.toml"
-    toml.write_text('[[kv_namespaces]]\nbinding = "BLOCKLIST"\n')
-    monkeypatch.setattr(upload_blocklist, "_ROOT", tmp_path)
-    upload_blocklist._verify_kv_binding()
-
-
-def test_verify_kv_binding_missing_binding(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """_verify_kv_binding exits when wrangler.toml has no BLOCKLIST binding."""
-    toml = tmp_path / "wrangler.toml"
-    toml.write_text('[[kv_namespaces]]\nbinding = "OTHER_NS"\n')
-    monkeypatch.setattr(upload_blocklist, "_ROOT", tmp_path)
-    with pytest.raises(SystemExit):
-        upload_blocklist._verify_kv_binding()
-
-
-def test_verify_kv_binding_no_kv_section(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """_verify_kv_binding exits when wrangler.toml has no kv_namespaces at all."""
-    toml = tmp_path / "wrangler.toml"
-    toml.write_text('name = "doh"\n')
-    monkeypatch.setattr(upload_blocklist, "_ROOT", tmp_path)
-    with pytest.raises(SystemExit):
-        upload_blocklist._verify_kv_binding()
-
-
-def test_verify_kv_binding_no_wrangler_toml(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """_verify_kv_binding exits when wrangler.toml does not exist."""
-    monkeypatch.setattr(upload_blocklist, "_ROOT", tmp_path)
-    with pytest.raises(SystemExit):
-        upload_blocklist._verify_kv_binding()

@@ -9,7 +9,6 @@ Reads URLs from blocklist_sources.yaml, fetches each URL, parses hosts-file
 or plain domain-per-line format, deduplicates across all sources, and writes
 a single blocklist/bloom.json. The file contains a bloom filter of unique
 exact domains merged from all sources.
-Use upload_blocklist.py to upload this file to Cloudflare KV.
 
 Usage:
     uv run python scripts/build_blocklist.py [options]
@@ -47,6 +46,8 @@ _SOURCES_PATH = _ROOT / "blocklist_sources.yaml"
 _BLOCKLIST_DIR = _ROOT / "blocklist"
 _BLOOM_JSON_PATH = _BLOCKLIST_DIR / "bloom.json"
 _BLOOM_PATH = _BLOCKLIST_DIR / "bloom.bin"
+_SHARD_TARGET_BYTES = 1 * 1024 * 1024  # target shard size: 1 MB
+_ASSET_MAX_BYTES = 25 * 1024 * 1024  # Workers Assets per-file limit: 25 MB
 
 sys.path.insert(0, str(_ROOT / "src"))
 from dns_utils import _bloom_contains, _bloom_hash, parse_blocklist_text  # noqa: E402
@@ -192,7 +193,7 @@ def build_bloom_json(
         traceability. Stored in bloom.json and surfaced via the /config endpoint.
 
     Returns:
-    tuple[str, bytes, int, Bloom]: JSON string for storage in KV, raw bloom bit array,
+    tuple[str, bytes, int, Bloom]: JSON metadata string, raw bloom bit array,
         number of hash functions (k), and the built bloom filter.
     """
     bloom: Bloom = Bloom(max(len(all_exact), 1), fp_rate, _bloom_hash)
@@ -217,6 +218,58 @@ def build_bloom_json(
         num_hashes,
         bloom,
     )
+
+
+def build_sharded_bloom(
+    all_exact: set[str],
+    fp_rate: float,
+    shard_count: int,
+    source_urls: list[str] | None = None,
+) -> tuple[str, list[bytes]]:
+    """
+    Build sharded bloom filters by partitioning domains by hash.
+
+    Parameters:
+    all_exact (set[str]): Deduplicated set of exact domains.
+    fp_rate (float): Target false-positive rate per shard.
+    shard_count (int): Number of shards to create.
+    source_urls (list[str] | None): Original source URLs for traceability.
+
+    Returns:
+    tuple[str, list[bytes]]: JSON metadata string and list of shard bit arrays.
+    """
+    buckets: list[set[str]] = [set() for _ in range(shard_count)]
+    for domain in all_exact:
+        idx: int = abs(_bloom_hash(domain)) % shard_count
+        buckets[idx].add(domain)
+
+    shard_bit_arrays: list[bytes] = []
+    shard_m_values: list[int] = []
+    num_hashes: int = 0
+
+    for bucket in buckets:
+        bloom: Bloom = Bloom(max(len(bucket), 1), fp_rate, _bloom_hash)
+        for domain in bucket:
+            bloom.add(domain)
+
+        raw: bytes = bloom.save_bytes()
+        num_hashes = int.from_bytes(raw[:8], "little")
+        bit_array: bytes = raw[8:]
+        shard_m_values.append(bloom.size_in_bits)
+        shard_bit_arrays.append(bit_array)
+
+    metadata: str = json.dumps(
+        {
+            "bloom_k": num_hashes,
+            "exact_count": len(all_exact),
+            "source_urls": source_urls or [],
+            "bloom_shards": shard_count,
+            "shard_m": shard_m_values,
+        },
+        separators=(",", ":"),
+    )
+
+    return metadata, shard_bit_arrays
 
 
 def verify_bloom_filter(
@@ -384,6 +437,13 @@ def main() -> None:
         )
     _console.print(dedup_msg)
 
+    for stale in sorted(_BLOCKLIST_DIR.glob("shard_*.bin")):
+        stale.unlink()
+    if _BLOOM_PATH.exists():
+        _BLOOM_PATH.unlink()
+
+    _BLOOM_JSON_PATH.parent.mkdir(exist_ok=True)
+
     _console.print("[cyan]Building bloom filter ...[/cyan]")
     payload: str
     bit_array: bytes
@@ -403,13 +463,38 @@ def main() -> None:
             per_source=per_source,
         )
 
-    _BLOOM_JSON_PATH.parent.mkdir(exist_ok=True)
-    _BLOOM_JSON_PATH.write_text(payload, encoding="utf-8")
-    _BLOOM_PATH.write_bytes(bit_array)
-    _console.print(
-        f"\n[green]Written to {_BLOOM_JSON_PATH.relative_to(_ROOT)}"
-        f" and {_BLOOM_PATH.relative_to(_ROOT)}[/green]",
-    )
+    if len(bit_array) > _ASSET_MAX_BYTES:
+        shard_count: int = math.ceil(len(bit_array) / _SHARD_TARGET_BYTES)
+
+        _console.print(
+            f"[cyan]Filter is {len(bit_array) / 1024 / 1024:.1f} MB, "
+            f"sharding into {shard_count} shards ...[/cyan]",
+        )
+
+        payload, shard_bit_arrays = build_sharded_bloom(
+            all_exact=all_exact,
+            fp_rate=args.fp_rate,
+            shard_count=shard_count,
+            source_urls=urls,
+        )
+
+        _BLOOM_JSON_PATH.write_text(payload, encoding="utf-8")
+
+        for i, shard_data in enumerate(shard_bit_arrays):
+            (_BLOCKLIST_DIR / f"shard_{i}.bin").write_bytes(shard_data)
+
+        _console.print(
+            f"\n[green]Written to {_BLOOM_JSON_PATH.relative_to(_ROOT)}"
+            f" and {shard_count} shard(s) in {_BLOCKLIST_DIR.relative_to(_ROOT)}/[/green]",
+        )
+    else:
+        _BLOOM_JSON_PATH.write_text(payload, encoding="utf-8")
+        _BLOOM_PATH.write_bytes(bit_array)
+
+        _console.print(
+            f"\n[green]Written to {_BLOOM_JSON_PATH.relative_to(_ROOT)}"
+            f" and {_BLOOM_PATH.relative_to(_ROOT)}[/green]",
+        )
 
     if args.fp_check > 0:
         filters: list[Bloom] = [bloom]
@@ -420,24 +505,30 @@ def main() -> None:
         ) ** num_hashes
 
         num_workers: int = os.cpu_count() or 1
+
         _console.print(
             f"\n[cyan]False positive check: probing {args.fp_check:,} deterministic absent domains "
             f"against {exact_count:,} unique domains using {num_workers} core(s) ...[/cyan]",
         )
+
         start_time: float = time.monotonic()
         measured: float = _fp_check(filters=filters, num_probes=args.fp_check)
         elapsed: float = time.monotonic() - start_time
+
         _console.print(
             f"  Theoretical false positive rate: {theoretical:.2e}  |  Measured: {measured:.2e}"
             f"  ({int(measured * args.fp_check)} hits / {args.fp_check:,} probes)"
             f"  [{elapsed:.1f}s]",
         )
+
         if measured > theoretical:
             _err.print(
                 f"  [red]ERROR: measured false positive rate {measured:.2e} exceeds theoretical "
                 f"{theoretical:.2e}[/red]",
             )
+
             raise SystemExit(1)
+
         _console.print(
             f"  [green]OK: measured false positive rate {measured:.2e} within theoretical {theoretical:.2e}.[/green]",
         )

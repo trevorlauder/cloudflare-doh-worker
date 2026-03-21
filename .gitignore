@@ -10,3 +10,4 @@ __pycache__/
 .ruff_cache/
 blocklist/*.bin
 blocklist/*.json
+public/

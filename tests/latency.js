@@ -118,7 +118,7 @@ function testWorker(prefix, url, wireBytes, { jsonGet = true } = {}) {
 
   latency[`${prefix}_wire_get`].add(getWireRes.timings.duration);
 
-  const blockedBytes = buildWireQuery("www.00.business");
+  const blockedBytes = buildWireQuery("ad-assets.futurecdn.net");
 
   const blockedGetRes = http.get(`${url}?dns=${toBase64url(blockedBytes)}`, {
     headers: { "Accept": "application/dns-message" },
