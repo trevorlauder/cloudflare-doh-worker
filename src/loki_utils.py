@@ -26,8 +26,8 @@ def build_loki_fetch_promise(
     config_blocked: bool = False,
     config_allowed: bool = False,
     error: bool = False,
-    kv_loading: bool = False,
     blocklist_domain_count: int = 0,
+    asset_loading: bool = False,
 ) -> object | None:
     """
     Build a Loki log entry and return a JS fetch Promise, or None on failure.
@@ -45,7 +45,7 @@ def build_loki_fetch_promise(
     config_allowed (bool): Whether the request was allowed by config bypass.
     elapsed_ms (int): Elapsed milliseconds from request start to just before Loki dispatch.
     error (bool): Whether the request resulted in an error.
-    kv_loading (bool): Whether the KV blocklist was still loading when this request was handled.
+    asset_loading (bool): Whether the blocklist was loaded from assets during this request.
 
     Returns:
     object | None: JS fetch Promise or None on failure.
@@ -128,8 +128,8 @@ def build_loki_fetch_promise(
             "retried_providers": ", ".join(retried_provider_ids),
             "response_codes": response_codes,
             "response_from": response_from,
-            "kv_loading": kv_loading,
             "blocklist_domain_count": blocklist_domain_count,
+            "asset_loading": asset_loading,
         }
 
         ts_ns: str = str(request_timestamp_ms * 1_000_000)

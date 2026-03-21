@@ -3165,7 +3165,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json kv_loading | kv_loading = `true` [$__auto]))",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json asset_loading | asset_loading = `true` [$__auto]))",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -3178,7 +3178,7 @@
             "transformations": []
           }
         },
-        "description": "Queries served while the KV community blocklist was still loading",
+        "description": "Queries served while the community blocklist was still loading from assets",
         "id": 44,
         "links": [],
         "title": "Blocklist Loading Queries",
@@ -4010,7 +4010,7 @@
             "transformations": []
           }
         },
-        "description": "Total number of domains in the loaded KV community blocklist",
+        "description": "Total number of domains in the loaded community blocklist",
         "id": 51,
         "links": [],
         "title": "Blocklist Size",

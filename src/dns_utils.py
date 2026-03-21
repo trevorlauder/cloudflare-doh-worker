@@ -324,7 +324,7 @@ def parse_blocklist_text(text: str) -> set[str]:
     and plain domain-per-line format. Comments (#) and blank lines are ignored.
 
     Parameters:
-    text (str): Raw text content fetched from a block list URL or KV.
+    text (str): Raw text content fetched from a block list URL.
 
     Returns:
     set[str]: Exact domain names.

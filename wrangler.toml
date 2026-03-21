@@ -33,5 +33,6 @@ invocation_logs = false
 # - LOKI_PASSWORD
 # - ADMIN_TOKEN       (required to enable /config endpoint)
 
-[[kv_namespaces]]
-binding = "BLOCKLIST"
+[assets]
+directory = "public"
+binding = "ASSETS"

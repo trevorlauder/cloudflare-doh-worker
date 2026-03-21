@@ -13,8 +13,6 @@ Copy this into src/config.py and adjust it for your environment.
 See the README for full documentation of all available options.
 """
 
-from typing import Literal
-
 from config_types import EcsConfig, EndpointConfig, Provider
 
 _ADDITIONAL_PROVIDERS: list[Provider] = [
@@ -61,8 +59,6 @@ RETRY_MAX_ATTEMPTS: int = 2
 CACHE_DNS: bool = True
 
 BLOCKLIST_ENABLED: bool = True
-
-BLOCKLIST_LOADING_POLICY: Literal["block", "bypass"] = "block"
 
 ENDPOINTS: dict[str, EndpointConfig] = {
     f"{_ENDPOINT_PREFIX}/home/firewall": {

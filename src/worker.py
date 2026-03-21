@@ -17,7 +17,6 @@ import urllib.parse
 import dns.exception
 import dns.name
 import dns.rdatatype
-from pyodide.ffi import to_js
 from workers import Response, WorkerEntrypoint
 
 from cache_utils import (
@@ -35,6 +34,7 @@ from dns_utils import (
     ProviderResult,
     Question,
     _bloom_contains,
+    _bloom_hash,
     compile_domain_set,
     domain_matches,
     get_response_min_ttl,
@@ -82,7 +82,7 @@ _BLOCKED_COMPILED = compile_domain_set(config.BLOCKED_DOMAINS)
 
 
 class BlocklistCache(NamedTuple):
-    """Immutable container for a loaded KV blocklist."""
+    """Immutable container for a loaded blocklist."""
 
     check: Callable[[str], bool]
     manifest_urls: tuple[str, ...]
@@ -91,8 +91,19 @@ class BlocklistCache(NamedTuple):
     bloom_size_bytes: int
 
 
-_kv_blocklist_cache: BlocklistCache | None = None
-_kv_blocklist_loading: bool = False
+class _ShardedBlocklistMeta(NamedTuple):
+    """Cached metadata for sharded bloom filter lookups."""
+
+    bloom_k: int
+    shard_count: int
+    shard_m: tuple[int, ...]
+    manifest_urls: tuple[str, ...]
+    domain_count: int
+    fp_rate: float
+
+
+_blocklist_cache: BlocklistCache | None = None
+_sharded_meta: _ShardedBlocklistMeta | None = None
 _EMPTY_BLOCKLIST: BlocklistCache = BlocklistCache(
     check=lambda _: False,
     manifest_urls=(),
@@ -110,7 +121,6 @@ _CONFIG_TYPE_RULES: list[tuple[str, type | tuple]] = [
     ("REBIND_PROTECTION", bool),
     ("CACHE_DNS", bool),
     ("BLOCKLIST_ENABLED", bool),
-    ("BLOCKLIST_LOADING_POLICY", str),
     ("BLOCKED_DOMAINS", list),
     ("ALLOWED_DOMAINS", list),
     ("BYPASS_PROVIDER", dict),
@@ -133,19 +143,8 @@ def _validate_types() -> None:
             )
 
 
-_VALID_BLOCKLIST_LOADING_POLICIES: frozenset[str] = frozenset({"block", "bypass"})
-
-
 def _validate_config() -> None:
     """Validate cross-field config constraints at import time."""
-    policy: str = config.BLOCKLIST_LOADING_POLICY
-
-    if policy not in _VALID_BLOCKLIST_LOADING_POLICIES:
-        raise ValueError(
-            f"config.BLOCKLIST_LOADING_POLICY must be one of "
-            f"{sorted(_VALID_BLOCKLIST_LOADING_POLICIES)}, got {policy!r}",
-        )
-
     if not config.ALLOWED_DOMAINS:
         return
 
@@ -161,97 +160,63 @@ _validate_types()
 _validate_config()
 
 
-async def _load_blocklist_from_kv(env: object) -> BlocklistCache | None:
-    """
-    Load the community block list from KV on cold start.
-
-    Parameters:
-    env (object): Worker environment with KV namespace bindings.
-
-    Returns:
-    BlocklistCache | None: Loaded blocklist data, or None if another request
-        is already loading the blocklist.
-    """
-    global _kv_blocklist_cache, _kv_blocklist_loading
-
-    if _kv_blocklist_cache is not None:
-        return _kv_blocklist_cache
-
-    if _kv_blocklist_loading:
+async def _fetch_bloom_json(assets: object) -> dict | None:
+    """Fetch and parse bloom.json from assets."""
+    try:
+        response: object = await assets.fetch("https://assets.local/bloom.json")
+        if response.status != 200:
+            logger.warning(
+                "Failed to fetch bloom.json from assets, status %d",
+                response.status,
+            )
+            return None
+        return json.loads(await response.text())
+    except Exception:
+        logger.warning("Unexpected error fetching bloom.json", exc_info=True)
         return None
 
-    _kv_blocklist_loading = True
+
+async def _load_blocklist_from_assets(env: object) -> BlocklistCache:
+    """Load the bloom filter from Workers Assets, caching the result."""
+    global _blocklist_cache
+
+    if _blocklist_cache is not None:
+        return _blocklist_cache
+
+    assets: object | None = getattr(env, "ASSETS", None)
+
+    if assets is None:
+        logger.warning("ASSETS binding not found, blocklist disabled")
+        _blocklist_cache = _EMPTY_BLOCKLIST
+        return _blocklist_cache
 
     try:
-        binding: str = "BLOCKLIST"
-        kv: object | None = getattr(env, binding, None)
-
-        if kv is None:
-            logger.warning(
-                "KV binding %r not found on env, community block list disabled",
-                binding,
-            )
-
-            _kv_blocklist_cache = _EMPTY_BLOCKLIST
-            return _kv_blocklist_cache
-
-        bloom_key: str = "blocklist:bloom"
-
-        try:
-            result: object = await kv.getWithMetadata(
-                bloom_key,
-                to_js({"type": "arrayBuffer"}),
-            )
-        except Exception:
-            logger.warning(
-                "Failed to read KV bloom filter %r, community block list disabled",
-                bloom_key,
-                exc_info=True,
-            )
-            _kv_blocklist_cache = _EMPTY_BLOCKLIST
-            return _kv_blocklist_cache
-
-        bloom_buf: object | None = result.value
-        metadata: object | None = result.metadata
-
-        if bloom_buf is None or metadata is None:
-            logger.warning(
-                "KV bloom filter %r missing value or metadata, "
-                "community block list disabled",
-                bloom_key,
-            )
-            _kv_blocklist_cache = _EMPTY_BLOCKLIST
-            return _kv_blocklist_cache
-
-        try:
-            entry: dict = metadata.to_py()
-        except Exception:
-            entry = {
-                k: getattr(metadata, k, None)
-                for k in ("bloom_m", "bloom_k", "exact_count", "source_urls")
-            }
-
-        entry_source_urls: list = entry.get("source_urls", [])
-        if entry_source_urls:
-            manifest_urls: list[str] = list(entry_source_urls)
-        else:
-            legacy_url: str = entry.get("url", "")
-            manifest_urls: list[str] = [legacy_url] if legacy_url else []
+        entry: dict | None = await _fetch_bloom_json(assets)
+        if entry is None:
+            _blocklist_cache = _EMPTY_BLOCKLIST
+            return _blocklist_cache
 
         bloom_m: int = int(entry.get("bloom_m", 0))
         bloom_k: int = int(entry.get("bloom_k", 0))
         exact_count: int = int(entry.get("exact_count", 0))
+        source_urls: list = entry.get("source_urls", [])
 
-        bit_array: bytearray = bytearray(bloom_buf.to_bytes())
-
-        if bloom_m and bloom_k:
-            fp_rate: float = (
-                (1.0 - math.exp(-bloom_k * exact_count / bloom_m)) ** bloom_k
-                if exact_count > 0
-                else 0.0
+        bin_response: object = await assets.fetch("https://assets.local/bloom.bin")
+        if bin_response.status != 200:
+            logger.warning(
+                "Failed to fetch bloom.bin from assets, status %d",
+                bin_response.status,
             )
-        else:
-            fp_rate: float = 0.0
+            _blocklist_cache = _EMPTY_BLOCKLIST
+            return _blocklist_cache
+
+        bit_array: bytearray = bytearray(await bin_response.bytes())
+
+        fp_rate: float = (
+            (1.0 - math.exp(-bloom_k * exact_count / bloom_m)) ** bloom_k
+            if bloom_m and bloom_k and exact_count > 0
+            else 0.0
+        )
 
         def _check(name: str) -> bool:
             normalized: str = name.rstrip(".").lower()
@@ -259,27 +224,123 @@ async def _load_blocklist_from_kv(env: object) -> BlocklistCache | None:
                 return False
             return _bloom_contains(bit_array, bloom_m, bloom_k, normalized)
 
-        _kv_blocklist_cache = BlocklistCache(
+        _blocklist_cache = BlocklistCache(
             check=_check,
-            manifest_urls=tuple(manifest_urls),
+            manifest_urls=tuple(source_urls),
             domain_count=exact_count,
             fp_rate=fp_rate,
             bloom_size_bytes=len(bit_array),
         )
 
         logger.info(
-            "Loaded KV block list: %d domains, theoretical FP rate %.2e",
+            "Loaded blocklist: %d domains, theoretical FP rate %.2e",
             exact_count,
             fp_rate,
         )
 
-        return _kv_blocklist_cache
+        return _blocklist_cache
     except Exception:
-        logger.warning("Unexpected error loading KV blocklist", exc_info=True)
-        _kv_blocklist_cache = _EMPTY_BLOCKLIST
-        return _kv_blocklist_cache
-    finally:
-        _kv_blocklist_loading = False
+        logger.warning("Unexpected error loading blocklist from assets", exc_info=True)
+        _blocklist_cache = _EMPTY_BLOCKLIST
+        return _blocklist_cache
+
+
+async def _load_sharded_meta(env: object) -> _ShardedBlocklistMeta | None:
+    """Load and cache bloom filter metadata for sharded lookups."""
+    global _sharded_meta
+
+    if _sharded_meta is not None:
+        return _sharded_meta
+
+    assets: object | None = getattr(env, "ASSETS", None)
+    if assets is None:
+        logger.warning("ASSETS binding not found, blocklist disabled")
+        return None
+
+    try:
+        entry: dict | None = await _fetch_bloom_json(assets)
+        if entry is None:
+            return None
+
+        bloom_k: int = int(entry.get("bloom_k", 0))
+        exact_count: int = int(entry.get("exact_count", 0))
+        shard_count: int = int(entry.get("bloom_shards", 0))
+        shard_m: list[int] = [int(m) for m in entry.get("shard_m", [])]
+        source_urls: list = entry.get("source_urls", [])
+
+        if not bloom_k or not shard_count or len(shard_m) != shard_count:
+            logger.warning("Invalid sharded bloom metadata")
+            return None
+
+        avg_m: int = sum(shard_m) // shard_count
+        fp_rate: float = (
+            (1.0 - math.exp(-bloom_k * exact_count / (avg_m * shard_count))) ** bloom_k
+            if exact_count > 0
+            else 0.0
+        )
+
+        _sharded_meta = _ShardedBlocklistMeta(
+            bloom_k=bloom_k,
+            shard_count=shard_count,
+            shard_m=tuple(shard_m),
+            manifest_urls=tuple(source_urls),
+            domain_count=exact_count,
+            fp_rate=fp_rate,
+        )
+
+        logger.info(
+            "Loaded sharded blocklist metadata: %d domains, %d shards",
+            exact_count,
+            shard_count,
+        )
+
+        return _sharded_meta
+    except Exception:
+        logger.warning(
+            "Unexpected error loading sharded blocklist metadata",
+            exc_info=True,
+        )
+        return None
+
+
+async def _check_sharded_blocklist(name: str, env: object) -> bool:
+    """Check a domain against the sharded bloom filter by fetching one shard."""
+    meta: _ShardedBlocklistMeta | None = await _load_sharded_meta(env)
+    if meta is None:
+        return False
+
+    normalized: str = name.rstrip(".").lower()
+    shard_index: int = abs(_bloom_hash(normalized)) % meta.shard_count
+
+    assets: object = env.ASSETS
+    try:
+        response: object = await assets.fetch(
+            f"https://assets.local/shard_{shard_index}.bin",
+        )
+        if response.status != 200:
+            logger.warning(
+                "Failed to fetch shard_%d.bin from assets, status %d",
+                shard_index,
+                response.status,
+            )
+            return False
+
+        shard_bytes: bytes = await response.bytes()
+        bit_array: bytearray = bytearray(shard_bytes)
+
+        return _bloom_contains(
+            bit_array,
+            meta.shard_m[shard_index],
+            meta.bloom_k,
+            normalized,
+        )
+    except Exception:
+        logger.warning(
+            "Unexpected error checking shard_%d.bin",
+            shard_index,
+            exc_info=True,
+        )
+        return False
 
 
 def _with_provider_id(provider: Provider) -> dict:
@@ -587,22 +648,24 @@ def _handle_config(request: object, env: object, cfg: _ResolvedConfig) -> Respon
     if not provided or not hmac.compare_digest(provided, str(token)):
         return Response("Unauthorized", status=401)
 
-    kv_count: int | None = (
-        _kv_blocklist_cache.domain_count if _kv_blocklist_cache is not None else None
-    )
-    kv_urls: list[str] | None = (
-        list(_kv_blocklist_cache.manifest_urls)
-        if _kv_blocklist_cache is not None
-        else None
-    )
-    kv_fp_rate: float | None = (
-        _kv_blocklist_cache.fp_rate if _kv_blocklist_cache is not None else None
-    )
-    kv_bloom_bytes: int | None = (
-        _kv_blocklist_cache.bloom_size_bytes
-        if _kv_blocklist_cache is not None
-        else None
-    )
+    if _sharded_meta is not None:
+        bl_count = _sharded_meta.domain_count
+        bl_urls = list(_sharded_meta.manifest_urls)
+        bl_fp_rate = _sharded_meta.fp_rate
+        bl_bloom_bytes = sum(_sharded_meta.shard_m) // 8
+        bl_shards = _sharded_meta.shard_count
+    elif _blocklist_cache is not None:
+        bl_count = _blocklist_cache.domain_count
+        bl_urls = list(_blocklist_cache.manifest_urls)
+        bl_fp_rate = _blocklist_cache.fp_rate
+        bl_bloom_bytes = _blocklist_cache.bloom_size_bytes
+        bl_shards = None
+    else:
+        bl_count = None
+        bl_urls = None
+        bl_fp_rate = None
+        bl_bloom_bytes = None
+        bl_shards = None
 
     payload: dict[str, object] = {
         "config": cfg.full_config,
@@ -610,10 +673,11 @@ def _handle_config(request: object, env: object, cfg: _ResolvedConfig) -> Respon
             "endpoints": len(cfg.provider_lists),
             "allowed_domains": len(config.ALLOWED_DOMAINS),
             "blocked_domains": len(config.BLOCKED_DOMAINS),
-            "kv_blocklist": kv_count,
-            "kv_blocklist_urls": kv_urls,
-            "kv_blocklist_fp_rate": kv_fp_rate,
-            "kv_bloom_size_bytes": kv_bloom_bytes,
+            "blocklist": bl_count,
+            "blocklist_urls": bl_urls,
+            "blocklist_fp_rate": bl_fp_rate,
+            "bloom_size_bytes": bl_bloom_bytes,
+            "bloom_shards": bl_shards,
         },
     }
 
@@ -1174,10 +1238,6 @@ async def _handle_request(
             question=question,
         )
 
-    error: bool = False
-    results: list[ProviderResult] = []
-    response_from: str = "error"
-
     if config_allowed:
         doh_providers = cfg.bypass_provider_list
 
@@ -1187,39 +1247,35 @@ async def _handle_request(
         and domain_matches(name=name, compiled=_BLOCKED_COMPILED),
     )
 
-    blocklist_bypassed: bool = False
-    blocklist_loading_503: bool = False
-    if not name or config_allowed or config_blocked or not config.BLOCKLIST_ENABLED:
-        kv_blocklist: BlocklistCache = _EMPTY_BLOCKLIST
-    else:
-        kv_blocklist = await _load_blocklist_from_kv(env)
+    was_cached: bool = _blocklist_cache is not None or _sharded_meta is not None
 
-        if kv_blocklist is None:
-            if config.BLOCKLIST_LOADING_POLICY == "bypass":
-                logger.info("Blocklist still loading, bypassing check.")
-                kv_blocklist = _EMPTY_BLOCKLIST
-                blocklist_bypassed = True
-            else:
-                logger.warning("Blocklist still loading, returning 503.")
-                blocklist_loading_503 = True
-                kv_blocklist = _EMPTY_BLOCKLIST
+    if not name or config_allowed or config_blocked or not config.BLOCKLIST_ENABLED:
+        blocklist: BlocklistCache = _EMPTY_BLOCKLIST
+        sharded: bool = False
+    else:
+        meta: _ShardedBlocklistMeta | None = await _load_sharded_meta(env)
+        sharded = meta is not None
+        blocklist = (
+            _EMPTY_BLOCKLIST if sharded else await _load_blocklist_from_assets(env)
+        )
+
+    asset_loading: bool = not was_cached and (
+        _blocklist_cache is not None or _sharded_meta is not None
+    )
 
     config_blocked = config_blocked or bool(
-        name and not config_allowed and kv_blocklist.check(name),
+        name and not config_allowed and blocklist.check(name),
     )
+
+    if not config_blocked and name and not config_allowed and sharded:
+        config_blocked = await _check_sharded_blocklist(name, env)
 
     results: list[ProviderResult] = []
     response_from: str = "error"
     error: bool = False
     final_response: Response | None = None
 
-    if blocklist_loading_503:
-        final_response = Response(
-            "Service Unavailable",
-            status=503,
-            headers={"Retry-After": "1"},
-        )
-    elif config_blocked:
+    if config_blocked:
         response_from = "config"
 
         body, content_type = make_blocked_response(
@@ -1326,20 +1382,20 @@ async def _handle_request(
             elapsed_ms=elapsed_ms,
             endpoint=endpoint,
             question=question,
-            response_from=response_from
-            if not blocklist_loading_503
-            else "blocklist-loading",
+            response_from=response_from,
             results=results,
             env=env,
             loki_url=loki_url,
             client_ip=client_ip,
             config_blocked=config_blocked,
             config_allowed=config_allowed,
-            error=error or blocklist_loading_503,
-            kv_loading=blocklist_bypassed or blocklist_loading_503,
-            blocklist_domain_count=_kv_blocklist_cache.domain_count
-            if _kv_blocklist_cache is not None
+            error=error,
+            blocklist_domain_count=_sharded_meta.domain_count
+            if _sharded_meta is not None
+            else _blocklist_cache.domain_count
+            if _blocklist_cache is not None
             else 0,
+            asset_loading=asset_loading,
         )
         if promise is not None:
             ctx.waitUntil(promise)

@@ -3,8 +3,6 @@
 
 """Test configuration using the mock DoH server with custom ECS prefixes."""
 
-from typing import Literal
-
 from config_types import EcsConfig, EndpointConfig, Provider
 
 DEBUG: bool = True
@@ -41,8 +39,6 @@ RETRY_MAX_ATTEMPTS: int = 2
 CACHE_DNS: bool = True
 
 BLOCKLIST_ENABLED: bool = True
-
-BLOCKLIST_LOADING_POLICY: Literal["block", "bypass"] = "block"
 
 ENDPOINTS: dict[str, EndpointConfig] = {
     "/my-device": {

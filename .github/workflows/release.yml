@@ -70,7 +70,7 @@ jobs:
           git push
           \`\`\`
 
-          The bloom filter is rebuilt and uploaded to KV automatically on deploy.
+          The bloom filter is rebuilt and bundled as Workers Assets automatically on deploy.
 
           To keep lists updated automatically, you can use the [sample workflow](https://github.com/${GH_REPOSITORY}/blob/${TAG}/workflows/update-blocklist.yml).
 

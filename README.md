@@ -16,7 +16,7 @@ This started as [a workaround](https://www.lauder.family/blog/2021/09/25/Avoidin
 
 - Fan-out to multiple DoH providers, pick the most restrictive answer
 - Domain blocklist and allowlist in [`src/config.py`](src/config.py) to ensure specific domains are always blocked or never blocked, regardless of upstream provider responses (not meant for huge community lists)
-- Community block lists configured in [`blocklist_sources.yaml`](blocklist_sources.yaml), stored in Cloudflare KV, with an optional GitHub Action to keep them updated automatically
+- Community block lists configured in [`blocklist_sources.yaml`](blocklist_sources.yaml), bundled as Workers Assets, with an optional GitHub Action to keep them updated automatically
 - Allowed domains skip fan-out and go straight to a non-filtering bypass provider (default: Cloudflare)
 - EDNS Client Subnet prefix truncation for privacy
 - DNS rebind protection (blocks responses resolving to private IPs)
@@ -109,33 +109,33 @@ See [`examples/config.py`](examples/config.py) for a real-world example configur
 <details>
 <summary>All configuration options</summary>
 
-| Option                     | Default                                                             | Description                                                                                                                                             |
-| -------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ALLOWED_DOMAINS`          | `[]`                                                                | Domains to bypass fan-out and send to `BYPASS_PROVIDER` only                                                                                            |
-| `BLOCKED_DOMAINS`          | `[]`                                                                | Domains to block with synthetic `NXDOMAIN` (supports `*.example.com` wildcards)                                                                         |
-| `BLOCKLIST_LOADING_POLICY` | `"block"`                                                           | Controls cold-start behavior when the KV blocklist hasn't loaded yet. See [Blocklist loading policy](#blocklist-loading-policy).                        |
-| `BYPASS_PROVIDER`          | `{"url": "https://cloudflare-dns.com/dns-query", "dns_json": True}` | Non-filtering provider used for allowed domains                                                                                                         |
-| `CACHE_DNS`                | `True`                                                              | Cache DNS responses in the Cloudflare Cache API using the response TTL                                                                                  |
-| `CONFIG_ENDPOINT`          | `None`                                                              | Path for the authenticated config endpoint (requires `ADMIN_TOKEN` secret)                                                                              |
-| `DEBUG`                    | `False`                                                             | Enable verbose logging and diagnostic response headers                                                                                                  |
-| `ECS_TRUNCATION`           | `{"enabled": False}`                                                | Truncate EDNS Client Subnet prefixes for privacy. Optional `ipv4_prefix` (default `24`) and `ipv6_prefix` (default `64`) control the truncation lengths |
-| `ENDPOINTS`                | `{}`                                                                | Map of URL paths to endpoint configs. Each entry requires a `main_provider` and optionally `additional_providers`                                       |
-| `HEALTH_ENDPOINT`          | `None`                                                              | Path for the health-check endpoint                                                                                                                      |
-| `LOKI_TIMEOUT_MS`          | `5000`                                                              | Loki push timeout in milliseconds                                                                                                                       |
-| `LOKI_URL`                 | `""`                                                                | Grafana Loki push endpoint (also requires `LOKI_USERNAME` and `LOKI_PASSWORD` secrets)                                                                  |
-| `REBIND_PROTECTION`        | `True`                                                              | Block responses that resolve to private/internal IPs                                                                                                    |
-| `RETRY_MAX_ATTEMPTS`       | `2`                                                                 | Number of times to retry a provider on 5xx responses before giving up. Set to `0` to disable retries                                                    |
-| `TIMEOUT_MS`               | `5000`                                                              | Upstream provider timeout in milliseconds                                                                                                               |
+| Option               | Default                                                             | Description                                                                                                                                             |
+| -------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ALLOWED_DOMAINS`    | `[]`                                                                | Domains to bypass fan-out and send to `BYPASS_PROVIDER` only                                                                                            |
+| `BLOCKED_DOMAINS`    | `[]`                                                                | Domains to block with synthetic `NXDOMAIN` (supports `*.example.com` wildcards)                                                                         |
+| `BLOCKLIST_ENABLED`  | `True`                                                              | Enable the community block list. Set to `False` to disable all bloom filter checks                                                                      |
+| `BYPASS_PROVIDER`    | `{"url": "https://cloudflare-dns.com/dns-query", "dns_json": True}` | Non-filtering provider used for allowed domains                                                                                                         |
+| `CACHE_DNS`          | `True`                                                              | Cache DNS responses in the Cloudflare Cache API using the response TTL                                                                                  |
+| `CONFIG_ENDPOINT`    | `None`                                                              | Path for the authenticated config endpoint (requires `ADMIN_TOKEN` secret)                                                                              |
+| `DEBUG`              | `False`                                                             | Enable verbose logging and diagnostic response headers                                                                                                  |
+| `ECS_TRUNCATION`     | `{"enabled": False}`                                                | Truncate EDNS Client Subnet prefixes for privacy. Optional `ipv4_prefix` (default `24`) and `ipv6_prefix` (default `64`) control the truncation lengths |
+| `ENDPOINTS`          | `{}`                                                                | Map of URL paths to endpoint configs. Each entry requires a `main_provider` and optionally `additional_providers`                                       |
+| `HEALTH_ENDPOINT`    | `None`                                                              | Path for the health-check endpoint                                                                                                                      |
+| `LOKI_TIMEOUT_MS`    | `5000`                                                              | Loki push timeout in milliseconds                                                                                                                       |
+| `LOKI_URL`           | `""`                                                                | Grafana Loki push endpoint (also requires `LOKI_USERNAME` and `LOKI_PASSWORD` secrets)                                                                  |
+| `REBIND_PROTECTION`  | `True`                                                              | Block responses that resolve to private/internal IPs                                                                                                    |
+| `RETRY_MAX_ATTEMPTS` | `2`                                                                 | Number of times to retry a provider on 5xx responses before giving up. Set to `0` to disable retries                                                    |
+| `TIMEOUT_MS`         | `5000`                                                              | Upstream provider timeout in milliseconds                                                                                                               |
 
 </details>
 
 ## Blocking Methods
 
-| Method                                                                     | How it works                                                                                                                                 | When to use it                                                                |
-| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Upstream provider filtering                                                | Providers like NextDNS and Quad9 apply their own lists and return blocked responses                                                          | Zero config, no maintenance                                                   |
-| `BLOCKED_DOMAINS` in config                                                | Checked in memory on every request, before any KV lookup or upstream query                                                                   | Personal overrides or domains upstream providers don't cover. Keep this small |
-| Community block lists ([`blocklist_sources.yaml`](blocklist_sources.yaml)) | Lists are fetched, merged, and stored in Cloudflare KV. Read once on cold start and cached in memory for the lifetime of the Worker instance | Large curated lists that are too big to put in config                         |
+| Method                                                                     | How it works                                                                                                                                                                                                   | When to use it                                                                |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Upstream provider filtering                                                | Providers like NextDNS and Quad9 apply their own lists and return blocked responses                                                                                                                            | Zero config, no maintenance                                                   |
+| `BLOCKED_DOMAINS` in config                                                | Checked before any upstream query                                                                                                                                                                              | Personal overrides or domains upstream providers don't cover. Keep this small |
+| Community block lists ([`blocklist_sources.yaml`](blocklist_sources.yaml)) | Lists are fetched, merged, and bundled as Workers Assets. Small filters are loaded on first request and cached in memory. Filters over 25 MB are sharded into ~1 MB pieces, with one shard fetched per request | Large curated lists that are too big to put in config                         |
 
 Both block lists are checked on every request. `ALLOWED_DOMAINS` takes precedence over both.
 
@@ -157,9 +157,9 @@ Then run:
 uv run python scripts/build_blocklist.py
 ```
 
-Commit the generated per-source files in [`blocklist/`](blocklist/) (e.g. `blocklist/0.json`, `blocklist/1.json`, …). The bloom filter (`blocklist/combined.json`) is gitignored and rebuilt automatically at deploy time from these files. Only the plain domain-list files live in git, so blocklist update PRs produce readable diffs.
+Commit the generated per-source files in [`blocklist/`](blocklist/) (e.g. `blocklist/0.txt`, `blocklist/1.txt`, ...). The bloom filter is gitignored and rebuilt automatically at deploy time from these files. Only the plain domain-list files live in git, so blocklist update PRs produce readable diffs.
 
-At the `1e-10` false-positive rate target, ~**4.2 million** unique domains produce a bloom filter of around **25M** stored in KV.
+At the `1e-10` false-positive rate target, ~**4.2 million** unique domains produce a bloom filter of around **25 MB**. Bloom filters larger than 25 MB are automatically sharded into ~1 MB pieces to stay within the Workers Assets per-file size limit. Sharded filters are fetched per-request instead of preloaded, keeping peak memory low for very large lists.
 
 #### Options
 
@@ -188,11 +188,11 @@ The filter automatically resizes to maintain the target false-positive rate as y
 
 **Tip:** After changing your blocklist sources or the `--fp-rate`, always re-run `build_blocklist.py` and check the output stats to confirm the filter size and expected false-positive rate.
 
-**Observing the false-positive rate at runtime:** The `/config` endpoint (requires `ADMIN_TOKEN`) includes a `kv_blocklist_fp_rate` field in its `stats` object showing the theoretical false-positive rate of the loaded filter. The rate is also logged at `INFO` level each time a Worker instance loads the blocklist from KV.
+**Observing the false-positive rate at runtime:** The `/config` endpoint (requires `ADMIN_TOKEN`) includes a `blocklist_fp_rate` field in its `stats` object showing the theoretical false-positive rate of the loaded filter. The rate is also logged at `INFO` level each time a Worker instance loads the blocklist.
 
 ### GitHub Actions (automatic)
 
-Enable the included `.github/workflows/update-blocklist.yml` workflow (commented out by default). It runs weekly, re-fetches each source, updates the per-source files in `blocklist/`, and opens a PR if anything changed. Because `combined.json` is gitignored, PRs contain only plain domain-list diffs with readable additions and removals. The bloom filter is rebuilt at deploy time.
+Enable the included `.github/workflows/update-blocklist.yml` workflow (commented out by default). It runs weekly, re-fetches each source, updates the per-source files in `blocklist/`, and opens a PR if anything changed. The bloom filter is rebuilt at deploy time.
 
 This file is included in the deploy branch and will be present in your repo after following the [deploy instructions](#quickstart-deploy).
 
@@ -207,18 +207,7 @@ git commit -m "Update blocklist"
 uv run pywrangler deploy
 ```
 
-`build_blocklist.py` downloads the sources and writes per-source files to `blocklist/`. The bloom filter is rebuilt from those files automatically during deploy, so `combined.json` does not need to be committed.
-
-## Blocklist loading policy
-
-On a cold start (the first request to a new Worker instance), the worker reads the blocklist manifest from KV (a single round-trip). `BLOCKLIST_LOADING_POLICY` controls what happens if that read is not finished when a request arrives concurrently.
-
-| Value                            | Behavior                                                                                                                                                                                                             | When to use                                                                                                                                 |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `"block"` (default, fail-closed) | Returns `HTTP 503 Retry-After: 1` until the blocklist finishes loading. DNS clients retry automatically. No domain covered only by the community list can slip through unblocked.                                    | When a missed block is worse than a brief, recoverable error. Recommended for strict filtering environments.                                |
-| `"bypass"` (fail-open)           | Serves the DNS query without KV blocklist checks until the list is loaded. Domains only in the community list will resolve normally for that request. `BLOCKED_DOMAINS` and upstream provider filtering still apply. | When availability is more important than guaranteed blocking on cold start, e.g. when upstream providers already cover your critical lists. |
-
-Cold starts are infrequent. The blocklist is cached in memory for the lifetime of each Worker instance and the KV read happens only once per instance.
+`build_blocklist.py` downloads the sources and writes per-source files to `blocklist/`. The bloom filter is rebuilt from those files automatically during deploy.
 
 ## Updating
 

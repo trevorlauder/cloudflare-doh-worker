@@ -4,7 +4,6 @@
 """Shared pytest fixtures and configuration for DoH worker tests."""
 
 import os
-from pathlib import Path
 import re
 import ssl
 import sys
@@ -14,10 +13,6 @@ import urllib.request
 _workers_stub = MagicMock()
 _workers_stub.WorkerEntrypoint = object
 sys.modules["workers"] = _workers_stub
-
-_scripts_dir = str(Path(__file__).resolve().parent.parent / "scripts")
-if _scripts_dir not in sys.path:
-    sys.path.insert(0, _scripts_dir)
 
 
 def resolve_env(s: str) -> str:
