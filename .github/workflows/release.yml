@@ -121,5 +121,6 @@ jobs:
           gh release create "deploy-${TAG}" \
             --title "${TAG}" \
             --notes "${notes}" \
+            --draft \
             ${prerelease_flag} \
             --repo "${GH_REPOSITORY}"
