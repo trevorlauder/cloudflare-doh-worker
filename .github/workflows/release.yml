@@ -106,7 +106,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPOSITORY: ${{ github.repository }}
         run: |
-          notes=$(git cliff --latest --strip header)
+          if [[ "${TAG}" == *-* ]]; then
+            notes=$(git cliff --latest --strip header)
+          else
+            prev=$(git tag -l --sort=-v:refname '[0-9]*' | grep -v rc | grep -v "^${TAG}$" | head -1)
+            notes=$(git cliff --ignore-tags "rc" --tag "${TAG}" --strip header "${prev}..${TAG}")
+          fi
 
           prerelease_flag=""
           if [[ "${TAG}" == *-* ]]; then

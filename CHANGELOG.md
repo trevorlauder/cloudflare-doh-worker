@@ -1,8 +1,18 @@
-## [unreleased]
+## [1.1.0] - 2026-03-21
 
 ### 🚀 Features
 
 - Add support for large community blocklists ([#100](https://github.com/trevorlauder/cloudflare-doh-worker/pull/100))
+- Add config flag for kv blocklist ([#110](https://github.com/trevorlauder/cloudflare-doh-worker/pull/110))
+- Add gitattributes ([#114](https://github.com/trevorlauder/cloudflare-doh-worker/pull/114))
+- Auto-accept our versions for customized files during merge ([#116](https://github.com/trevorlauder/cloudflare-doh-worker/pull/116))
+- Split latency panels by worker blocked/allowed vs upstream ([#120](https://github.com/trevorlauder/cloudflare-doh-worker/pull/120))
+
+### 🐛 Bug Fixes
+
+- Delete all blocklist files and from KV when sources are empty ([#108](https://github.com/trevorlauder/cloudflare-doh-worker/pull/108))
+- Only delete *.txt from blocklist/ ([#112](https://github.com/trevorlauder/cloudflare-doh-worker/pull/112))
+- Misc fixes ([#117](https://github.com/trevorlauder/cloudflare-doh-worker/pull/117))
 
 ### 💼 Other
 
@@ -11,15 +21,25 @@
 ### 📚 Documentation
 
 - Add missing config options to README ([#98](https://github.com/trevorlauder/cloudflare-doh-worker/pull/98))
+- Clarify deploy tag usage ([#121](https://github.com/trevorlauder/cloudflare-doh-worker/pull/121))
 
 ### ⚡ Performance
 
 - Implement provider response caching ([#99](https://github.com/trevorlauder/cloudflare-doh-worker/pull/99))
+- Use single kv key with metadata and remove community wildcard support ([#122](https://github.com/trevorlauder/cloudflare-doh-worker/pull/122))
+
+### 🧪 Testing
+
+- Add new KV_ENABLED flag to test configs ([#113](https://github.com/trevorlauder/cloudflare-doh-worker/pull/113))
 
 ### ⚙️ Miscellaneous Tasks
 
 - Add actions permission to release workflow ([#101](https://github.com/trevorlauder/cloudflare-doh-worker/pull/101))
 - Update cliff config ([#102](https://github.com/trevorlauder/cloudflare-doh-worker/pull/102))
+- Add pre-release support to release workflow ([#106](https://github.com/trevorlauder/cloudflare-doh-worker/pull/106))
+- Anchor tag in git-cliff ([#107](https://github.com/trevorlauder/cloudflare-doh-worker/pull/107))
+- Cleanup deploy branch readme ([#109](https://github.com/trevorlauder/cloudflare-doh-worker/pull/109))
+- Fix build branch copy ([#111](https://github.com/trevorlauder/cloudflare-doh-worker/pull/111))
 
 ## [1.0.3] - 2026-03-14
 
@@ -59,139 +79,66 @@
 
 ## [1.0.0] - 2026-03-13
 
-### ⚙️ Miscellaneous Tasks
-
-- Bump for 1.0.0 release ([#78](https://github.com/trevorlauder/cloudflare-doh-worker/pull/78))
-
-## [1.0.0-rc11] - 2026-03-13
-
 ### 🚀 Features
 
+- Include provider response code in message sent to grafana ([#49](https://github.com/trevorlauder/cloudflare-doh-worker/pull/49))
+- Add retry logic for providers ([#54](https://github.com/trevorlauder/cloudflare-doh-worker/pull/54))
+- Add retry logic for connection errors ([#55](https://github.com/trevorlauder/cloudflare-doh-worker/pull/55))
+- Make dns-json configurable instead of hardcoded ([#65](https://github.com/trevorlauder/cloudflare-doh-worker/pull/65))
 - Add JSON health endpoint ([#76](https://github.com/trevorlauder/cloudflare-doh-worker/pull/76))
 
 ### 🐛 Bug Fixes
 
+- Improve error handling, logging, and failed provider tracking ([#46](https://github.com/trevorlauder/cloudflare-doh-worker/pull/46))
+- Harden error handling and add POST body size guard ([#48](https://github.com/trevorlauder/cloudflare-doh-worker/pull/48))
+- Sanitize get/post request parameters ([#60](https://github.com/trevorlauder/cloudflare-doh-worker/pull/60))
+- Harden config endpoint ([#61](https://github.com/trevorlauder/cloudflare-doh-worker/pull/61))
+- Sanitize response content-type ([#63](https://github.com/trevorlauder/cloudflare-doh-worker/pull/63))
+- Validate config and secrets ([#64](https://github.com/trevorlauder/cloudflare-doh-worker/pull/64))
+- Flatten loki json structure and cleanup dashboard ([#68](https://github.com/trevorlauder/cloudflare-doh-worker/pull/68))
+- Mitigate Pyodide task re-entrancy under concurrent load ([#73](https://github.com/trevorlauder/cloudflare-doh-worker/pull/73))
 - Add safety timeout to prevent hung requests from Pyodide re-entrancy ([#75](https://github.com/trevorlauder/cloudflare-doh-worker/pull/75))
-
-### 📚 Documentation
-
-- Update design diagram
-
-### 🎨 Styling
-
-- Cleanup
-
-### 🧪 Testing
-
-- Prevent tilt config-restart resources from firing on first startup ([#77](https://github.com/trevorlauder/cloudflare-doh-worker/pull/77))
-
-### ⚙️ Miscellaneous Tasks
-
-- Bump for 1.0.0-rc11
-
-## [1.0.0-rc10] - 2026-03-11
 
 ### 🚜 Refactor
 
 - Use workers.fetch and Promise.allSettled for upstream requests ([#74](https://github.com/trevorlauder/cloudflare-doh-worker/pull/74))
 
-### ⚙️ Miscellaneous Tasks
+### 📚 Documentation
 
-- Bump for 1.0.0-rc10
-
-## [1.0.0-rc9] - 2026-03-11
-
-### 🐛 Bug Fixes
-
-- Mitigate Pyodide task re-entrancy under concurrent load ([#73](https://github.com/trevorlauder/cloudflare-doh-worker/pull/73))
-
-### ⚙️ Miscellaneous Tasks
-
-- Update mise checksums
-- Bump for 1.0.0-rc9
-
-## [1.0.0-rc8] - 2026-03-06
-
-### 🐛 Bug Fixes
-
-- Flatten loki json structure and cleanup dashboard ([#68](https://github.com/trevorlauder/cloudflare-doh-worker/pull/68))
-
-### 🎨 Styling
-
-- Code cleanup
-
-### ⚙️ Miscellaneous Tasks
-
-- Bump for 1.0.0-rc8
-
-## [1.0.0-rc7] - 2026-03-06
-
-### 🚀 Features
-
-- Make dns-json configurable instead of hardcoded ([#65](https://github.com/trevorlauder/cloudflare-doh-worker/pull/65))
-
-### 🐛 Bug Fixes
-
-- Sanitize get/post request parameters ([#60](https://github.com/trevorlauder/cloudflare-doh-worker/pull/60))
-- Harden config endpoint ([#61](https://github.com/trevorlauder/cloudflare-doh-worker/pull/61))
-- Sanitize response content-type ([#63](https://github.com/trevorlauder/cloudflare-doh-worker/pull/63))
-- Validate config and secrets ([#64](https://github.com/trevorlauder/cloudflare-doh-worker/pull/64))
-
-### 🧪 Testing
-
-- Consolidate all tests into a single tilt run ([#58](https://github.com/trevorlauder/cloudflare-doh-worker/pull/58))
-- Simplify and add eco integration tests and some unit tests ([#66](https://github.com/trevorlauder/cloudflare-doh-worker/pull/66))
-
-### ⚙️ Miscellaneous Tasks
-
-- Include dashboard in deploy branch ([#57](https://github.com/trevorlauder/cloudflare-doh-worker/pull/57))
-- Only log provider retries in debug ([#59](https://github.com/trevorlauder/cloudflare-doh-worker/pull/59))
-- Retry tilt ci jobs on failures ([#62](https://github.com/trevorlauder/cloudflare-doh-worker/pull/62))
-- Bump for 1.0.0-rc7 ([#67](https://github.com/trevorlauder/cloudflare-doh-worker/pull/67))
-
-## [1.0.0-rc6] - 2026-03-05
-
-### 🚀 Features
-
-- Add retry logic for providers ([#54](https://github.com/trevorlauder/cloudflare-doh-worker/pull/54))
-- Add retry logic for connection errors ([#55](https://github.com/trevorlauder/cloudflare-doh-worker/pull/55))
-
-### ⚡ Performance
-
-- Reduce FFI crossings even more using urllib ([#53](https://github.com/trevorlauder/cloudflare-doh-worker/pull/53))
-
-### ⚙️ Miscellaneous Tasks
-
-- Update CHANGELOG ([#56](https://github.com/trevorlauder/cloudflare-doh-worker/pull/56))
-
-## [1.0.0-rc5] - 2026-03-04
-
-### 🚀 Features
-
-- Include provider response code in message sent to grafana ([#49](https://github.com/trevorlauder/cloudflare-doh-worker/pull/49))
-
-### 🐛 Bug Fixes
-
-- Harden error handling and add POST body size guard ([#48](https://github.com/trevorlauder/cloudflare-doh-worker/pull/48))
+- Update design diagram
 
 ### ⚡ Performance
 
 - Improvements to reduce cpu time ([#50](https://github.com/trevorlauder/cloudflare-doh-worker/pull/50))
 - Reduce Python/JS FFI boundary crossings ([#52](https://github.com/trevorlauder/cloudflare-doh-worker/pull/52))
+- Reduce FFI crossings even more using urllib ([#53](https://github.com/trevorlauder/cloudflare-doh-worker/pull/53))
 
-### ⚙️ Miscellaneous Tasks
+### 🎨 Styling
 
-- Update CHANGELOG ([#51](https://github.com/trevorlauder/cloudflare-doh-worker/pull/51))
-- Update CHANGELOG
+- Code cleanup
+- Cleanup
 
-## [1.0.0-rc4] - 2026-03-04
+### 🧪 Testing
 
-### 🐛 Bug Fixes
-
-- Improve error handling, logging, and failed provider tracking ([#46](https://github.com/trevorlauder/cloudflare-doh-worker/pull/46))
+- Consolidate all tests into a single tilt run ([#58](https://github.com/trevorlauder/cloudflare-doh-worker/pull/58))
+- Simplify and add eco integration tests and some unit tests ([#66](https://github.com/trevorlauder/cloudflare-doh-worker/pull/66))
+- Prevent tilt config-restart resources from firing on first startup ([#77](https://github.com/trevorlauder/cloudflare-doh-worker/pull/77))
 
 ### ⚙️ Miscellaneous Tasks
 
 - Update CHANGELOG ([#47](https://github.com/trevorlauder/cloudflare-doh-worker/pull/47))
+- Update CHANGELOG ([#51](https://github.com/trevorlauder/cloudflare-doh-worker/pull/51))
+- Update CHANGELOG
+- Update CHANGELOG ([#56](https://github.com/trevorlauder/cloudflare-doh-worker/pull/56))
+- Include dashboard in deploy branch ([#57](https://github.com/trevorlauder/cloudflare-doh-worker/pull/57))
+- Only log provider retries in debug ([#59](https://github.com/trevorlauder/cloudflare-doh-worker/pull/59))
+- Retry tilt ci jobs on failures ([#62](https://github.com/trevorlauder/cloudflare-doh-worker/pull/62))
+- Bump for 1.0.0-rc7 ([#67](https://github.com/trevorlauder/cloudflare-doh-worker/pull/67))
+- Bump for 1.0.0-rc8
+- Update mise checksums
+- Bump for 1.0.0-rc9
+- Bump for 1.0.0-rc10
+- Bump for 1.0.0-rc11
+- Bump for 1.0.0 release ([#78](https://github.com/trevorlauder/cloudflare-doh-worker/pull/78))
 
 ## [0.9.0] - 2026-02-18
