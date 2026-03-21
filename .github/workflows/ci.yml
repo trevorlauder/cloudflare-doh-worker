@@ -17,8 +17,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  pre-commit:
-    name: pre-commit
+  prek:
+    name: prek
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -28,14 +28,14 @@ jobs:
         with:
           install: true
           cache: true
-          install_args: actionlint buildifier dprint hadolint node pre-commit python ruff shellcheck trufflehog uv zizmor
+          install_args: actionlint buildifier dprint hadolint node prek python ruff shellcheck trufflehog uv zizmor
       - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
-          path: ~/.cache/pre-commit
-          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          path: ~/.cache/prek
+          key: prek-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
           restore-keys: |
-            pre-commit-${{ runner.os }}-
-      - run: pre-commit run --all-files
+            prek-${{ runner.os }}-
+      - run: prek run --all-files
 
   build-image:
     name: Build image
