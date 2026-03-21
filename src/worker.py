@@ -4,6 +4,7 @@
 """Cloudflare Worker entrypoint for the DNS-over-HTTPS proxy."""
 
 import base64
+from collections import OrderedDict
 from collections.abc import Callable
 import hmac
 import json
@@ -104,6 +105,10 @@ class _ShardedBlocklistMeta(NamedTuple):
 
 _blocklist_cache: BlocklistCache | None = None
 _sharded_meta: _ShardedBlocklistMeta | None = None
+_SHARD_CACHE_MAX_BYTES: int = 40 * 1024 * 1024
+_shard_pool: bytearray = bytearray(_SHARD_CACHE_MAX_BYTES)
+_shard_pool_used: int = 0
+_shard_cache: OrderedDict[int, tuple[int, int]] = OrderedDict()
 _EMPTY_BLOCKLIST: BlocklistCache = BlocklistCache(
     check=lambda _: False,
     manifest_urls=(),
@@ -222,7 +227,12 @@ async def _load_blocklist_from_assets(env: object) -> BlocklistCache:
             normalized: str = name.rstrip(".").lower()
             if not bit_array:
                 return False
-            return _bloom_contains(bit_array, bloom_m, bloom_k, normalized)
+            return _bloom_contains(
+                bit_array=bit_array,
+                num_bits=bloom_m,
+                num_hashes=bloom_k,
+                hash_value=_bloom_hash(normalized),
+            )
 
         _blocklist_cache = BlocklistCache(
             check=_check,
@@ -303,44 +313,111 @@ async def _load_sharded_meta(env: object) -> _ShardedBlocklistMeta | None:
         return None
 
 
-async def _check_sharded_blocklist(name: str, env: object) -> bool:
-    """Check a domain against the sharded bloom filter by fetching one shard."""
+_shard_pool_live: int = 0
+_shard_compactions: int = 0
+
+
+def _compact_shard_pool() -> None:
+    """Compact the shard pool by moving all active entries to the front."""
+    global _shard_pool_used
+
+    write_offset: int = 0
+    for shard_index in _shard_cache:
+        offset, length = _shard_cache[shard_index]
+        if offset != write_offset:
+            _shard_pool[write_offset : write_offset + length] = _shard_pool[
+                offset : offset + length
+            ]
+        _shard_cache[shard_index] = (write_offset, length)
+        write_offset += length
+    _shard_pool_used = write_offset
+
+
+def _cache_shard(shard_index: int, shard_bytes: bytes) -> None:
+    """Store a shard in the pre-allocated pool, evicting LRU entries as needed."""
+    global _shard_pool_used, _shard_pool_live
+
+    shard_size: int = len(shard_bytes)
+    if shard_size > _SHARD_CACHE_MAX_BYTES:
+        return
+
+    while _shard_cache and _shard_pool_live + shard_size > _SHARD_CACHE_MAX_BYTES:
+        _, (_, evicted_len) = _shard_cache.popitem(last=False)
+        _shard_pool_live -= evicted_len
+
+    if _shard_pool_live + shard_size > _SHARD_CACHE_MAX_BYTES:
+        return
+
+    if _shard_pool_used + shard_size > _SHARD_CACHE_MAX_BYTES:
+        global _shard_compactions
+        _shard_compactions += 1
+        _compact_shard_pool()
+
+    _shard_pool[_shard_pool_used : _shard_pool_used + shard_size] = shard_bytes
+    _shard_cache[shard_index] = (_shard_pool_used, shard_size)
+    _shard_pool_used += shard_size
+    _shard_pool_live += shard_size
+
+
+async def _check_sharded_blocklist(name: str, env: object) -> tuple[bool, bool]:
+    """Check a domain against the sharded bloom filter by fetching one shard.
+
+    Returns:
+    tuple[bool, bool]: (is_blocked, shard_cache_hit).
+    """
     meta: _ShardedBlocklistMeta | None = await _load_sharded_meta(env)
     if meta is None:
-        return False
+        return False, False
 
     normalized: str = name.rstrip(".").lower()
-    shard_index: int = abs(_bloom_hash(normalized)) % meta.shard_count
+    h: int = _bloom_hash(normalized)
+    shard_index: int = abs(h) % meta.shard_count
 
-    assets: object = env.ASSETS
-    try:
-        response: object = await assets.fetch(
-            f"https://assets.local/shard_{shard_index}.bin",
-        )
-        if response.status != 200:
-            logger.warning(
-                "Failed to fetch shard_%d.bin from assets, status %d",
-                shard_index,
-                response.status,
+    cached: tuple[int, int] | None = _shard_cache.get(shard_index)
+    if cached is not None:
+        _shard_cache.move_to_end(shard_index)
+        offset, length = cached
+        bit_array: memoryview | bytes = memoryview(_shard_pool)[
+            offset : offset + length
+        ]
+        cache_hit: bool = True
+    else:
+        assets: object = env.ASSETS
+
+        try:
+            response: object = await assets.fetch(
+                f"https://assets.local/shard_{shard_index}.bin",
             )
-            return False
 
-        shard_bytes: bytes = await response.bytes()
-        bit_array: bytearray = bytearray(shard_bytes)
+            if response.status != 200:
+                logger.warning(
+                    "Failed to fetch shard_%d.bin from assets, status %d",
+                    shard_index,
+                    response.status,
+                )
 
-        return _bloom_contains(
-            bit_array,
-            meta.shard_m[shard_index],
-            meta.bloom_k,
-            normalized,
-        )
-    except Exception:
-        logger.warning(
-            "Unexpected error checking shard_%d.bin",
-            shard_index,
-            exc_info=True,
-        )
-        return False
+                return False, False
+
+            bit_array = await response.bytes()
+        except Exception:
+            logger.warning(
+                "Unexpected error checking shard_%d.bin",
+                shard_index,
+                exc_info=True,
+            )
+
+            return False, False
+
+        _cache_shard(shard_index, bit_array)
+        cache_hit = False
+
+    blocked: bool = _bloom_contains(
+        bit_array=bit_array,
+        num_bits=meta.shard_m[shard_index],
+        num_hashes=meta.bloom_k,
+        hash_value=h,
+    )
+    return blocked, cache_hit
 
 
 def _with_provider_id(provider: Provider) -> dict:
@@ -1267,8 +1344,9 @@ async def _handle_request(
         name and not config_allowed and blocklist.check(name),
     )
 
+    shard_cache_hit: bool = False
     if not config_blocked and name and not config_allowed and sharded:
-        config_blocked = await _check_sharded_blocklist(name, env)
+        config_blocked, shard_cache_hit = await _check_sharded_blocklist(name, env)
 
     results: list[ProviderResult] = []
     response_from: str = "error"
@@ -1396,6 +1474,8 @@ async def _handle_request(
             if _blocklist_cache is not None
             else 0,
             asset_loading=asset_loading,
+            shard_cache_hit=shard_cache_hit,
+            shard_compactions=_shard_compactions,
         )
         if promise is not None:
             ctx.waitUntil(promise)

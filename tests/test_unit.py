@@ -560,11 +560,20 @@ class _MockShardedAssets:
         return _FakeAssetResponse(status=404)
 
 
+def _reset_shard_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Clear shard cache state to avoid cross-test pollution."""
+    monkeypatch.setattr(worker, "_sharded_meta", None)
+    worker._shard_cache.clear()
+    monkeypatch.setattr(worker, "_shard_pool_used", 0)
+    monkeypatch.setattr(worker, "_shard_pool_live", 0)
+    monkeypatch.setattr(worker, "_shard_compactions", 0)
+
+
 def test_check_sharded_blocklist_blocks_domain(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Sharded lookup finds a domain present in the correct shard."""
-    monkeypatch.setattr(worker, "_sharded_meta", None)
+    _reset_shard_cache(monkeypatch)
 
     manifest, shards = _build_test_shards(["apple.ca"], shard_count=4)
     env = MagicMock()
@@ -573,15 +582,16 @@ def test_check_sharded_blocklist_blocks_domain(
         shards=shards,
     )
 
-    result = asyncio.run(worker._check_sharded_blocklist("apple.ca", env))
-    assert result is True
+    blocked, cache_hit = asyncio.run(worker._check_sharded_blocklist("apple.ca", env))
+    assert blocked is True
+    assert cache_hit is False
 
 
 def test_check_sharded_blocklist_passes_absent_domain(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Sharded lookup does not match a domain not in any shard."""
-    monkeypatch.setattr(worker, "_sharded_meta", None)
+    _reset_shard_cache(monkeypatch)
 
     manifest, shards = _build_test_shards(["apple.ca"], shard_count=4)
     env = MagicMock()
@@ -590,15 +600,18 @@ def test_check_sharded_blocklist_passes_absent_domain(
         shards=shards,
     )
 
-    result = asyncio.run(worker._check_sharded_blocklist("safe.example.net", env))
-    assert result is False
+    blocked, cache_hit = asyncio.run(
+        worker._check_sharded_blocklist("safe.example.net", env),
+    )
+    assert blocked is False
+    assert cache_hit is False
 
 
 def test_check_sharded_blocklist_missing_shard_returns_false(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When a shard file returns 404, the check returns False."""
-    monkeypatch.setattr(worker, "_sharded_meta", None)
+    _reset_shard_cache(monkeypatch)
 
     manifest, shards = _build_test_shards(["apple.ca"], shard_count=4)
     target_shard = abs(_bloom_hash("apple.ca")) % 4
@@ -610,29 +623,31 @@ def test_check_sharded_blocklist_missing_shard_returns_false(
         shards=shards,
     )
 
-    result = asyncio.run(worker._check_sharded_blocklist("apple.ca", env))
-    assert result is False
+    blocked, cache_hit = asyncio.run(worker._check_sharded_blocklist("apple.ca", env))
+    assert blocked is False
+    assert cache_hit is False
 
 
 def test_check_sharded_blocklist_no_assets_returns_false(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When ASSETS binding is missing, the check returns False."""
-    monkeypatch.setattr(worker, "_sharded_meta", None)
+    _reset_shard_cache(monkeypatch)
 
     env = MagicMock(spec=[])
-    result = asyncio.run(worker._check_sharded_blocklist("apple.ca", env))
-    assert result is False
+    blocked, cache_hit = asyncio.run(worker._check_sharded_blocklist("apple.ca", env))
+    assert blocked is False
+    assert cache_hit is False
 
 
 def test_bloom_contains_inserted_domain() -> None:
     """Inserted domain is found in the bloom filter loaded from the static fixture."""
     bit_array = bytearray(_BLOCKLIST_SINGLE_BIN)
     assert _bloom_contains(
-        bit_array,
-        _BLOCKLIST_SINGLE["bloom_m"],
-        _BLOCKLIST_SINGLE["bloom_k"],
-        "apple.ca",
+        bit_array=bit_array,
+        num_bits=_BLOCKLIST_SINGLE["bloom_m"],
+        num_hashes=_BLOCKLIST_SINGLE["bloom_k"],
+        hash_value=_bloom_hash("apple.ca"),
     )
 
 
@@ -640,10 +655,10 @@ def test_bloom_contains_absent_domain() -> None:
     """Domain not inserted into the bloom filter is not found."""
     bit_array = bytearray(_BLOCKLIST_SINGLE_BIN)
     assert not _bloom_contains(
-        bit_array,
-        _BLOCKLIST_SINGLE["bloom_m"],
-        _BLOCKLIST_SINGLE["bloom_k"],
-        "safe.example.net",
+        bit_array=bit_array,
+        num_bits=_BLOCKLIST_SINGLE["bloom_m"],
+        num_hashes=_BLOCKLIST_SINGLE["bloom_k"],
+        hash_value=_bloom_hash("safe.example.net"),
     )
 
 
@@ -663,10 +678,10 @@ def _fp_bloom_chunk(chunk_range: tuple[int, int]) -> int:
         for probe_index in range(start, end)
         if any(
             _bloom_contains(
-                bit_array,
-                num_bits,
-                num_hashes,
-                f"{probe_index}.fp-probe.invalid",
+                bit_array=bit_array,
+                num_bits=num_bits,
+                num_hashes=num_hashes,
+                hash_value=_bloom_hash(f"{probe_index}.fp-probe.invalid"),
             )
             for bit_array, num_bits, num_hashes in _fp_worker_filters
         )

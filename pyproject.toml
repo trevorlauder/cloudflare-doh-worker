@@ -1,6 +1,6 @@
 [project]
 name = "doh"
-version = "1.0.3"
+version = "1.1.0"
 requires-python = ">=3.13"
 dependencies = [
   "dnspython",

@@ -12,7 +12,7 @@ deploy:
 setup:
 	mise install
 	uv sync --group dev
-	pre-commit install
+	prek install
 
 ci:
 	tilt down

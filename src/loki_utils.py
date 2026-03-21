@@ -28,6 +28,8 @@ def build_loki_fetch_promise(
     error: bool = False,
     blocklist_domain_count: int = 0,
     asset_loading: bool = False,
+    shard_cache_hit: bool = False,
+    shard_compactions: int = 0,
 ) -> object | None:
     """
     Build a Loki log entry and return a JS fetch Promise, or None on failure.
@@ -46,6 +48,8 @@ def build_loki_fetch_promise(
     elapsed_ms (int): Elapsed milliseconds from request start to just before Loki dispatch.
     error (bool): Whether the request resulted in an error.
     asset_loading (bool): Whether the blocklist was loaded from assets during this request.
+    shard_cache_hit (bool): Whether the shard lookup was served from the in-memory cache.
+    shard_compactions (int): Cumulative number of shard pool compaction events.
 
     Returns:
     object | None: JS fetch Promise or None on failure.
@@ -130,6 +134,8 @@ def build_loki_fetch_promise(
             "response_from": response_from,
             "blocklist_domain_count": blocklist_domain_count,
             "asset_loading": asset_loading,
+            "shard_cache_hit": shard_cache_hit,
+            "shard_compactions": shard_compactions,
         }
 
         ts_ns: str = str(request_timestamp_ms * 1_000_000)

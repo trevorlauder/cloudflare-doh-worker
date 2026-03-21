@@ -6,7 +6,7 @@
 > This is a complete rewrite in Python. If you want the previous JavaScript version, use the [0.9.0 release](https://github.com/trevorlauder/cloudflare-doh-worker/tree/0.9.0). The JavaScript version will no longer receive updates.
 
 > [!IMPORTANT]
-> This document may not reflect the latest release. For current documentation, visit the [1.0.3 README](https://github.com/trevorlauder/cloudflare-doh-worker/tree/1.0.3).
+> This document may not reflect the latest release. For current documentation, visit the [1.1.0 README](https://github.com/trevorlauder/cloudflare-doh-worker/tree/1.1.0).
 
 A Cloudflare Worker that proxies DNS-over-HTTPS queries to multiple upstream providers in parallel and returns the most restrictive result. If **any** provider blocks a domain, it's blocked.
 
@@ -42,7 +42,7 @@ This started as [a workaround](https://www.lauder.family/blog/2021/09/25/Avoidin
 
 Use this button to deploy this worker to your Cloudflare account.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/trevorlauder/cloudflare-doh-worker/tree/deploy-1.0.3)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/trevorlauder/cloudflare-doh-worker/tree/deploy-1.1.0)
 
 - Update [`wrangler.toml`](wrangler.toml) and [`src/config.py`](src/config.py) **in your new repo** created by Cloudflare, based on your needs. See [Configuration](#configuration) for details.
 
@@ -69,7 +69,7 @@ Use this button to deploy this worker to your Cloudflare account.
   ```shell
   git clone https://github.com/your-username/cloudflare-doh-worker.git
   cd cloudflare-doh-worker
-  git checkout -B main deploy-1.0.3
+  git checkout -B main deploy-1.1.0
   git push --force-with-lease origin main
   ```
 
@@ -218,7 +218,7 @@ Add this repo as an upstream remote (only needed once), then merge the new deplo
 ```shell
 git remote add upstream https://github.com/trevorlauder/cloudflare-doh-worker.git
 git fetch upstream
-git merge --allow-unrelated-histories deploy-1.0.3  # replace with the new version tag
+git merge --allow-unrelated-histories deploy-1.1.0  # replace with the new version tag
 ```
 
 ### Avoiding merge conflicts
