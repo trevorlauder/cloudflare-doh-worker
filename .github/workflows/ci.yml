@@ -29,6 +29,8 @@ jobs:
           install: true
           cache: true
           install_args: actionlint buildifier dprint hadolint node prek python ruff shellcheck trufflehog uv zizmor
+        env:
+          MISE_PYTHON_PRECOMPILED_FLAVOR: install_only_stripped
       - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ~/.cache/prek
