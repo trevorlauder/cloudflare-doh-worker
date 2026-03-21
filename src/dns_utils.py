@@ -43,13 +43,13 @@ def _bloom_hash(domain: str) -> int:
 
 
 def _bloom_contains(
-    bit_array: bytes | bytearray,
+    bit_array: bytes | bytearray | memoryview,
     num_bits: int,
     num_hashes: int,
-    domain: str,
+    hash_value: int,
 ) -> bool:
     """Return True if domain is (possibly) in the bloom filter bit array."""
-    state: int = _bloom_hash(domain)
+    state: int = hash_value
     for _ in range(num_hashes):
         state = (state * _LCG_MUL + 1) % _LCG_MOD
         bit: int = ((state >> 32) & 0xFFFFFFFFFFFFFFFF) % num_bits

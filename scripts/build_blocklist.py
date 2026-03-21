@@ -303,7 +303,7 @@ def verify_bloom_filter(
             bit_array=bit_array,
             num_bits=num_bits,
             num_hashes=num_hashes,
-            domain=domain,
+            hash_value=_bloom_hash(domain),
         )
     ]
     if missed:
