@@ -105,7 +105,7 @@ class _ShardedBlocklistMeta(NamedTuple):
 
 _blocklist_cache: BlocklistCache | None = None
 _sharded_meta: _ShardedBlocklistMeta | None = None
-_SHARD_CACHE_MAX_BYTES: int = 40 * 1024 * 1024
+_SHARD_CACHE_MAX_BYTES: int = 50 * 1024 * 1024
 _shard_pool: bytearray = bytearray(_SHARD_CACHE_MAX_BYTES)
 _shard_pool_used: int = 0
 _shard_cache: OrderedDict[int, tuple[int, int]] = OrderedDict()
@@ -398,7 +398,7 @@ async def _check_sharded_blocklist(name: str, env: object) -> tuple[bool, bool]:
 
                 return False, False
 
-            bit_array = await response.bytes()
+            bit_array = bytes(await response.bytes())
         except Exception:
             logger.warning(
                 "Unexpected error checking shard_%d.bin",
