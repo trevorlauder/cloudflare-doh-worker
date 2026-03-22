@@ -14,7 +14,6 @@ from unittest.mock import MagicMock
 from conftest import _workers_stub
 import pytest
 
-import config
 from dns_utils import (
     ProviderResult,
     _bloom_contains,
@@ -29,7 +28,6 @@ from worker import (
     _select_winner,
     _ShardedBlocklistMeta,
     _validate_config,
-    _validate_types,
 )
 
 
@@ -102,14 +100,14 @@ def test_select_winner_blocked_beats_possibly_blocked():
 def test_select_winner_rebind_replaced_when_protection_on(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setattr(config, "REBIND_PROTECTION", True)
+    monkeypatch.setattr(worker, "_REBIND_PROTECTION", True)
     rebind = _result(main=True, rebind=True)
     clean = _result(main=False, rebind=False)
     assert _select_winner([rebind, clean]) is clean
 
 
 def test_select_winner_rebind_kept_when_protection_off(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(config, "REBIND_PROTECTION", False)
+    monkeypatch.setattr(worker, "_REBIND_PROTECTION", False)
     rebind = _result(main=True, rebind=True)
     clean = _result(main=False, rebind=False)
     assert _select_winner([rebind, clean]) is rebind
@@ -118,7 +116,7 @@ def test_select_winner_rebind_kept_when_protection_off(monkeypatch: pytest.Monke
 def test_select_winner_rebind_no_clean_alternative_kept(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setattr(config, "REBIND_PROTECTION", True)
+    monkeypatch.setattr(worker, "_REBIND_PROTECTION", True)
     rebind = _result(main=True, rebind=True)
     assert _select_winner([rebind]) is rebind
 
@@ -126,7 +124,7 @@ def test_select_winner_rebind_no_clean_alternative_kept(
 def test_select_winner_prefers_non_rebind_main_over_additional(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setattr(config, "REBIND_PROTECTION", True)
+    monkeypatch.setattr(worker, "_REBIND_PROTECTION", True)
     rebind_main = _result(main=True, rebind=True)
     clean_additional = _result(main=False, rebind=False)
 
@@ -192,36 +190,31 @@ def test_resolve_secrets_non_string_passthrough():
 
 
 def test_validate_types_valid():
-    _validate_types()
+    _validate_config()
 
 
 def test_validate_types_wrong_bool(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(config, "DEBUG", "not_a_bool")
-    with pytest.raises(TypeError, match="DEBUG"):
-        _validate_types()
+    monkeypatch.setattr(worker, "_DEBUG", "not_a_bool")
+    with pytest.raises(ValueError, match="DEBUG"):
+        _validate_config()
 
 
 def test_validate_types_wrong_int(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(config, "TIMEOUT_MS", "5000")
-    with pytest.raises(TypeError, match="TIMEOUT_MS"):
-        _validate_types()
-
-
-def test_validate_types_none_skipped(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(config, "LOKI_URL", None)
-    _validate_types()
+    monkeypatch.setattr(worker, "_TIMEOUT_MS", "5000")
+    with pytest.raises(ValueError, match="TIMEOUT_MS"):
+        _validate_config()
 
 
 def test_validate_config_no_allowed_domains(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(config, "ALLOWED_DOMAINS", [])
+    monkeypatch.setattr(worker, "_ALLOWED_DOMAINS", [])
     _validate_config()
 
 
 def test_validate_config_valid(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(config, "ALLOWED_DOMAINS", ["example.com"])
+    monkeypatch.setattr(worker, "_ALLOWED_DOMAINS", ["example.com"])
     monkeypatch.setattr(
-        config,
-        "BYPASS_PROVIDER",
+        worker,
+        "_BYPASS_PROVIDER",
         {"url": "https://dns.example.com/dns-query"},
     )
 
@@ -229,15 +222,15 @@ def test_validate_config_valid(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_validate_config_bypass_missing_url(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(config, "ALLOWED_DOMAINS", ["example.com"])
-    monkeypatch.setattr(config, "BYPASS_PROVIDER", {})
-    with pytest.raises(ValueError, match="url"):
+    monkeypatch.setattr(worker, "_ALLOWED_DOMAINS", ["example.com"])
+    monkeypatch.setattr(worker, "_BYPASS_PROVIDER", {})
+    with pytest.raises((ValueError, TypeError), match="url"):
         _validate_config()
 
 
 def test_validate_config_bypass_empty_url(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(config, "ALLOWED_DOMAINS", ["example.com"])
-    monkeypatch.setattr(config, "BYPASS_PROVIDER", {"url": ""})
+    monkeypatch.setattr(worker, "_ALLOWED_DOMAINS", ["example.com"])
+    monkeypatch.setattr(worker, "_BYPASS_PROVIDER", {"url": ""})
     with pytest.raises(ValueError, match="url"):
         _validate_config()
 

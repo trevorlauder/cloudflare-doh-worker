@@ -19,6 +19,7 @@ import dns.exception
 import dns.name
 import dns.rdatatype
 from typedload.dataloader import Loader
+from typedload.exceptions import TypedloadValueError
 from workers import Response, WorkerEntrypoint
 
 from cache_utils import (
@@ -188,13 +189,21 @@ def _validate_config() -> None:
         if isinstance(value, int) and not isinstance(value, bool) and value > 0:
             return value
 
-        raise ValueError(f"expected positive integer, got {value!r}")
+        raise TypedloadValueError(
+            f"expected positive integer, got {value!r}",
+            value=value,
+            type_=_type,
+        )
 
     def _load_non_negative_int(_loader: object, value: object, _type: object) -> int:
         if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
             return value
 
-        raise ValueError(f"expected non-negative integer, got {value!r}")
+        raise TypedloadValueError(
+            f"expected non-negative integer, got {value!r}",
+            value=value,
+            type_=_type,
+        )
 
     loader = Loader(basiccast=False)
     loader.handlers.insert(0, (lambda t: t is PositiveInt, _load_positive_int))

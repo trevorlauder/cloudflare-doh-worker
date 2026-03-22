@@ -60,7 +60,7 @@ ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 
 _ECS_ENABLED = bool(ECS_TRUNCATION and ECS_TRUNCATION.get("enabled"))
 _ECS_IPV4_PREFIX = ECS_TRUNCATION.get("ipv4_prefix", 24) if ECS_TRUNCATION else 24
-_ECS_IPV6_PREFIX = ECS_TRUNCATION.get("ipv6_prefix", 64) if ECS_TRUNCATION else 64
+_ECS_IPV6_PREFIX = ECS_TRUNCATION.get("ipv6_prefix", 56) if ECS_TRUNCATION else 56
 
 _pyproject = tomllib.loads(
     (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(),
