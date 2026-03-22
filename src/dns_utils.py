@@ -150,7 +150,7 @@ def truncate_ecs(
         return data, ""
 
     ipv4_prefix: int = config.ECS_TRUNCATION.get("ipv4_prefix", 24)
-    ipv6_prefix: int = config.ECS_TRUNCATION.get("ipv6_prefix", 64)
+    ipv6_prefix: int = config.ECS_TRUNCATION.get("ipv6_prefix", 56)
 
     new_options: list = []
     descriptions: list[str] = []
