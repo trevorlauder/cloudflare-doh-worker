@@ -9,8 +9,8 @@ ARG MISE_VERSION=v2026.3.12
 ARG TARGETARCH
 SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
 RUN case "${TARGETARCH}" in \
-    arm64) MISE_ARCH="arm64"; MISE_SHA256="bbbd6e856d9fd53ffaa0773d0625f5a8c2f393610034712a389c68bbc5ad0f84" ;; \
-    *)     MISE_ARCH="x64";   MISE_SHA256="5fbb922019f56cfd33fc8bccedb80e0b1a2dd5d8f8567b076c1bbec7ff30548c" ;; \
+    arm64) MISE_ARCH="arm64"; MISE_SHA256="5670f708c843a90fb5244f57b50aa2a4f62fc45d2b1f563bc5ab4e2538b9dd22" ;; \
+    *)     MISE_ARCH="x64";   MISE_SHA256="a4edc8d6f9dcf595f64938ecf34b613658c2fe5304466dffa5317ebd1e130acd" ;; \
     esac; \
     curl -fsSL "https://github.com/jdx/mise/releases/download/${MISE_VERSION}/mise-${MISE_VERSION}-linux-${MISE_ARCH}" \
     -o /usr/local/bin/mise && \
