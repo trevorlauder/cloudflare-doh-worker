@@ -31,6 +31,7 @@ SUPPORTED_ACCEPT_HEADERS = frozenset(
 
 _LCG_MUL = 47026247687942121848144207491837418733
 _LCG_MOD = 1 << 128
+_LCG_MASK = _LCG_MOD - 1
 
 
 def _bloom_hash(domain: str) -> int:
@@ -51,9 +52,10 @@ def _bloom_contains(
     """Return True if domain is (possibly) in the bloom filter bit array."""
     state: int = hash_value
     for _ in range(num_hashes):
-        state = (state * _LCG_MUL + 1) % _LCG_MOD
+        state = (state * _LCG_MUL + 1) & _LCG_MASK
         bit: int = ((state >> 32) & 0xFFFFFFFFFFFFFFFF) % num_bits
-        if not (bit_array[bit >> 3] >> (bit & 7)) & 1:
+        byte_index: int = bit >> 3
+        if not (bit_array[byte_index] >> (bit & 7)) & 1:
             return False
     return True
 
