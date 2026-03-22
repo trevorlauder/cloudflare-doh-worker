@@ -24,18 +24,23 @@ import dns.rcode
 import dns.rdatatype
 import pytest
 
-from config import (
-    ALLOWED_DOMAINS,
-    BLOCKED_DOMAINS,
-    BYPASS_PROVIDER,
-    CACHE_DNS,
-    CONFIG_ENDPOINT,
-    DEBUG,
-    ECS_TRUNCATION,
-    ENDPOINTS,
-    HEALTH_ENDPOINT,
-    REBIND_PROTECTION,
+import config as _config
+
+ALLOWED_DOMAINS: list = getattr(_config, "ALLOWED_DOMAINS", [])
+BLOCKED_DOMAINS: list = getattr(_config, "BLOCKED_DOMAINS", [])
+BYPASS_PROVIDER: dict = getattr(
+    _config,
+    "BYPASS_PROVIDER",
+    {
+        "url": "https://cloudflare-dns.com/dns-query",
+        "dns_json": True,
+    },
 )
+ENDPOINTS: dict = getattr(_config, "ENDPOINTS", {})
+DEBUG: bool = getattr(_config, "DEBUG", False)
+CACHE_DNS: bool = getattr(_config, "CACHE_DNS", True)
+REBIND_PROTECTION: bool = getattr(_config, "REBIND_PROTECTION", True)
+ECS_TRUNCATION: dict = getattr(_config, "ECS_TRUNCATION", {"enabled": False})
 
 _provider_urls = (
     cfg.get("main_provider", {}).get("url", "") for cfg in ENDPOINTS.values()
@@ -43,9 +48,13 @@ _provider_urls = (
 
 MOCK_DOH_ENABLED = any("mock-doh" in url for url in _provider_urls)
 
-TEST_ENDPOINTS = [resolve_env(e) for e in ENDPOINTS]
-HEALTH_ENDPOINT = resolve_env(HEALTH_ENDPOINT)
-CONFIG_ENDPOINT = resolve_env(CONFIG_ENDPOINT)
+_ENDPOINT_PREFIX = resolve_env(
+    getattr(_config, "ENDPOINT_PREFIX", "/"),
+).rstrip("/")
+
+TEST_ENDPOINTS = [_ENDPOINT_PREFIX + resolve_env(e) for e in ENDPOINTS]
+HEALTH_ENDPOINT = f"{_ENDPOINT_PREFIX}/health"
+CONFIG_ENDPOINT = f"{_ENDPOINT_PREFIX}/config"
 
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 

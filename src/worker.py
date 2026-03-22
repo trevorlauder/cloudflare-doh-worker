@@ -18,6 +18,7 @@ import urllib.parse
 import dns.exception
 import dns.name
 import dns.rdatatype
+from typedload.dataloader import Loader
 from workers import Response, WorkerEntrypoint
 
 from cache_utils import (
@@ -27,7 +28,13 @@ from cache_utils import (
     _try_cache_get,
 )
 import config
-from config_types import EndpointConfig, Provider
+from config_types import (
+    EndpointConfig,
+    NonNegativeInt,
+    PositiveInt,
+    Provider,
+    WorkerConfig,
+)
 from dns_utils import (
     MAX_DNS_BODY_SIZE,
     SUPPORTED_ACCEPT_HEADERS,
@@ -44,6 +51,109 @@ from dns_utils import (
     send_doh_requests_fanout,
 )
 from loki_utils import build_loki_fetch_promise
+
+
+class BlocklistCache(NamedTuple):
+    """Immutable container for a loaded blocklist."""
+
+    check: Callable[[str], bool]
+    manifest_urls: tuple[str, ...]
+    domain_count: int
+    fp_rate: float
+    bloom_size_bytes: int
+
+
+class _ShardedBlocklistMeta(NamedTuple):
+    """Cached metadata for sharded bloom filter lookups."""
+
+    bloom_k: int
+    shard_count: int
+    shard_m: tuple[int, ...]
+    manifest_urls: tuple[str, ...]
+    domain_count: int
+    fp_rate: float
+
+
+class _ResolvedConfig(NamedTuple):
+    """Runtime configuration with all ${SECRET} placeholders resolved."""
+
+    prefix: str
+    loki_url: str
+    provider_lists: dict[str, list[dict]]
+    bypass_provider_list: list[dict]
+    full_config: dict
+
+
+class _RejectError(Exception):
+    """Raised to short-circuit request parsing with an error response."""
+
+    def __init__(self, message: str, status: int = 406) -> None:
+        """
+        Parameters:
+        message (str): Error message.
+        status (int): HTTP status code.
+        """
+        self.response = Response(message, status=status)
+
+
+class Default(WorkerEntrypoint):
+    """Cloudflare Worker entrypoint for DNS-over-HTTPS requests."""
+
+    async def fetch(self, request: object) -> Response:
+        """
+        Top-level request handler that catches all unhandled exceptions.
+
+        Parameters:
+        request (object): Incoming HTTP request.
+
+        Returns:
+        Response: HTTP response.
+        """
+        try:
+            return await self._handle(request)
+        except Exception:
+            logger.exception("Unhandled exception in fetch")
+            return Response("Internal server error", status=500)
+
+    async def _handle(self, request: object) -> Response:
+        """
+        Route the request to the health, config, or DoH handler.
+
+        Parameters:
+        request (object): Incoming HTTP request.
+
+        Returns:
+        Response: HTTP response.
+        """
+        parsed_url: urllib.parse.ParseResult = urllib.parse.urlparse(str(request.url))
+        pathname: str = parsed_url.path
+
+        try:
+            cfg: _ResolvedConfig = _resolve_config(self.env)
+        except ValueError as e:
+            logger.exception("Configuration error: %s", e)
+            return Response("Internal server error", status=500)
+
+        if pathname == f"{cfg.prefix}/health":
+            return _handle_health()
+
+        if pathname == f"{cfg.prefix}/config":
+            return _handle_config(request=request, env=self.env, cfg=cfg)
+
+        doh_providers: list[dict] | None = cfg.provider_lists.get(pathname)
+
+        if doh_providers is None:
+            return Response("", status=404)
+
+        return await _handle_request(
+            request=request,
+            endpoint=pathname,
+            doh_providers=doh_providers,
+            cfg=cfg,
+            env=self.env,
+            ctx=self.ctx,
+            parsed_url=parsed_url,
+        )
 
 
 class _JsonFormatter(logging.Formatter):
@@ -71,43 +181,126 @@ class _JsonFormatter(logging.Formatter):
         return json.dumps(entry, separators=(",", ":"))
 
 
+def _validate_config() -> None:
+    """Validate all resolved config values at import time."""
+
+    def _load_positive_int(_loader: object, value: object, _type: object) -> int:
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            return value
+
+        raise ValueError(f"expected positive integer, got {value!r}")
+
+    def _load_non_negative_int(_loader: object, value: object, _type: object) -> int:
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return value
+
+        raise ValueError(f"expected non-negative integer, got {value!r}")
+
+    loader = Loader(basiccast=False)
+    loader.handlers.insert(0, (lambda t: t is PositiveInt, _load_positive_int))
+    loader.handlers.insert(0, (lambda t: t is NonNegativeInt, _load_non_negative_int))
+
+    loader.load(
+        {
+            "ENDPOINTS": _ENDPOINTS,
+            "DEBUG": _DEBUG,
+            "TIMEOUT_MS": _TIMEOUT_MS,
+            "LOKI_TIMEOUT_MS": _LOKI_TIMEOUT_MS,
+            "RETRY_MAX_ATTEMPTS": _RETRY_MAX_ATTEMPTS,
+            "CACHE_DNS": _CACHE_DNS,
+            "BLOCKLIST_ENABLED": _BLOCKLIST_ENABLED,
+            "LOKI_URL": _LOKI_URL,
+            "REBIND_PROTECTION": _REBIND_PROTECTION,
+            "ALLOWED_DOMAINS": _ALLOWED_DOMAINS,
+            "BLOCKED_DOMAINS": _BLOCKED_DOMAINS,
+            "ECS_TRUNCATION": _ECS_TRUNCATION,
+            "BYPASS_PROVIDER": _BYPASS_PROVIDER,
+        },
+        WorkerConfig,
+    )
+
+    if _ALLOWED_DOMAINS and not _BYPASS_PROVIDER.get("url"):
+        raise ValueError(
+            "BYPASS_PROVIDER 'url' must be a non-empty string when ALLOWED_DOMAINS is set",
+        )
+
+
+def _with_provider_id(provider: Provider) -> dict:
+    """
+    Return a copy of provider with provider_id set to its URL.
+
+    Parameters:
+    provider (dict): Provider config dict.
+
+    Returns:
+    dict: Provider dict with provider_id added.
+    """
+    return {**provider, "provider_id": provider["url"]}
+
+
+def _build_provider_lists() -> dict[str, list[dict]]:
+    """
+    Build per-endpoint provider lists from config.
+
+    Returns:
+    dict[str, list[dict]]: Endpoint paths mapped to provider lists.
+    """
+    result: dict[str, list[dict]] = {}
+    cfg: EndpointConfig
+    for path, cfg in _ENDPOINTS.items():
+        main: dict = _with_provider_id({**cfg["main_provider"], "main": True})
+
+        additional: list[dict] = [
+            _with_provider_id({**p, "main": False})
+            for p in cfg.get("additional_providers", [])
+        ]
+
+        result[path] = [main, *additional]
+
+    return result
+
+
+_DEBUG: bool = getattr(config, "DEBUG", False)
+_TIMEOUT_MS: int = getattr(config, "TIMEOUT_MS", 5000)
+_LOKI_TIMEOUT_MS: int = getattr(config, "LOKI_TIMEOUT_MS", 5000)
+_RETRY_MAX_ATTEMPTS: int = getattr(config, "RETRY_MAX_ATTEMPTS", 2)
+_CACHE_DNS: bool = getattr(config, "CACHE_DNS", True)
+_BLOCKLIST_ENABLED: bool = getattr(config, "BLOCKLIST_ENABLED", True)
+_LOKI_URL: str = getattr(config, "LOKI_URL", "")
+_REBIND_PROTECTION: bool = getattr(config, "REBIND_PROTECTION", True)
+_ALLOWED_DOMAINS: list = getattr(config, "ALLOWED_DOMAINS", [])
+_BLOCKED_DOMAINS: list = getattr(config, "BLOCKED_DOMAINS", [])
+_ENDPOINTS: dict = config.ENDPOINTS
+_ECS_TRUNCATION: dict = getattr(config, "ECS_TRUNCATION", {"enabled": False})
+
+_BYPASS_PROVIDER: dict = getattr(
+    config,
+    "BYPASS_PROVIDER",
+    {
+        "url": "https://cloudflare-dns.com/dns-query",
+        "dns_json": True,
+    },
+)
+
+_validate_config()
+
 _handler = logging.StreamHandler()
 _handler.setFormatter(_JsonFormatter())
 logging.root.addHandler(_handler)
-logging.root.setLevel(logging.DEBUG if config.DEBUG else logging.WARNING)
+logging.root.setLevel(logging.DEBUG if _DEBUG else logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
-_ALLOWED_COMPILED = compile_domain_set(config.ALLOWED_DOMAINS)
-_BLOCKED_COMPILED = compile_domain_set(config.BLOCKED_DOMAINS)
-
-
-class BlocklistCache(NamedTuple):
-    """Immutable container for a loaded blocklist."""
-
-    check: Callable[[str], bool]
-    manifest_urls: tuple[str, ...]
-    domain_count: int
-    fp_rate: float
-    bloom_size_bytes: int
-
-
-class _ShardedBlocklistMeta(NamedTuple):
-    """Cached metadata for sharded bloom filter lookups."""
-
-    bloom_k: int
-    shard_count: int
-    shard_m: tuple[int, ...]
-    manifest_urls: tuple[str, ...]
-    domain_count: int
-    fp_rate: float
-
+_ALLOWED_COMPILED = compile_domain_set(_ALLOWED_DOMAINS)
+_BLOCKED_COMPILED = compile_domain_set(_BLOCKED_DOMAINS)
 
 _blocklist_cache: BlocklistCache | None = None
 _sharded_meta: _ShardedBlocklistMeta | None = None
 _SHARD_CACHE_MAX_BYTES: int = 50 * 1024 * 1024
 _shard_pool: bytearray = bytearray(_SHARD_CACHE_MAX_BYTES)
 _shard_pool_used: int = 0
+_shard_pool_live: int = 0
+_shard_compacted: bool = False
 _shard_cache: OrderedDict[int, tuple[int, int]] = OrderedDict()
 _EMPTY_BLOCKLIST: BlocklistCache = BlocklistCache(
     check=lambda _: False,
@@ -117,52 +310,32 @@ _EMPTY_BLOCKLIST: BlocklistCache = BlocklistCache(
     bloom_size_bytes=0,
 )
 
+_PROVIDER_LISTS = _build_provider_lists()
 
-_CONFIG_TYPE_RULES: list[tuple[str, type | tuple]] = [
-    ("DEBUG", bool),
-    ("TIMEOUT_MS", int),
-    ("LOKI_TIMEOUT_MS", int),
-    ("RETRY_MAX_ATTEMPTS", int),
-    ("REBIND_PROTECTION", bool),
-    ("CACHE_DNS", bool),
-    ("BLOCKLIST_ENABLED", bool),
-    ("BLOCKED_DOMAINS", list),
-    ("ALLOWED_DOMAINS", list),
-    ("BYPASS_PROVIDER", dict),
-    ("ECS_TRUNCATION", dict),
-    ("ENDPOINTS", dict),
-    ("LOKI_URL", str),
-    ("CONFIG_ENDPOINT", str),
-    ("HEALTH_ENDPOINT", str),
-]
+_BYPASS_PROVIDER_LIST = (
+    [_with_provider_id({**_BYPASS_PROVIDER, "main": True})] if _ALLOWED_DOMAINS else []
+)
 
+_resolved_config_cache: "_ResolvedConfig | None" = None
 
-def _validate_types() -> None:
-    """Raise TypeError if any config value has the wrong type."""
-    for name, expected_type in _CONFIG_TYPE_RULES:
-        value: object = getattr(config, name, None)
-
-        if value is not None and not isinstance(value, expected_type):
-            raise TypeError(
-                f"config.{name} must be {expected_type.__name__}, got {type(value).__name__}",
-            )
-
-
-def _validate_config() -> None:
-    """Validate cross-field config constraints at import time."""
-    if not config.ALLOWED_DOMAINS:
-        return
-
-    value: object = config.BYPASS_PROVIDER.get("url")
-
-    if not isinstance(value, str) or not value:
-        raise ValueError(
-            "BYPASS_PROVIDER 'url' must be a non-empty string when ALLOWED_DOMAINS is set",
-        )
-
-
-_validate_types()
-_validate_config()
+_HEADER_PREFIX = "CLOUDFLARE-DOH-WORKER"
+_HEADER_RESPONSE_FROM = f"{_HEADER_PREFIX}-RESPONSE-FROM"
+_HEADER_RESPONSE_CODES = f"{_HEADER_PREFIX}-RESPONSE-CODES"
+_HEADER_POSSIBLY_BLOCKED = f"{_HEADER_PREFIX}-POSSIBLY-BLOCKED-PROVIDERS"
+_HEADER_BLOCKED = f"{_HEADER_PREFIX}-BLOCKED-PROVIDERS"
+_HEADER_TIMED_OUT = f"{_HEADER_PREFIX}-TIMED-OUT-PROVIDERS"
+_HEADER_CONN_ERROR = f"{_HEADER_PREFIX}-CONNECTION-ERROR-PROVIDERS"
+_HEADER_ALLOWED = f"{_HEADER_PREFIX}-CONFIG-ALLOWED"
+_HEADER_CONFIG_BLOCKED = f"{_HEADER_PREFIX}-CONFIG-BLOCKED"
+_HEADER_REBIND_PROTECTED = f"{_HEADER_PREFIX}-REBIND-PROTECTED"
+_HEADER_ECS_TRUNCATED = f"{_HEADER_PREFIX}-ECS-TRUNCATED"
+_HEADER_PROVIDERS_QUERIED = f"{_HEADER_PREFIX}-PROVIDERS-QUERIED"
+_HEADER_PROVIDERS_FAILED = f"{_HEADER_PREFIX}-PROVIDERS-FAILED"
+_HEADER_PROVIDERS_TIMED_OUT = f"{_HEADER_PREFIX}-PROVIDERS-TIMED-OUT"
+_HEADER_PROVIDERS_CONN_ERROR = f"{_HEADER_PREFIX}-PROVIDERS-CONNECTION-ERROR"
+_HEADER_PROVIDERS_FAILED_STATUS = f"{_HEADER_PREFIX}-PROVIDERS-FAILED-STATUS-CODE"
+_HEADER_PROVIDERS_RETRIED = f"{_HEADER_PREFIX}-PROVIDERS-RETRIED"
+_HEADER_RESPONSE_FROM_MAIN = f"{_HEADER_PREFIX}-RESPONSE-FROM-MAIN"
 
 
 async def _fetch_bloom_json(assets: object) -> dict | None:
@@ -313,10 +486,6 @@ async def _load_sharded_meta(env: object) -> _ShardedBlocklistMeta | None:
         return None
 
 
-_shard_pool_live: int = 0
-_shard_compacted: bool = False
-
-
 def _compact_shard_pool() -> None:
     """Compact the shard pool by moving all active entries to the front."""
     global _shard_pool_used
@@ -420,22 +589,6 @@ async def _check_sharded_blocklist(
     return blocked, cache_hit
 
 
-def _with_provider_id(provider: Provider) -> dict:
-    """
-    Return a copy of provider with provider_id set to its URL.
-
-    Parameters:
-    provider (Provider): Provider config dict.
-
-    Returns:
-    dict: Provider dict with provider_id added.
-    """
-    return {**provider, "provider_id": provider["url"]}
-
-
-_SECRET_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
-
-
 def _resolve_secrets(data: object, env: object) -> object:
     """
     Recursively replace ${SECRET_NAME} placeholders with values from env.
@@ -447,6 +600,7 @@ def _resolve_secrets(data: object, env: object) -> object:
     Returns:
     object: Data with all placeholders replaced.
     """
+    secret_re = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
     missing: list[str] = []
 
     def _resolve(value: object) -> object:
@@ -474,7 +628,7 @@ def _resolve_secrets(data: object, env: object) -> object:
                     return match.group(0)
                 return str(secret)
 
-            return _SECRET_RE.sub(_replacer, value)
+            return secret_re.sub(_replacer, value)
         if isinstance(value, dict):
             return {k: _resolve(v) for k, v in value.items()}
         if isinstance(value, list):
@@ -494,7 +648,7 @@ def _resolve_providers(providers: list[Provider], env: object) -> list[dict]:
     Resolve secret placeholders in providers and update provider_id.
 
     Parameters:
-    providers (list[Provider]): List of provider dicts.
+    providers (list[dict]): List of provider dicts.
     env (object): Worker environment with secrets.
 
     Returns:
@@ -506,50 +660,6 @@ def _resolve_providers(providers: list[Provider], env: object) -> list[dict]:
         provider["provider_id"] = provider["url"]
 
     return resolved
-
-
-def _build_provider_lists() -> dict[str, list[dict]]:
-    """
-    Build per-endpoint provider lists from config.
-
-    Returns:
-    dict[str, list[dict]]: Endpoint paths mapped to provider lists.
-    """
-    result: dict[str, list[dict]] = {}
-    cfg: EndpointConfig
-    for path, cfg in config.ENDPOINTS.items():
-        main: dict = _with_provider_id({**cfg["main_provider"], "main": True})
-
-        additional: list[dict] = [
-            _with_provider_id({**p, "main": False})
-            for p in cfg.get("additional_providers", [])
-        ]
-
-        result[path] = [main, *additional]
-
-    return result
-
-
-_PROVIDER_LISTS = _build_provider_lists()
-
-_BYPASS_PROVIDER_LIST = (
-    [_with_provider_id({**config.BYPASS_PROVIDER, "main": True})]
-    if config.ALLOWED_DOMAINS
-    else []
-)
-
-_resolved_config_cache: "_ResolvedConfig | None" = None
-
-
-class _ResolvedConfig(NamedTuple):
-    """Runtime configuration with all ${SECRET} placeholders resolved."""
-
-    health_endpoint: str | None
-    config_endpoint: str | None
-    loki_url: str
-    provider_lists: dict[str, list[dict]]
-    bypass_provider_list: list[dict]
-    full_config: dict
 
 
 def _resolve_config(env: object) -> _ResolvedConfig:
@@ -567,20 +677,11 @@ def _resolve_config(env: object) -> _ResolvedConfig:
     if _resolved_config_cache is not None:
         return _resolved_config_cache
 
-    health: str | None = (
-        _resolve_secrets(data=config.HEALTH_ENDPOINT, env=env)
-        if config.HEALTH_ENDPOINT
-        else None
-    )
-    config_ep: str | None = (
-        _resolve_secrets(data=config.CONFIG_ENDPOINT, env=env)
-        if config.CONFIG_ENDPOINT
-        else None
-    )
+    raw_prefix: str = getattr(config, "ENDPOINT_PREFIX", "/")
+    prefix: str = _resolve_secrets(data=raw_prefix, env=env).rstrip("/")
+
     try:
-        loki_url: str = (
-            _resolve_secrets(data=config.LOKI_URL, env=env) if config.LOKI_URL else ""
-        )
+        loki_url: str = _resolve_secrets(data=_LOKI_URL, env=env) if _LOKI_URL else ""
     except ValueError as e:
         logger.warning(
             "Loki logging disabled: failed to resolve LOKI_URL secret(s): %s",
@@ -590,7 +691,7 @@ def _resolve_config(env: object) -> _ResolvedConfig:
         loki_url: str = ""
 
     provider_lists: dict[str, list[dict]] = {
-        _resolve_secrets(data=path, env=env): _resolve_providers(
+        prefix + _resolve_secrets(data=path, env=env): _resolve_providers(
             providers=providers,
             env=env,
         )
@@ -598,13 +699,27 @@ def _resolve_config(env: object) -> _ResolvedConfig:
     }
 
     full_config: dict = _resolve_secrets(
-        data={name: getattr(config, name) for name, _ in _CONFIG_TYPE_RULES},
+        data={
+            "ENDPOINT_PREFIX": raw_prefix,
+            "DEBUG": _DEBUG,
+            "TIMEOUT_MS": _TIMEOUT_MS,
+            "LOKI_TIMEOUT_MS": _LOKI_TIMEOUT_MS,
+            "RETRY_MAX_ATTEMPTS": _RETRY_MAX_ATTEMPTS,
+            "CACHE_DNS": _CACHE_DNS,
+            "BLOCKLIST_ENABLED": _BLOCKLIST_ENABLED,
+            "LOKI_URL": _LOKI_URL,
+            "REBIND_PROTECTION": _REBIND_PROTECTION,
+            "ECS_TRUNCATION": _ECS_TRUNCATION,
+            "BLOCKED_DOMAINS": _BLOCKED_DOMAINS,
+            "ALLOWED_DOMAINS": _ALLOWED_DOMAINS,
+            "BYPASS_PROVIDER": _BYPASS_PROVIDER,
+            "ENDPOINTS": _ENDPOINTS,
+        },
         env=env,
     )
 
     resolved: _ResolvedConfig = _ResolvedConfig(
-        health_endpoint=health,
-        config_endpoint=config_ep,
+        prefix=prefix,
         loki_url=loki_url,
         provider_lists=provider_lists,
         bypass_provider_list=_resolve_providers(
@@ -614,70 +729,10 @@ def _resolve_config(env: object) -> _ResolvedConfig:
         full_config=full_config,
     )
 
-    if loki_url or not config.LOKI_URL:
+    if loki_url or not _LOKI_URL:
         _resolved_config_cache = resolved
 
     return resolved
-
-
-class Default(WorkerEntrypoint):
-    """Cloudflare Worker entrypoint for DNS-over-HTTPS requests."""
-
-    async def fetch(self, request: object) -> Response:
-        """
-        Top-level request handler that catches all unhandled exceptions.
-
-        Parameters:
-        request (object): Incoming HTTP request.
-
-        Returns:
-        Response: HTTP response.
-        """
-        try:
-            return await self._handle(request)
-        except Exception:
-            logger.exception("Unhandled exception in fetch")
-            return Response("Internal server error", status=500)
-
-    async def _handle(self, request: object) -> Response:
-        """
-        Route the request to the health, config, or DoH handler.
-
-        Parameters:
-        request (object): Incoming HTTP request.
-
-        Returns:
-        Response: HTTP response.
-        """
-        parsed_url: urllib.parse.ParseResult = urllib.parse.urlparse(str(request.url))
-        pathname: str = parsed_url.path
-
-        try:
-            cfg: _ResolvedConfig = _resolve_config(self.env)
-        except ValueError as e:
-            logger.exception("Configuration error: %s", e)
-            return Response("Internal server error", status=500)
-
-        if cfg.health_endpoint and pathname == cfg.health_endpoint:
-            return _handle_health()
-
-        if cfg.config_endpoint and pathname == cfg.config_endpoint:
-            return _handle_config(request=request, env=self.env, cfg=cfg)
-
-        doh_providers: list[dict] | None = cfg.provider_lists.get(pathname)
-
-        if doh_providers is None:
-            return Response("", status=404)
-
-        return await _handle_request(
-            request=request,
-            endpoint=pathname,
-            doh_providers=doh_providers,
-            cfg=cfg,
-            env=self.env,
-            ctx=self.ctx,
-            parsed_url=parsed_url,
-        )
 
 
 def _handle_health() -> Response:
@@ -748,8 +803,8 @@ def _handle_config(request: object, env: object, cfg: _ResolvedConfig) -> Respon
         "config": cfg.full_config,
         "stats": {
             "endpoints": len(cfg.provider_lists),
-            "allowed_domains": len(config.ALLOWED_DOMAINS),
-            "blocked_domains": len(config.BLOCKED_DOMAINS),
+            "allowed_domains": len(_ALLOWED_DOMAINS),
+            "blocked_domains": len(_BLOCKED_DOMAINS),
             "blocklist": bl_count,
             "blocklist_urls": bl_urls,
             "blocklist_fp_rate": bl_fp_rate,
@@ -785,26 +840,6 @@ def _json_default(value: object) -> list:
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
-_HEADER_PREFIX = "CLOUDFLARE-DOH-WORKER"
-_HEADER_RESPONSE_FROM = f"{_HEADER_PREFIX}-RESPONSE-FROM"
-_HEADER_RESPONSE_CODES = f"{_HEADER_PREFIX}-RESPONSE-CODES"
-_HEADER_POSSIBLY_BLOCKED = f"{_HEADER_PREFIX}-POSSIBLY-BLOCKED-PROVIDERS"
-_HEADER_BLOCKED = f"{_HEADER_PREFIX}-BLOCKED-PROVIDERS"
-_HEADER_TIMED_OUT = f"{_HEADER_PREFIX}-TIMED-OUT-PROVIDERS"
-_HEADER_CONN_ERROR = f"{_HEADER_PREFIX}-CONNECTION-ERROR-PROVIDERS"
-_HEADER_ALLOWED = f"{_HEADER_PREFIX}-CONFIG-ALLOWED"
-_HEADER_CONFIG_BLOCKED = f"{_HEADER_PREFIX}-CONFIG-BLOCKED"
-_HEADER_REBIND_PROTECTED = f"{_HEADER_PREFIX}-REBIND-PROTECTED"
-_HEADER_ECS_TRUNCATED = f"{_HEADER_PREFIX}-ECS-TRUNCATED"
-_HEADER_PROVIDERS_QUERIED = f"{_HEADER_PREFIX}-PROVIDERS-QUERIED"
-_HEADER_PROVIDERS_FAILED = f"{_HEADER_PREFIX}-PROVIDERS-FAILED"
-_HEADER_PROVIDERS_TIMED_OUT = f"{_HEADER_PREFIX}-PROVIDERS-TIMED-OUT"
-_HEADER_PROVIDERS_CONN_ERROR = f"{_HEADER_PREFIX}-PROVIDERS-CONNECTION-ERROR"
-_HEADER_PROVIDERS_FAILED_STATUS = f"{_HEADER_PREFIX}-PROVIDERS-FAILED-STATUS-CODE"
-_HEADER_PROVIDERS_RETRIED = f"{_HEADER_PREFIX}-PROVIDERS-RETRIED"
-_HEADER_RESPONSE_FROM_MAIN = f"{_HEADER_PREFIX}-RESPONSE-FROM-MAIN"
-
-
 def _build_response_headers(
     content_type: str,
     response_from: str,
@@ -833,10 +868,10 @@ def _build_response_headers(
     content_type (str): Content-Type header value.
     response_from (str): Winning provider ID.
     response_codes (list[str] | None): Per-provider status codes.
-    possibly_blocked (list[str] | None): Providers that returned NXDOMAIN.
-    blocked (list[str] | None): Providers that returned a blocked response.
-    timed_out (list[str] | None): Providers that timed out.
-    connection_error (list[str] | None): Providers with connection errors.
+    possibly_blocked (list[str] | None): dicts that returned NXDOMAIN.
+    blocked (list[str] | None): dicts that returned a blocked response.
+    timed_out (list[str] | None): dicts that timed out.
+    connection_error (list[str] | None): dicts with connection errors.
     config_allowed (bool): Domain matched the allowlist.
     config_blocked (bool): Domain matched the blocklist.
     rebind (bool): Rebind protection was triggered.
@@ -881,7 +916,7 @@ def _build_response_headers(
     if config_allowed:
         headers[_HEADER_ALLOWED] = "1"
 
-    if config.DEBUG:
+    if _DEBUG:
         headers.update(
             {
                 _HEADER_RESPONSE_FROM: response_from,
@@ -914,18 +949,6 @@ def _negotiate_accept(raw: str) -> str:
             return media_type
 
     return ""
-
-
-class _RejectError(Exception):
-    """Raised to short-circuit request parsing with an error response."""
-
-    def __init__(self, message: str, status: int = 406) -> None:
-        """
-        Parameters:
-        message (str): Error message.
-        status (int): HTTP status code.
-        """
-        self.response = Response(message, status=status)
 
 
 async def _parse_dns_request(
@@ -1100,7 +1123,7 @@ def _select_winner(results: list[ProviderResult]) -> ProviderResult | None:
     if winner is None:
         return None
 
-    if winner.rebind and config.REBIND_PROTECTION:
+    if winner.rebind and _REBIND_PROTECTION:
         replacement: ProviderResult | None = first_non_rebind_main or first_non_rebind
         if replacement:
             winner = replacement
@@ -1131,7 +1154,7 @@ def _make_rebind_blocked_response(
     Response | None: Synthetic NXDOMAIN, or None if rebind protection didn't fire.
     """
     if not (
-        config.REBIND_PROTECTION
+        _REBIND_PROTECTION
         and any(r.rebind for r in results)
         and all(r.failed or r.rebind for r in results)
     ):
@@ -1230,7 +1253,7 @@ def _build_winner_response(
     if min_ttl is not None:
         response_headers["Cache-Control"] = f"max-age={min_ttl}"
 
-    if config.DEBUG:
+    if _DEBUG:
         logger.debug("endpoint: '%s'", endpoint)
         for key, value in response_headers.items():
             if key != "content-type":
@@ -1308,7 +1331,7 @@ async def _handle_request(
     )
 
     cache_key: str | None = None
-    if config.CACHE_DNS:
+    if _CACHE_DNS:
         cache_key = _build_cache_key(
             endpoint=endpoint,
             body_bytes=body_bytes,
@@ -1326,7 +1349,7 @@ async def _handle_request(
 
     was_cached: bool = _blocklist_cache is not None or _sharded_meta is not None
 
-    if not name or config_allowed or config_blocked or not config.BLOCKLIST_ENABLED:
+    if not name or config_allowed or config_blocked or not _BLOCKLIST_ENABLED:
         blocklist: BlocklistCache = _EMPTY_BLOCKLIST
         sharded: bool = False
     else:
@@ -1386,7 +1409,7 @@ async def _handle_request(
                 final_response = cached_response
 
         if final_response is None:
-            safety_timeout_ms: int = config.TIMEOUT_MS + 2000
+            safety_timeout_ms: int = _TIMEOUT_MS + 2000
 
             try:
                 results = await send_doh_requests_fanout(

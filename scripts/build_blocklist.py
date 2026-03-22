@@ -355,9 +355,11 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    from config import BLOCKLIST_ENABLED
+    import config
 
-    if not BLOCKLIST_ENABLED:
+    blocklist_enabled: bool = getattr(config, "BLOCKLIST_ENABLED", True)
+
+    if not blocklist_enabled:
         _console.print(
             "[yellow]BLOCKLIST_ENABLED is False, cleaning up blocklist files.[/yellow]",
         )
@@ -366,7 +368,7 @@ def main() -> None:
         urls = load_urls()
 
     if not urls:
-        if BLOCKLIST_ENABLED:
+        if blocklist_enabled:
             _console.print(
                 "[yellow]No URLs configured in blocklist_sources.yaml, cleaning up blocklist files.[/yellow]",
             )

@@ -13,16 +13,6 @@ from dns_utils import Question
 
 logger = logging.getLogger(__name__)
 
-_CACHE_KEY_BASE = "https://doh-cache.internal"
-_HEADER_CACHE = "CLOUDFLARE-DOH-WORKER-CACHE"
-
-_PASSTHROUGH_HEADERS = (
-    "CLOUDFLARE-DOH-WORKER-CONFIG-ALLOWED",
-    "CLOUDFLARE-DOH-WORKER-CONFIG-BLOCKED",
-    "CLOUDFLARE-DOH-WORKER-ECS-TRUNCATED",
-    "CLOUDFLARE-DOH-WORKER-REBIND-PROTECTED",
-)
-
 
 def _to_js_body(body: bytes | bytearray | str) -> object:
     """
@@ -61,16 +51,18 @@ def _build_cache_key(
     Returns:
     str | None: Cache URL, or None if one cannot be built.
     """
+    cache_key_base = "https://doh-cache.internal"
+
     if body_bytes is not None:
         encoded: str = base64.urlsafe_b64encode(body_bytes).rstrip(b"=").decode("ascii")
-        return f"{_CACHE_KEY_BASE}{endpoint}?dns={encoded}"
+        return f"{cache_key_base}{endpoint}?dns={encoded}"
 
     if question.name:
         params: dict[str, str] = {"name": question.name}
         if question.type:
             params["type"] = question.type
 
-        return f"{_CACHE_KEY_BASE}{endpoint}?" + urllib.parse.urlencode(params)
+        return f"{cache_key_base}{endpoint}?" + urllib.parse.urlencode(params)
 
     return None
 
@@ -102,12 +94,19 @@ async def _try_cache_get(cache_key: str) -> Response | None:
             cached.headers.get("content-type") or "application/dns-message",
         )
 
+        passthrough_headers = (
+            "CLOUDFLARE-DOH-WORKER-CONFIG-ALLOWED",
+            "CLOUDFLARE-DOH-WORKER-CONFIG-BLOCKED",
+            "CLOUDFLARE-DOH-WORKER-ECS-TRUNCATED",
+            "CLOUDFLARE-DOH-WORKER-REBIND-PROTECTED",
+        )
+
         response_headers: dict[str, str] = {
             "content-type": content_type,
-            _HEADER_CACHE: "HIT",
+            "CLOUDFLARE-DOH-WORKER-CACHE": "HIT",
         }
 
-        for header in _PASSTHROUGH_HEADERS:
+        for header in passthrough_headers:
             value: str | None = cached.headers.get(header)
             if value:
                 response_headers[header] = str(value)

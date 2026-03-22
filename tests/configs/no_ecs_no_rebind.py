@@ -3,42 +3,20 @@
 
 """Test configuration with ECS truncation and rebind protection disabled."""
 
-from config_types import EcsConfig, EndpointConfig, Provider
+DEBUG = True
 
-DEBUG: bool = True
+REBIND_PROTECTION = False
 
-CONFIG_ENDPOINT: str = "/config"
+BLOCKED_DOMAINS = ["example.com"]
 
-HEALTH_ENDPOINT: str = "/health"
+ALLOWED_DOMAINS = ["malware.wicar.org"]
 
-TIMEOUT_MS: int = 5000
-
-ECS_TRUNCATION: EcsConfig = {
-    "enabled": False,
-}
-
-REBIND_PROTECTION: bool = False
-
-BLOCKED_DOMAINS: list = ["example.com"]
-
-ALLOWED_DOMAINS: list = ["malware.wicar.org"]
-
-BYPASS_PROVIDER: Provider = {
+BYPASS_PROVIDER = {
     "url": "https://cloudflare-dns.com/dns-query",
     "dns_json": True,
 }
 
-LOKI_URL: str = ""
-
-LOKI_TIMEOUT_MS: int = 5000
-
-RETRY_MAX_ATTEMPTS: int = 2
-
-CACHE_DNS: bool = True
-
-BLOCKLIST_ENABLED: bool = True
-
-ENDPOINTS: dict[str, EndpointConfig] = {
+ENDPOINTS = {
     "/my-device": {
         "main_provider": {
             "url": "https://cloudflare-dns.com/dns-query",

@@ -13,9 +13,7 @@ Copy this into src/config.py and adjust it for your environment.
 See the README for full documentation of all available options.
 """
 
-from config_types import EcsConfig, EndpointConfig, Provider
-
-_ADDITIONAL_PROVIDERS: list[Provider] = [
+_ADDITIONAL_PROVIDERS = [
     {
         "url": "https://dns11.quad9.net/dns-query",
     },
@@ -25,43 +23,25 @@ _ADDITIONAL_PROVIDERS: list[Provider] = [
     },
 ]
 
-_ENDPOINT_PREFIX = "/${ENDPOINT_SECRET}"
+ENDPOINT_PREFIX = "/${ENDPOINT_SECRET}"
 
-DEBUG: bool = False
-
-CONFIG_ENDPOINT: str = f"{_ENDPOINT_PREFIX}/config"
-
-HEALTH_ENDPOINT: str = f"{_ENDPOINT_PREFIX}/health"
-
-TIMEOUT_MS: int = 5000
-
-ECS_TRUNCATION: EcsConfig = {
+ECS_TRUNCATION = {
     "enabled": True,
 }
 
-REBIND_PROTECTION: bool = True
+BLOCKED_DOMAINS = []
 
-BLOCKED_DOMAINS: list = []
+ALLOWED_DOMAINS = []
 
-ALLOWED_DOMAINS: list = []
-
-BYPASS_PROVIDER: Provider = {
+BYPASS_PROVIDER = {
     "url": "https://cloudflare-dns.com/dns-query",
     "dns_json": True,
 }
 
-LOKI_URL: str = "${LOKI_URL}"
+LOKI_URL = "${LOKI_URL}"
 
-LOKI_TIMEOUT_MS: int = 5000
-
-RETRY_MAX_ATTEMPTS: int = 2
-
-CACHE_DNS: bool = True
-
-BLOCKLIST_ENABLED: bool = True
-
-ENDPOINTS: dict[str, EndpointConfig] = {
-    f"{_ENDPOINT_PREFIX}/home/firewall": {
+ENDPOINTS = {
+    "/home/firewall": {
         "main_provider": {
             "url": "https://dns.nextdns.io/${NEXTDNS_HOME_ID}",
             "headers": {
@@ -70,7 +50,7 @@ ENDPOINTS: dict[str, EndpointConfig] = {
         },
         "additional_providers": _ADDITIONAL_PROVIDERS,
     },
-    f"{_ENDPOINT_PREFIX}/trevor/iphone": {
+    "/trevor/iphone": {
         "main_provider": {
             "url": "https://apple.dns.nextdns.io/${NEXTDNS_TREVOR_ID}",
             "headers": {
@@ -80,7 +60,7 @@ ENDPOINTS: dict[str, EndpointConfig] = {
         },
         "additional_providers": _ADDITIONAL_PROVIDERS,
     },
-    f"{_ENDPOINT_PREFIX}/trevor/macbookpro": {
+    "/trevor/macbookpro": {
         "main_provider": {
             "url": "https://apple.dns.nextdns.io/${NEXTDNS_TREVOR_ID}",
             "headers": {

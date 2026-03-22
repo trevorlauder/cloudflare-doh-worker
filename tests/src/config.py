@@ -3,48 +3,28 @@
 
 """Test configuration for the integration test suite."""
 
-from config_types import EcsConfig, EndpointConfig, Provider
+TIMEOUT_MS = 8000
 
-DEBUG: bool = False
-
-CONFIG_ENDPOINT: str = "/config"
-
-HEALTH_ENDPOINT: str = "/health"
-
-TIMEOUT_MS: int = 8000
-
-ECS_TRUNCATION: EcsConfig = {
+ECS_TRUNCATION = {
     "enabled": True,
     "ipv4_prefix": 20,
     "ipv6_prefix": 48,
 }
 
-REBIND_PROTECTION: bool = True
-
-BLOCKED_DOMAINS: list = [
+BLOCKED_DOMAINS = [
     "example.com",
 ]
 
-ALLOWED_DOMAINS: list = [
+ALLOWED_DOMAINS = [
     "malware.wicar.org",
 ]
 
-BYPASS_PROVIDER: Provider = {
+BYPASS_PROVIDER = {
     "url": "https://cloudflare-dns.com/dns-query",
     "dns_json": True,
 }
 
-LOKI_URL: str = ""
-
-LOKI_TIMEOUT_MS: int = 5000
-
-RETRY_MAX_ATTEMPTS: int = 2
-
-CACHE_DNS: bool = True
-
-BLOCKLIST_ENABLED: bool = True
-
-ENDPOINTS: dict[str, EndpointConfig] = {
+ENDPOINTS = {
     "/my/doh/path": {
         "main_provider": {
             "url": "https://cloudflare-dns.com/dns-query",
