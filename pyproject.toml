@@ -4,6 +4,7 @@ version = "2.0.0-rc1"
 requires-python = ">=3.13"
 dependencies = [
   "dnspython",
+  "typedload",
 ]
 
 [dependency-groups]

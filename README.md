@@ -21,7 +21,7 @@ This started as [a workaround](https://www.lauder.family/blog/2021/09/25/Avoidin
 - EDNS Client Subnet prefix truncation for privacy
 - DNS rebind protection (blocks responses resolving to private IPs)
 - `${SECRET_NAME}` placeholders in config, resolved from Cloudflare Worker secrets at request time
-- Health check and live config inspection endpoints (`CONFIG_ENDPOINT` requires `ADMIN_TOKEN`)
+- Health check and live config inspection endpoints (config endpoint requires `ADMIN_TOKEN`)
 - Debug mode adds diagnostic response headers
 - Automatic retry on 5xx responses from upstream providers
 - Optional Grafana Loki logging
@@ -57,7 +57,7 @@ Use this button to deploy this worker to your Cloudflare account.
 
   | Secret          | Required when              |
   | --------------- | -------------------------- |
-  | `ADMIN_TOKEN`   | `CONFIG_ENDPOINT` is set   |
+  | `ADMIN_TOKEN`   | Using the config endpoint  |
   | `LOKI_URL`      | Using Grafana Loki logging |
   | `LOKI_USERNAME` | Using Grafana Loki logging |
   | `LOKI_PASSWORD` | Using Grafana Loki logging |
@@ -104,7 +104,7 @@ Each provider dict accepts `url`, and optionally `headers` and `dns_json`. Add `
 
 If your repo is public, use `${SECRET_NAME}` placeholders for sensitive values like endpoint paths and provider paths. Placeholders are resolved from Cloudflare Worker secrets on the first request and cached for the lifetime of the Worker instance. Changes to secrets take effect when the Worker is redeployed or replaced. Setting your endpoint paths to include random strings keeps them from being discovered.
 
-See [`examples/config.py`](examples/config.py) for a real-world example configuration, and [`src/config.py`](src/config.py) for all options with their defaults.
+`ENDPOINTS` is the only required option. Everything else has a default and can be omitted. See [`examples/config.py`](examples/config.py) for a real-world example.
 
 <details>
 <summary>All configuration options</summary>
@@ -116,11 +116,10 @@ See [`examples/config.py`](examples/config.py) for a real-world example configur
 | `BLOCKLIST_ENABLED`  | `True`                                                              | Enable the community block list. Set to `False` to disable all bloom filter checks                                                                      |
 | `BYPASS_PROVIDER`    | `{"url": "https://cloudflare-dns.com/dns-query", "dns_json": True}` | Non-filtering provider used for allowed domains                                                                                                         |
 | `CACHE_DNS`          | `True`                                                              | Cache DNS responses in the Cloudflare Cache API using the response TTL                                                                                  |
-| `CONFIG_ENDPOINT`    | `None`                                                              | Path for the authenticated config endpoint (requires `ADMIN_TOKEN` secret)                                                                              |
 | `DEBUG`              | `False`                                                             | Enable verbose logging and diagnostic response headers                                                                                                  |
 | `ECS_TRUNCATION`     | `{"enabled": False}`                                                | Truncate EDNS Client Subnet prefixes for privacy. Optional `ipv4_prefix` (default `24`) and `ipv6_prefix` (default `64`) control the truncation lengths |
-| `ENDPOINTS`          | `{}`                                                                | Map of URL paths to endpoint configs. Each entry requires a `main_provider` and optionally `additional_providers`                                       |
-| `HEALTH_ENDPOINT`    | `None`                                                              | Path for the health-check endpoint                                                                                                                      |
+| `ENDPOINT_PREFIX`    | `"/"`                                                               | Prefix prepended to all endpoint paths, including `/health` and `/config`. Supports `${SECRET}` placeholders                                            |
+| `ENDPOINTS`          | **required**                                                        | Map of URL paths to endpoint configs. Each entry requires a `main_provider` and optionally `additional_providers`                                       |
 | `LOKI_TIMEOUT_MS`    | `5000`                                                              | Loki push timeout in milliseconds                                                                                                                       |
 | `LOKI_URL`           | `""`                                                                | Grafana Loki push endpoint (also requires `LOKI_USERNAME` and `LOKI_PASSWORD` secrets)                                                                  |
 | `REBIND_PROTECTION`  | `True`                                                              | Block responses that resolve to private/internal IPs                                                                                                    |
@@ -188,7 +187,7 @@ The filter automatically resizes to maintain the target false-positive rate as y
 
 **Tip:** After changing your blocklist sources or the `--fp-rate`, always re-run `build_blocklist.py` and check the output stats to confirm the filter size and expected false-positive rate.
 
-**Observing the false-positive rate at runtime:** The `/config` endpoint (requires `ADMIN_TOKEN`) includes a `blocklist_fp_rate` field in its `stats` object showing the theoretical false-positive rate of the loaded filter. The rate is also logged at `INFO` level each time a Worker instance loads the blocklist.
+**Observing the false-positive rate at runtime:** The config endpoint (requires `ADMIN_TOKEN`) includes a `blocklist_fp_rate` field in its `stats` object showing the theoretical false-positive rate of the loaded filter. The rate is also logged at `INFO` level each time a Worker instance loads the blocklist.
 
 ### GitHub Actions (automatic)
 

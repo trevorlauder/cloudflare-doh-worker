@@ -7,7 +7,7 @@ import base64
 import json
 import logging
 
-from config import LOKI_TIMEOUT_MS
+import config
 from dns_utils import Question
 
 logger = logging.getLogger(__name__)
@@ -158,7 +158,7 @@ def build_loki_fetch_promise(
             "method": "POST",
             "headers": headers,
             "body": json.dumps(loki_payload, separators=(",", ":")),
-            "signal": AbortSignal.timeout(LOKI_TIMEOUT_MS),
+            "signal": AbortSignal.timeout(getattr(config, "LOKI_TIMEOUT_MS", 5000)),
         }
 
         return fetch(loki_url, **fetch_options)

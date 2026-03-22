@@ -24,14 +24,15 @@ import config
 
 logger = logging.getLogger(__name__)
 
+_ECS_TRUNCATION: dict = getattr(config, "ECS_TRUNCATION", {"enabled": False})
+_REBIND_PROTECTION: bool = getattr(config, "REBIND_PROTECTION", True)
+_TIMEOUT_MS: int = getattr(config, "TIMEOUT_MS", 5000)
+_RETRY_MAX_ATTEMPTS: int = getattr(config, "RETRY_MAX_ATTEMPTS", 2)
+
 
 SUPPORTED_ACCEPT_HEADERS = frozenset(
     {"application/dns-json", "application/dns-message"},
 )
-
-_LCG_MUL = 47026247687942121848144207491837418733
-_LCG_MOD = 1 << 128
-_LCG_MASK = _LCG_MOD - 1
 
 
 def _bloom_hash(domain: str) -> int:
@@ -50,9 +51,11 @@ def _bloom_contains(
     hash_value: int,
 ) -> bool:
     """Return True if domain is (possibly) in the bloom filter bit array."""
+    lcg_mul = 47026247687942121848144207491837418733
+    lcg_mask = (1 << 128) - 1
     state: int = hash_value
     for _ in range(num_hashes):
-        state = (state * _LCG_MUL + 1) & _LCG_MASK
+        state = (state * lcg_mul + 1) & lcg_mask
         bit: int = ((state >> 32) & 0xFFFFFFFFFFFFFFFF) % num_bits
         byte_index: int = bit >> 3
         if not (bit_array[byte_index] >> (bit & 7)) & 1:
@@ -134,7 +137,7 @@ def truncate_ecs(
     Returns:
     tuple[bytes, str]: (truncated wire, description string)
     """
-    if not (config.ECS_TRUNCATION and config.ECS_TRUNCATION.get("enabled")):
+    if not (_ECS_TRUNCATION and _ECS_TRUNCATION.get("enabled")):
         return data, ""
 
     if len(data) >= 12 and int.from_bytes(data[10:12], "big") == 0:
@@ -149,8 +152,8 @@ def truncate_ecs(
     if msg.edns < 0:
         return data, ""
 
-    ipv4_prefix: int = config.ECS_TRUNCATION.get("ipv4_prefix", 24)
-    ipv6_prefix: int = config.ECS_TRUNCATION.get("ipv6_prefix", 56)
+    ipv4_prefix: int = _ECS_TRUNCATION.get("ipv4_prefix", 24)
+    ipv6_prefix: int = _ECS_TRUNCATION.get("ipv6_prefix", 56)
 
     new_options: list = []
     descriptions: list[str] = []
@@ -443,7 +446,7 @@ def _classify_answers(
     blocked: bool = any(addr in _BLOCKED_ADDRS for addr in addresses)
     result.blocked = blocked
     result.possibly_blocked = status == dns.rcode.NXDOMAIN
-    if config.REBIND_PROTECTION and not blocked:
+    if _REBIND_PROTECTION and not blocked:
         result.rebind = has_private_answers(addresses)
 
 
@@ -680,7 +683,7 @@ async def send_doh_requests_fanout(
     query (str): Query string for GET JSON requests.
     safety_timeout_ms (int): Overall safety timeout in milliseconds.
         When positive, all fetches use this as their AbortSignal timeout
-        instead of config.TIMEOUT_MS, enforcing a hard deadline across
+        instead of _TIMEOUT_MS, enforcing a hard deadline across
         the entire fanout including retries.
 
     Returns:
@@ -695,7 +698,7 @@ async def send_doh_requests_fanout(
     if not doh_providers:
         return []
 
-    timeout_ms: int = safety_timeout_ms if safety_timeout_ms > 0 else config.TIMEOUT_MS
+    timeout_ms: int = safety_timeout_ms if safety_timeout_ms > 0 else _TIMEOUT_MS
     abort_signal: object = AbortSignal.timeout(timeout_ms)
     is_json: bool = accept == "application/dns-json"
     is_json_query: bool = is_json and body_bytes is None
@@ -726,7 +729,7 @@ async def send_doh_requests_fanout(
 
     done: list[ProviderResult] = []
 
-    for attempt in range(1 + config.RETRY_MAX_ATTEMPTS):
+    for attempt in range(1 + _RETRY_MAX_ATTEMPTS):
         responses: list = await asyncio.gather(
             *[
                 workers_fetch(item.request.url, **item.request.options)
@@ -756,7 +759,7 @@ async def send_doh_requests_fanout(
 
             status: int = resp.status
 
-            if status in _RETRY_STATUS_CODES and attempt < config.RETRY_MAX_ATTEMPTS:
+            if status in _RETRY_STATUS_CODES and attempt < _RETRY_MAX_ATTEMPTS:
                 next_pending.append(item)
                 continue
 
@@ -805,7 +808,7 @@ async def send_doh_requests_fanout(
             exception=Exception("retries exhausted"),
         )
 
-        result.retry_count = config.RETRY_MAX_ATTEMPTS
+        result.retry_count = _RETRY_MAX_ATTEMPTS
         done.append(result)
 
     return done
