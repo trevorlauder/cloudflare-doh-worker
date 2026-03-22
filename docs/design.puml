@@ -21,15 +21,32 @@ else Domain in BLOCKED_DOMAINS
   "Cloudflare Worker" -> "DNS Client": NXDOMAIN (synthetic)
 else Domain not in ALLOWED_DOMAINS or BLOCKED_DOMAINS
 
-opt KV blocklist enabled (cold start)
-  "Cloudflare Worker" -> "Cloudflare KV": getWithMetadata blocklist:bloom
-  "Cloudflare Worker" <- "Cloudflare KV": Bloom filter + metadata (bloom params)
-  note over "Cloudflare Worker": Cache bloom filter in memory
+opt Blocklist enabled (cold start)
+  alt Sharded bloom filter (>25 MB)
+    "Cloudflare Worker" -> "Workers Assets": fetch bloom.json
+    "Cloudflare Worker" <- "Workers Assets": Shard metadata (bloom params, shard count)
+    note over "Cloudflare Worker": Cache shard metadata in memory
+  else Single bloom filter
+    "Cloudflare Worker" -> "Workers Assets": fetch bloom.json + bloom.bin
+    "Cloudflare Worker" <- "Workers Assets": Bloom filter + metadata
+    note over "Cloudflare Worker": Cache bloom filter in memory
+  end
 end
 
-note over "Cloudflare Worker": Check KV blocklist (bloom filter)\n\nIf loading in progress:\n  block policy = 503 Retry-After\n  bypass policy = skip check
+alt Sharded bloom filter
+  note over "Cloudflare Worker": Hash domain to determine shard index
+  alt Shard in LRU cache (50 MB pool)
+    note over "Cloudflare Worker": Check bloom filter from cached shard
+  else Shard not cached
+    "Cloudflare Worker" -> "Workers Assets": fetch shard_N.bin
+    "Cloudflare Worker" <- "Workers Assets": Shard bit array
+    note over "Cloudflare Worker": Cache shard in LRU pool,\ncheck bloom filter
+  end
+else Single bloom filter
+  note over "Cloudflare Worker": Check bloom filter (in-memory)
+end
 
-alt Domain in KV blocklist
+alt Domain in blocklist
   "Cloudflare Worker" -[#gray]-> "Grafana Loki": POST log entry (async, if configured)
   "Cloudflare Worker" -> "DNS Client": NXDOMAIN (synthetic)
 else Domain not blocked
