@@ -5662,7 +5662,7 @@
               "percentChangeColorMode": "standard",
               "reduceOptions": {
                 "calcs": [
-                  "max"
+                  "sum"
                 ],
                 "fields": "",
                 "values": false
