@@ -175,7 +175,7 @@ async def _fetch_bloom_json(assets: object) -> dict | None:
                 response.status,
             )
             return None
-        return json.loads(await response.text())
+        return json.loads(str(await response.text()))
     except Exception:
         logger.warning("Unexpected error fetching bloom.json", exc_info=True)
         return None
@@ -359,16 +359,16 @@ def _cache_shard(shard_index: int, shard_bytes: bytes) -> None:
     _shard_pool_live += shard_size
 
 
-async def _check_sharded_blocklist(name: str, env: object) -> tuple[bool, bool]:
+async def _check_sharded_blocklist(
+    name: str,
+    env: object,
+    meta: _ShardedBlocklistMeta,
+) -> tuple[bool, bool]:
     """Check a domain against the sharded bloom filter by fetching one shard.
 
     Returns:
     tuple[bool, bool]: (is_blocked, shard_cache_hit).
     """
-    meta: _ShardedBlocklistMeta | None = await _load_sharded_meta(env)
-    if meta is None:
-        return False, False
-
     normalized: str = name.rstrip(".").lower()
     h: int = _bloom_hash(normalized)
     shard_index: int = abs(h) % meta.shard_count
@@ -1041,7 +1041,7 @@ async def _parse_post(request: object, accept: str) -> DnsParseResult:
         raise _RejectError("POST requires Accept: application/dns-message")
 
     try:
-        raw_bytes: bytes = await request.bytes()
+        raw_bytes: bytes = bytes(await request.bytes())
     except Exception as e:
         logger.debug("Failed to read request body: %s", e)
         raise _RejectError("Failed to read request body", status=400) from None
@@ -1348,7 +1348,11 @@ async def _handle_request(
     _shard_compacted = False
     shard_cache_hit: bool = False
     if not config_blocked and name and not config_allowed and sharded:
-        config_blocked, shard_cache_hit = await _check_sharded_blocklist(name, env)
+        config_blocked, shard_cache_hit = await _check_sharded_blocklist(
+            name,
+            env,
+            meta,
+        )
 
     results: list[ProviderResult] = []
     response_from: str = "error"

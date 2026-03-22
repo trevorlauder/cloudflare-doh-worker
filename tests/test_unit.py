@@ -27,6 +27,7 @@ from worker import (
     _negotiate_accept,
     _resolve_secrets,
     _select_winner,
+    _ShardedBlocklistMeta,
     _validate_config,
     _validate_types,
 )
@@ -531,6 +532,30 @@ def _build_test_shards(
     return manifest, shard_data
 
 
+def _meta_from_manifest(manifest: dict) -> _ShardedBlocklistMeta:
+    """Build a _ShardedBlocklistMeta from a test manifest dict."""
+    shard_count = manifest["bloom_shards"]
+    shard_m = tuple(manifest["shard_m"])
+    exact_count = manifest["exact_count"]
+    bloom_k = manifest["bloom_k"]
+    avg_m = sum(shard_m) // shard_count
+
+    fp_rate = (
+        (1.0 - math.exp(-bloom_k * exact_count / (avg_m * shard_count))) ** bloom_k
+        if exact_count > 0
+        else 0.0
+    )
+
+    return _ShardedBlocklistMeta(
+        bloom_k=bloom_k,
+        shard_count=shard_count,
+        shard_m=shard_m,
+        manifest_urls=tuple(manifest["source_urls"]),
+        domain_count=exact_count,
+        fp_rate=fp_rate,
+    )
+
+
 class _MockShardedAssets:
     """ASSETS binding stub for sharded bloom filter tests."""
 
@@ -576,13 +601,17 @@ def test_check_sharded_blocklist_blocks_domain(
     _reset_shard_cache(monkeypatch)
 
     manifest, shards = _build_test_shards(["apple.ca"], shard_count=4)
+    meta = _meta_from_manifest(manifest)
     env = MagicMock()
     env.ASSETS = _MockShardedAssets(
         json_body=json.dumps(manifest),
         shards=shards,
     )
 
-    blocked, cache_hit = asyncio.run(worker._check_sharded_blocklist("apple.ca", env))
+    blocked, cache_hit = asyncio.run(
+        worker._check_sharded_blocklist("apple.ca", env, meta),
+    )
+
     assert blocked is True
     assert cache_hit is False
 
@@ -594,6 +623,7 @@ def test_check_sharded_blocklist_passes_absent_domain(
     _reset_shard_cache(monkeypatch)
 
     manifest, shards = _build_test_shards(["apple.ca"], shard_count=4)
+    meta = _meta_from_manifest(manifest)
     env = MagicMock()
     env.ASSETS = _MockShardedAssets(
         json_body=json.dumps(manifest),
@@ -601,8 +631,9 @@ def test_check_sharded_blocklist_passes_absent_domain(
     )
 
     blocked, cache_hit = asyncio.run(
-        worker._check_sharded_blocklist("safe.example.net", env),
+        worker._check_sharded_blocklist("safe.example.net", env, meta),
     )
+
     assert blocked is False
     assert cache_hit is False
 
@@ -614,6 +645,7 @@ def test_check_sharded_blocklist_missing_shard_returns_false(
     _reset_shard_cache(monkeypatch)
 
     manifest, shards = _build_test_shards(["apple.ca"], shard_count=4)
+    meta = _meta_from_manifest(manifest)
     target_shard = abs(_bloom_hash("apple.ca")) % 4
     del shards[target_shard]
 
@@ -623,7 +655,9 @@ def test_check_sharded_blocklist_missing_shard_returns_false(
         shards=shards,
     )
 
-    blocked, cache_hit = asyncio.run(worker._check_sharded_blocklist("apple.ca", env))
+    blocked, cache_hit = asyncio.run(
+        worker._check_sharded_blocklist("apple.ca", env, meta),
+    )
     assert blocked is False
     assert cache_hit is False
 
@@ -631,13 +665,12 @@ def test_check_sharded_blocklist_missing_shard_returns_false(
 def test_check_sharded_blocklist_no_assets_returns_false(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """When ASSETS binding is missing, the check returns False."""
+    """When ASSETS binding is missing, _load_sharded_meta returns None."""
     _reset_shard_cache(monkeypatch)
 
     env = MagicMock(spec=[])
-    blocked, cache_hit = asyncio.run(worker._check_sharded_blocklist("apple.ca", env))
-    assert blocked is False
-    assert cache_hit is False
+    meta = asyncio.run(worker._load_sharded_meta(env))
+    assert meta is None
 
 
 def test_bloom_contains_inserted_domain() -> None:
