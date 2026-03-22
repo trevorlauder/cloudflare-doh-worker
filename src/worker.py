@@ -314,7 +314,7 @@ async def _load_sharded_meta(env: object) -> _ShardedBlocklistMeta | None:
 
 
 _shard_pool_live: int = 0
-_shard_compactions: int = 0
+_shard_compacted: bool = False
 
 
 def _compact_shard_pool() -> None:
@@ -349,8 +349,8 @@ def _cache_shard(shard_index: int, shard_bytes: bytes) -> None:
         return
 
     if _shard_pool_used + shard_size > _SHARD_CACHE_MAX_BYTES:
-        global _shard_compactions
-        _shard_compactions += 1
+        global _shard_compacted
+        _shard_compacted = True
         _compact_shard_pool()
 
     _shard_pool[_shard_pool_used : _shard_pool_used + shard_size] = shard_bytes
@@ -1344,6 +1344,8 @@ async def _handle_request(
         name and not config_allowed and blocklist.check(name),
     )
 
+    global _shard_compacted
+    _shard_compacted = False
     shard_cache_hit: bool = False
     if not config_blocked and name and not config_allowed and sharded:
         config_blocked, shard_cache_hit = await _check_sharded_blocklist(name, env)
@@ -1475,7 +1477,7 @@ async def _handle_request(
             else 0,
             asset_loading=asset_loading,
             shard_cache_hit=shard_cache_hit,
-            shard_compactions=_shard_compactions,
+            shard_compacted=_shard_compacted,
         )
         if promise is not None:
             ctx.waitUntil(promise)

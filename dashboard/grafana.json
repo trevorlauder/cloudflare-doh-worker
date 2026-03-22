@@ -5610,7 +5610,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "max(last_over_time({source=\"cloudflare-doh-worker\"} | json shard_compactions | unwrap shard_compactions [$__auto]))",
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json shard_compacted | shard_compacted = `true` [$__auto]))",
                       "queryType": "range"
                     },
                     "version": "v0"
@@ -5623,7 +5623,7 @@
             "transformations": []
           }
         },
-        "description": "Cumulative shard pool compaction events per isolate, indicates cache churn",
+        "description": "Requests where a shard pool compaction occurred, indicates cache churn",
         "id": 63,
         "links": [],
         "title": "Shard Compactions",

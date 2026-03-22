@@ -566,7 +566,7 @@ def _reset_shard_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     worker._shard_cache.clear()
     monkeypatch.setattr(worker, "_shard_pool_used", 0)
     monkeypatch.setattr(worker, "_shard_pool_live", 0)
-    monkeypatch.setattr(worker, "_shard_compactions", 0)
+    monkeypatch.setattr(worker, "_shard_compacted", False)
 
 
 def test_check_sharded_blocklist_blocks_domain(
