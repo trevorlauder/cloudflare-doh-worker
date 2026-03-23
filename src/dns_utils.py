@@ -34,6 +34,10 @@ SUPPORTED_ACCEPT_HEADERS = frozenset(
     {"application/dns-json", "application/dns-message"},
 )
 
+_LCG_MUL = 47026247687942121848144207491837418733
+_LCG_MOD = 1 << 128
+_LCG_MASK = _LCG_MOD - 1
+
 
 def _bloom_hash(domain: str) -> int:
     """Hash function shared by build (rbloom) and worker (_bloom_contains). Must stay in sync."""
@@ -51,11 +55,9 @@ def _bloom_contains(
     hash_value: int,
 ) -> bool:
     """Return True if domain is (possibly) in the bloom filter bit array."""
-    lcg_mul = 47026247687942121848144207491837418733
-    lcg_mask = (1 << 128) - 1
     state: int = hash_value
     for _ in range(num_hashes):
-        state = (state * lcg_mul + 1) & lcg_mask
+        state = (state * _LCG_MUL + 1) & _LCG_MASK
         bit: int = ((state >> 32) & 0xFFFFFFFFFFFFFFFF) % num_bits
         byte_index: int = bit >> 3
         if not (bit_array[byte_index] >> (bit & 7)) & 1:
