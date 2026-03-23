@@ -1,0 +1,13 @@
+.env
+.dev.vars
+python_modules/
+__pycache__/
+.venv/
+.venv-workers/
+.wrangler
+.vscode
+.pytest_cache/
+.ruff_cache/
+blocklist/*.bin
+blocklist/*.json
+public/
