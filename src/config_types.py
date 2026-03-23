@@ -48,4 +48,4 @@ class WorkerConfig(TypedDict):
     BLOCKED_DOMAINS: NotRequired[list[str]]
     ECS_TRUNCATION: NotRequired[EcsConfig]
     BYPASS_PROVIDER: NotRequired[Provider]
-    ENDPOINT_PREFIX: NotRequired[str]
+    PATH_PREFIX: NotRequired[str]

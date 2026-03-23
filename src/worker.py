@@ -686,8 +686,10 @@ def _resolve_config(env: object) -> _ResolvedConfig:
     if _resolved_config_cache is not None:
         return _resolved_config_cache
 
-    raw_prefix: str = getattr(config, "ENDPOINT_PREFIX", "/")
-    prefix: str = _resolve_secrets(data=raw_prefix, env=env).rstrip("/")
+    prefix: str = _resolve_secrets(
+        data=getattr(config, "PATH_PREFIX", "/"),
+        env=env,
+    ).rstrip("/")
 
     try:
         loki_url: str = _resolve_secrets(data=_LOKI_URL, env=env) if _LOKI_URL else ""
@@ -709,7 +711,7 @@ def _resolve_config(env: object) -> _ResolvedConfig:
 
     full_config: dict = _resolve_secrets(
         data={
-            "ENDPOINT_PREFIX": raw_prefix,
+            "PATH_PREFIX": getattr(config, "PATH_PREFIX", "/"),
             "DEBUG": _DEBUG,
             "TIMEOUT_MS": _TIMEOUT_MS,
             "LOKI_TIMEOUT_MS": _LOKI_TIMEOUT_MS,

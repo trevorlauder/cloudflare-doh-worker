@@ -49,7 +49,7 @@ _provider_urls = (
 MOCK_DOH_ENABLED = any("mock-doh" in url for url in _provider_urls)
 
 _ENDPOINT_PREFIX = resolve_env(
-    getattr(_config, "ENDPOINT_PREFIX", "/"),
+    getattr(_config, "PATH_PREFIX", "/"),
 ).rstrip("/")
 
 TEST_ENDPOINTS = [_ENDPOINT_PREFIX + resolve_env(e) for e in ENDPOINTS]
