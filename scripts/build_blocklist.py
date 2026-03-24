@@ -46,7 +46,7 @@ _SOURCES_PATH = _ROOT / "blocklist_sources.yaml"
 _BLOCKLIST_DIR = _ROOT / "blocklist"
 _BLOOM_JSON_PATH = _BLOCKLIST_DIR / "bloom.json"
 _BLOOM_PATH = _BLOCKLIST_DIR / "bloom.bin"
-_SHARD_TARGET_BYTES = 1 * 1024 * 1024  # target shard size: 1 MB
+_SHARD_TARGET_BYTES = 512 * 1024  # target shard size: 512 KB
 _ASSET_MAX_BYTES = 25 * 1024 * 1024  # Workers Assets per-file limit: 25 MB
 
 sys.path.insert(0, str(_ROOT / "src"))

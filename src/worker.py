@@ -306,11 +306,8 @@ _BLOCKED_COMPILED = compile_domain_set(_BLOCKED_DOMAINS)
 _blocklist_cache: BlocklistCache | None = None
 _sharded_meta: _ShardedBlocklistMeta | None = None
 _SHARD_CACHE_MAX_BYTES: int = 50 * 1024 * 1024
-_shard_pool: bytearray = bytearray(_SHARD_CACHE_MAX_BYTES)
-_shard_pool_used: int = 0
-_shard_pool_live: int = 0
-_shard_compacted: bool = False
-_shard_cache: OrderedDict[int, tuple[int, int]] = OrderedDict()
+_shard_cache_used: int = 0
+_shard_cache: OrderedDict[int, bytes] = OrderedDict()
 _EMPTY_BLOCKLIST: BlocklistCache = BlocklistCache(
     check=lambda _: False,
     manifest_urls=(),
@@ -495,46 +492,23 @@ async def _load_sharded_meta(env: object) -> _ShardedBlocklistMeta | None:
         return None
 
 
-def _compact_shard_pool() -> None:
-    """Compact the shard pool by moving all active entries to the front."""
-    global _shard_pool_used
-
-    write_offset: int = 0
-    for shard_index in _shard_cache:
-        offset, length = _shard_cache[shard_index]
-        if offset != write_offset:
-            _shard_pool[write_offset : write_offset + length] = _shard_pool[
-                offset : offset + length
-            ]
-        _shard_cache[shard_index] = (write_offset, length)
-        write_offset += length
-    _shard_pool_used = write_offset
-
-
 def _cache_shard(shard_index: int, shard_bytes: bytes) -> None:
-    """Store a shard in the pre-allocated pool, evicting LRU entries as needed."""
-    global _shard_pool_used, _shard_pool_live
+    """Store a shard in the cache, evicting LRU entries if the size limit is reached."""
+    global _shard_cache_used
 
     shard_size: int = len(shard_bytes)
     if shard_size > _SHARD_CACHE_MAX_BYTES:
         return
 
-    while _shard_cache and _shard_pool_live + shard_size > _SHARD_CACHE_MAX_BYTES:
-        _, (_, evicted_len) = _shard_cache.popitem(last=False)
-        _shard_pool_live -= evicted_len
+    while _shard_cache and _shard_cache_used + shard_size > _SHARD_CACHE_MAX_BYTES:
+        _, evicted = _shard_cache.popitem(last=False)
+        _shard_cache_used -= len(evicted)
 
-    if _shard_pool_live + shard_size > _SHARD_CACHE_MAX_BYTES:
+    if _shard_cache_used + shard_size > _SHARD_CACHE_MAX_BYTES:
         return
 
-    if _shard_pool_used + shard_size > _SHARD_CACHE_MAX_BYTES:
-        global _shard_compacted
-        _shard_compacted = True
-        _compact_shard_pool()
-
-    _shard_pool[_shard_pool_used : _shard_pool_used + shard_size] = shard_bytes
-    _shard_cache[shard_index] = (_shard_pool_used, shard_size)
-    _shard_pool_used += shard_size
-    _shard_pool_live += shard_size
+    _shard_cache[shard_index] = shard_bytes
+    _shard_cache_used += shard_size
 
 
 async def _check_sharded_blocklist(
@@ -551,13 +525,10 @@ async def _check_sharded_blocklist(
     h: int = _bloom_hash(normalized)
     shard_index: int = abs(h) % meta.shard_count
 
-    cached: tuple[int, int] | None = _shard_cache.get(shard_index)
+    cached: bytes | None = _shard_cache.get(shard_index)
     if cached is not None:
         _shard_cache.move_to_end(shard_index)
-        offset, length = cached
-        bit_array: memoryview | bytes = memoryview(_shard_pool)[
-            offset : offset + length
-        ]
+        bit_array: bytes = cached
         cache_hit: bool = True
     else:
         assets: object = env.ASSETS
@@ -1378,8 +1349,6 @@ async def _handle_request(
         name and not config_allowed and blocklist.check(name),
     )
 
-    global _shard_compacted
-    _shard_compacted = False
     shard_cache_hit: bool = False
     if not config_blocked and name and not config_allowed and sharded:
         config_blocked, shard_cache_hit = await _check_sharded_blocklist(
@@ -1515,7 +1484,6 @@ async def _handle_request(
             else 0,
             asset_loading=asset_loading,
             shard_cache_hit=shard_cache_hit,
-            shard_compacted=_shard_compacted,
         )
         if promise is not None:
             ctx.waitUntil(promise)
