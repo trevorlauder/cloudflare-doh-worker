@@ -1,0 +1,38 @@
+name = "doh"
+workers_dev = false
+preview_urls = false
+send_metrics = false
+
+compatibility_date = "2026-02-24"
+
+compatibility_flags = [
+  "python_workers",
+  "python_dedicated_snapshot",
+]
+
+main = "src/worker.py"
+
+# Use a custom route if you have your own domain on Cloudflare
+# [[routes]]
+# pattern = "www.mydomain.com/top/level/path/to/entrypoints/*"
+# zone_name = "www.mydomain.com"
+
+[build]
+command = "bash scripts/wrangler_build.sh"
+
+[observability]
+[observability.logs]
+enabled = false
+invocation_logs = false
+
+[vars]
+# Secrets managed outside of the file
+# Run `uv run pywrangler secret put <NAME>` for each of these
+# - LOKI_URL          (Grafana Loki push endpoint URL)
+# - LOKI_USERNAME
+# - LOKI_PASSWORD
+# - ADMIN_TOKEN       (required to enable /config endpoint)
+
+[assets]
+directory = "public"
+binding = "ASSETS"
