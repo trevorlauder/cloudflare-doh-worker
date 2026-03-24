@@ -1482,6 +1482,9 @@ async def _handle_request(
             else _blocklist_cache.domain_count
             if _blocklist_cache is not None
             else 0,
+            blocklist_shard_count=_sharded_meta.shard_count
+            if _sharded_meta is not None
+            else 0,
             asset_loading=asset_loading,
             shard_cache_hit=shard_cache_hit,
         )
