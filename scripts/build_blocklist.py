@@ -48,6 +48,7 @@ _BLOOM_JSON_PATH = _BLOCKLIST_DIR / "bloom.json"
 _BLOOM_PATH = _BLOCKLIST_DIR / "bloom.bin"
 _SHARD_TARGET_BYTES = 512 * 1024  # target shard size: 512 KB
 _ASSET_MAX_BYTES = 25 * 1024 * 1024  # Workers Assets per-file limit: 25 MB
+_TWO_SHARD_MAX_BYTES = 2 * _ASSET_MAX_BYTES  # max size for 2-shard split
 
 sys.path.insert(0, str(_ROOT / "src"))
 from dns_utils import _bloom_contains, _bloom_hash, parse_blocklist_text  # noqa: E402
@@ -466,7 +467,11 @@ def main() -> None:
         )
 
     if len(bit_array) > _ASSET_MAX_BYTES:
-        shard_count: int = math.ceil(len(bit_array) / _SHARD_TARGET_BYTES)
+        shard_count: int = (
+            2
+            if len(bit_array) <= _TWO_SHARD_MAX_BYTES
+            else math.ceil(len(bit_array) / _SHARD_TARGET_BYTES)
+        )
 
         _console.print(
             f"[cyan]Filter is {len(bit_array) / 1024 / 1024:.1f} MB, "

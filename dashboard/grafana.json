@@ -4009,8 +4009,8 @@
                     "spec": {
                       "direction": "backward",
                       "editorMode": "code",
-                      "expr": "max(last_over_time({source=\"cloudflare-doh-worker\"} | json blocklist_domain_count | unwrap blocklist_domain_count [$__range]))",
-                      "queryType": "range"
+                      "expr": "max(last_over_time({source=\"cloudflare-doh-worker\"} | json blocklist_domain_count | unwrap blocklist_domain_count [5m]))",
+                      "queryType": "instant"
                     },
                     "version": "v0"
                   },
@@ -5298,6 +5298,88 @@
         }
       }
     },
+    "panel-64": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "max(last_over_time({source=\"cloudflare-doh-worker\"} | json blocklist_shard_count | unwrap blocklist_shard_count [5m]))",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Number of bloom filter shards the community blocklist is split into (0 if not sharded)",
+        "id": 64,
+        "links": [],
+        "title": "Bloom Shards",
+        "vizConfig": {
+          "group": "stat",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "thresholds"
+                },
+                "noValue": "0",
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "blue",
+                      "value": 0
+                    }
+                  ]
+                },
+                "unit": "none"
+              },
+              "overrides": []
+            },
+            "options": {
+              "colorMode": "value",
+              "graphMode": "none",
+              "justifyMode": "auto",
+              "orientation": "auto",
+              "percentChangeColorMode": "standard",
+              "reduceOptions": {
+                "calcs": [
+                  "lastNotNull"
+                ],
+                "fields": "",
+                "values": false
+              },
+              "showPercentChange": false,
+              "textMode": "auto",
+              "wideLayout": true
+            }
+          },
+          "version": "13.0.0-23233118210"
+        }
+      }
+    },
     "panel-7": {
       "kind": "Panel",
       "spec": {
@@ -5782,7 +5864,7 @@
                         "name": "panel-43"
                       },
                       "height": 4,
-                      "width": 5,
+                      "width": 4,
                       "x": 0,
                       "y": 8
                     }
@@ -5795,8 +5877,21 @@
                         "name": "panel-51"
                       },
                       "height": 4,
-                      "width": 5,
-                      "x": 5,
+                      "width": 4,
+                      "x": 4,
+                      "y": 8
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-64"
+                      },
+                      "height": 4,
+                      "width": 4,
+                      "x": 8,
                       "y": 8
                     }
                   },
@@ -5809,7 +5904,7 @@
                       },
                       "height": 4,
                       "width": 4,
-                      "x": 10,
+                      "x": 12,
                       "y": 8
                     }
                   },
@@ -5821,8 +5916,8 @@
                         "name": "panel-52"
                       },
                       "height": 4,
-                      "width": 5,
-                      "x": 14,
+                      "width": 4,
+                      "x": 16,
                       "y": 8
                     }
                   },
@@ -5834,8 +5929,8 @@
                         "name": "panel-62"
                       },
                       "height": 4,
-                      "width": 5,
-                      "x": 19,
+                      "width": 4,
+                      "x": 20,
                       "y": 8
                     }
                   },

@@ -27,6 +27,7 @@ def build_loki_fetch_promise(
     config_allowed: bool = False,
     error: bool = False,
     blocklist_domain_count: int = 0,
+    blocklist_shard_count: int = 0,
     asset_loading: bool = False,
     shard_cache_hit: bool = False,
 ) -> object | None:
@@ -46,6 +47,7 @@ def build_loki_fetch_promise(
     config_allowed (bool): Whether the request was allowed by config bypass.
     elapsed_ms (int): Elapsed milliseconds from request start to just before Loki dispatch.
     error (bool): Whether the request resulted in an error.
+    blocklist_shard_count (int): Number of bloom filter shards (0 if not sharded).
     asset_loading (bool): Whether the blocklist was loaded from assets during this request.
     shard_cache_hit (bool): Whether the shard lookup was served from the in-memory cache.
     Returns:
@@ -130,6 +132,7 @@ def build_loki_fetch_promise(
             "response_codes": response_codes,
             "response_from": response_from,
             "blocklist_domain_count": blocklist_domain_count,
+            "blocklist_shard_count": blocklist_shard_count,
             "asset_loading": asset_loading,
             "shard_cache_hit": shard_cache_hit,
         }
