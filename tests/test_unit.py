@@ -582,9 +582,7 @@ def _reset_shard_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     """Clear shard cache state to avoid cross-test pollution."""
     monkeypatch.setattr(worker, "_sharded_meta", None)
     worker._shard_cache.clear()
-    monkeypatch.setattr(worker, "_shard_pool_used", 0)
-    monkeypatch.setattr(worker, "_shard_pool_live", 0)
-    monkeypatch.setattr(worker, "_shard_compacted", False)
+    monkeypatch.setattr(worker, "_shard_cache_used", 0)
 
 
 def test_check_sharded_blocklist_blocks_domain(

@@ -130,11 +130,11 @@ If your repo is public, use `${SECRET_NAME}` placeholders for sensitive values l
 
 ## Blocking Methods
 
-| Method                                                                     | How it works                                                                                                                                                                                                   | When to use it                                                                |
-| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Upstream provider filtering                                                | Providers like NextDNS and Quad9 apply their own lists and return blocked responses                                                                                                                            | Zero config, no maintenance                                                   |
-| `BLOCKED_DOMAINS` in config                                                | Checked before any upstream query                                                                                                                                                                              | Personal overrides or domains upstream providers don't cover. Keep this small |
-| Community block lists ([`blocklist_sources.yaml`](blocklist_sources.yaml)) | Lists are fetched, merged, and bundled as Workers Assets. Small filters are loaded on first request and cached in memory. Filters over 25 MB are sharded into ~1 MB pieces, with one shard fetched per request | Large curated lists that are too big to put in config                         |
+| Method                                                                     | How it works                                                                                                                                                                                                     | When to use it                                                                |
+| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Upstream provider filtering                                                | Providers like NextDNS and Quad9 apply their own lists and return blocked responses                                                                                                                              | Zero config, no maintenance                                                   |
+| `BLOCKED_DOMAINS` in config                                                | Checked before any upstream query                                                                                                                                                                                | Personal overrides or domains upstream providers don't cover. Keep this small |
+| Community block lists ([`blocklist_sources.yaml`](blocklist_sources.yaml)) | Lists are fetched, merged, and bundled as Workers Assets. Small filters are loaded on first request and cached in memory. Filters over 25 MB are sharded into ~512 KB pieces, with one shard fetched per request | Large curated lists that are too big to put in config                         |
 
 Both block lists are checked on every request. `ALLOWED_DOMAINS` takes precedence over both.
 
@@ -158,7 +158,7 @@ uv run python scripts/build_blocklist.py
 
 Commit the generated per-source files in [`blocklist/`](blocklist/) (e.g. `blocklist/0.txt`, `blocklist/1.txt`, ...). The bloom filter is gitignored and rebuilt automatically at deploy time from these files. Only the plain domain-list files live in git, so blocklist update PRs produce readable diffs.
 
-At the `1e-10` false-positive rate target, ~**4.2 million** unique domains produce a bloom filter of around **25 MB**. Bloom filters larger than 25 MB are automatically sharded into ~1 MB pieces to stay within the Workers Assets per-file size limit. Sharded filters are fetched per-request instead of preloaded, keeping peak memory low for very large lists.
+At the `1e-10` false-positive rate target, ~**4.2 million** unique domains produce a bloom filter of around **25 MB**. Bloom filters larger than 25 MB are automatically sharded into ~512 KB pieces to stay within the Workers Assets per-file size limit. Sharded filters are fetched per-request instead of preloaded, keeping peak memory low for very large lists.
 
 #### Options
 

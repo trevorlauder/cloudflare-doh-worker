@@ -100,7 +100,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -592,7 +592,7 @@
               ]
             }
           },
-          "version": "13.0.0-22983845515"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -682,7 +682,7 @@
               }
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -767,7 +767,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -927,7 +927,7 @@
               ]
             }
           },
-          "version": "13.0.0-22983845515"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -1012,7 +1012,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -1153,7 +1153,7 @@
               ]
             }
           },
-          "version": "13.0.0-22983845515"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -1237,7 +1237,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -1322,7 +1322,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -1462,7 +1462,7 @@
               ]
             }
           },
-          "version": "13.0.0-22983845515"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -1547,7 +1547,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -1632,7 +1632,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -1764,7 +1764,7 @@
                   "properties": [
                     {
                       "id": "custom.width",
-                      "value": 200
+                      "value": 684
                     }
                   ]
                 },
@@ -1793,7 +1793,7 @@
               ]
             }
           },
-          "version": "13.0.0-22983845515"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -1878,7 +1878,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -1962,7 +1962,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -2083,7 +2083,7 @@
                   "properties": [
                     {
                       "id": "custom.width",
-                      "value": 180
+                      "value": 253
                     }
                   ]
                 },
@@ -2095,7 +2095,7 @@
                   "properties": [
                     {
                       "id": "custom.width",
-                      "value": 200
+                      "value": 330
                     }
                   ]
                 },
@@ -2107,7 +2107,19 @@
                   "properties": [
                     {
                       "id": "custom.width",
-                      "value": 80
+                      "value": 96
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "Domain"
+                  },
+                  "properties": [
+                    {
+                      "id": "custom.width",
+                      "value": 532
                     }
                   ]
                 }
@@ -2118,13 +2130,13 @@
               "showHeader": true,
               "sortBy": [
                 {
-                  "desc": true,
-                  "displayName": "Time"
+                  "desc": false,
+                  "displayName": "Type"
                 }
               ]
             }
           },
-          "version": "13.0.0-22983845515"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -2209,7 +2221,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -2371,7 +2383,7 @@
               ]
             }
           },
-          "version": "13.0.0-22983845515"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -2456,7 +2468,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -2618,7 +2630,7 @@
               ]
             }
           },
-          "version": "13.0.0-22983845515"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -2709,7 +2721,7 @@
               }
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -2799,7 +2811,7 @@
               }
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -2981,7 +2993,7 @@
               }
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -3062,7 +3074,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -3142,7 +3154,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -3227,7 +3239,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -3318,7 +3330,7 @@
               }
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -3409,7 +3421,7 @@
               }
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -3500,7 +3512,7 @@
               }
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -3591,7 +3603,7 @@
               }
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -3682,7 +3694,7 @@
               }
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -3882,7 +3894,7 @@
               "xTickLabelSpacing": 150
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -3973,7 +3985,7 @@
               }
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -4054,7 +4066,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -4143,7 +4155,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -4252,7 +4264,7 @@
               "xTickLabelSpacing": 150
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -4423,6 +4435,7 @@
             },
             "options": {
               "annotations": {
+                "clustering": -1,
                 "multiLane": false
               },
               "legend": {
@@ -4440,7 +4453,578 @@
               }
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
+        }
+      }
+    },
+    "panel-55": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "label_replace(sum(count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint [$__range])) by (endpoint), \"endpoint\", \"$1\", \"endpoint\", \"${endpoint_prefix}(.*)\")",
+                      "legendFormat": "{{endpoint}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Query volume distribution across endpoints",
+        "id": 55,
+        "links": [],
+        "title": "All Queries by Endpoint",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": [
+                {
+                  "__systemRef": "hideSeriesFrom",
+                  "matcher": {
+                    "id": "byNames",
+                    "options": {
+                      "mode": "exclude",
+                      "names": [
+                        "Value #A"
+                      ],
+                      "prefix": "All except:",
+                      "readOnly": true
+                    }
+                  },
+                  "properties": [
+                    {
+                      "id": "custom.hideFrom",
+                      "value": {
+                        "legend": false,
+                        "tooltip": true,
+                        "viz": true
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23233118210"
+        }
+      }
+    },
+    "panel-56": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "label_replace(sum(count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint, result_status | result_status = `blocked` [$__range])) by (endpoint), \"endpoint\", \"$1\", \"endpoint\", \"${endpoint_prefix}(.*)\")",
+                      "legendFormat": "{{endpoint}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Blocked query distribution across endpoints",
+        "id": 56,
+        "links": [],
+        "title": "Blocked by Endpoint",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23233118210"
+        }
+      }
+    },
+    "panel-57": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "label_replace(sum(count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint, result_status | result_status = `possibly blocked` [$__range])) by (endpoint), \"endpoint\", \"$1\", \"endpoint\", \"${endpoint_prefix}(.*)\")",
+                      "legendFormat": "{{endpoint}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Possibly blocked query distribution across endpoints",
+        "id": 57,
+        "links": [],
+        "title": "Possibly Blocked by Endpoint",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23233118210"
+        }
+      }
+    },
+    "panel-58": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "label_replace(sum(count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint, result_status | result_status = `worker blocked` [$__range])) by (endpoint), \"endpoint\", \"$1\", \"endpoint\", \"${endpoint_prefix}(.*)\")",
+                      "legendFormat": "{{endpoint}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Worker-blocked (config) query distribution across endpoints",
+        "id": 58,
+        "links": [],
+        "title": "Worker Blocked by Endpoint",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23233118210"
+        }
+      }
+    },
+    "panel-59": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "label_replace(sum(count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint, result_status | result_status = `worker allowed` [$__range])) by (endpoint), \"endpoint\", \"$1\", \"endpoint\", \"${endpoint_prefix}(.*)\")",
+                      "legendFormat": "{{endpoint}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Worker-allowed (bypass) query distribution across endpoints",
+        "id": 59,
+        "links": [],
+        "title": "Worker Allowed by Endpoint",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23233118210"
+        }
+      }
+    },
+    "panel-60": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "label_replace(sum(count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint, result_status | result_status = `error` [$__range])) by (endpoint), \"endpoint\", \"$1\", \"endpoint\", \"${endpoint_prefix}(.*)\")",
+                      "legendFormat": "{{endpoint}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Error query distribution across endpoints",
+        "id": 60,
+        "links": [],
+        "title": "Error by Endpoint",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -4611,6 +5195,7 @@
             },
             "options": {
               "annotations": {
+                "clustering": -1,
                 "multiLane": false
               },
               "legend": {
@@ -4628,11 +5213,11 @@
               }
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
-    "panel-55": {
+    "panel-62": {
       "kind": "Panel",
       "spec": {
         "data": {
@@ -4650,11 +5235,9 @@
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
-                      "direction": "backward",
                       "editorMode": "code",
-                      "expr": "label_replace(sum(count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint [$__range])) by (endpoint), \"endpoint\", \"$1\", \"endpoint\", \"${endpoint_prefix}(.*)\")",
-                      "legendFormat": "{{endpoint}}",
-                      "queryType": "instant"
+                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json shard_cache_hit | shard_cache_hit = `true` [$__auto]))",
+                      "queryType": "range"
                     },
                     "version": "v0"
                   },
@@ -4666,540 +5249,52 @@
             "transformations": []
           }
         },
-        "description": "Query volume distribution across endpoints",
-        "id": 55,
+        "description": "Shard bloom filter lookups served from the in-memory LRU cache",
+        "id": 62,
         "links": [],
-        "title": "All Queries by Endpoint",
+        "title": "Shard Cache Hits",
         "vizConfig": {
-          "group": "piechart",
+          "group": "stat",
           "kind": "VizConfig",
           "spec": {
             "fieldConfig": {
               "defaults": {
                 "color": {
-                  "mode": "palette-classic"
+                  "mode": "thresholds"
                 },
-                "custom": {
-                  "hideFrom": {
-                    "legend": false,
-                    "tooltip": false,
-                    "viz": false
-                  }
-                },
-                "unit": "short"
-              },
-              "overrides": [
-                {
-                  "__systemRef": "hideSeriesFrom",
-                  "matcher": {
-                    "id": "byNames",
-                    "options": {
-                      "mode": "exclude",
-                      "names": [
-                        "Value #A"
-                      ],
-                      "prefix": "All except:",
-                      "readOnly": true
-                    }
-                  },
-                  "properties": [
+                "noValue": "0",
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
                     {
-                      "id": "custom.hideFrom",
-                      "value": {
-                        "legend": false,
-                        "tooltip": true,
-                        "viz": true
-                      }
+                      "color": "green",
+                      "value": 0
                     }
                   ]
-                }
-              ]
-            },
-            "options": {
-              "displayLabels": [],
-              "legend": {
-                "calcs": [
-                  "sum"
-                ],
-                "displayMode": "table",
-                "placement": "right",
-                "showLegend": true,
-                "values": [
-                  "value"
-                ]
-              },
-              "pieType": "donut",
-              "reduceOptions": {
-                "calcs": [
-                  "sum"
-                ],
-                "fields": "",
-                "values": true
-              },
-              "sort": "desc",
-              "tooltip": {
-                "hideZeros": false,
-                "mode": "multi",
-                "sort": "desc"
-              }
-            }
-          },
-          "version": "13.0.0-23056592349"
-        }
-      }
-    },
-    "panel-56": {
-      "kind": "Panel",
-      "spec": {
-        "data": {
-          "kind": "QueryGroup",
-          "spec": {
-            "queries": [
-              {
-                "kind": "PanelQuery",
-                "spec": {
-                  "hidden": false,
-                  "query": {
-                    "datasource": {
-                      "name": "${datasource}"
-                    },
-                    "group": "loki",
-                    "kind": "DataQuery",
-                    "spec": {
-                      "direction": "backward",
-                      "editorMode": "code",
-                      "expr": "label_replace(sum(count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint, result_status | result_status = `blocked` [$__range])) by (endpoint), \"endpoint\", \"$1\", \"endpoint\", \"${endpoint_prefix}(.*)\")",
-                      "legendFormat": "{{endpoint}}",
-                      "queryType": "instant"
-                    },
-                    "version": "v0"
-                  },
-                  "refId": "A"
-                }
-              }
-            ],
-            "queryOptions": {},
-            "transformations": []
-          }
-        },
-        "description": "Blocked query distribution across endpoints",
-        "id": 56,
-        "links": [],
-        "title": "Blocked by Endpoint",
-        "vizConfig": {
-          "group": "piechart",
-          "kind": "VizConfig",
-          "spec": {
-            "fieldConfig": {
-              "defaults": {
-                "color": {
-                  "mode": "palette-classic"
                 },
-                "custom": {
-                  "hideFrom": {
-                    "legend": false,
-                    "tooltip": false,
-                    "viz": false
-                  }
-                },
-                "unit": "short"
+                "unit": "none"
               },
               "overrides": []
             },
             "options": {
-              "displayLabels": [],
-              "legend": {
-                "calcs": [
-                  "sum"
-                ],
-                "displayMode": "table",
-                "placement": "right",
-                "showLegend": true,
-                "values": [
-                  "value"
-                ]
-              },
-              "pieType": "donut",
+              "colorMode": "value",
+              "graphMode": "area",
+              "justifyMode": "auto",
+              "orientation": "auto",
+              "percentChangeColorMode": "standard",
               "reduceOptions": {
                 "calcs": [
                   "sum"
                 ],
                 "fields": "",
-                "values": true
+                "values": false
               },
-              "sort": "desc",
-              "tooltip": {
-                "hideZeros": false,
-                "mode": "multi",
-                "sort": "desc"
-              }
+              "showPercentChange": false,
+              "textMode": "auto",
+              "wideLayout": true
             }
           },
-          "version": "13.0.0-23056592349"
-        }
-      }
-    },
-    "panel-57": {
-      "kind": "Panel",
-      "spec": {
-        "data": {
-          "kind": "QueryGroup",
-          "spec": {
-            "queries": [
-              {
-                "kind": "PanelQuery",
-                "spec": {
-                  "hidden": false,
-                  "query": {
-                    "datasource": {
-                      "name": "${datasource}"
-                    },
-                    "group": "loki",
-                    "kind": "DataQuery",
-                    "spec": {
-                      "direction": "backward",
-                      "editorMode": "code",
-                      "expr": "label_replace(sum(count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint, result_status | result_status = `possibly blocked` [$__range])) by (endpoint), \"endpoint\", \"$1\", \"endpoint\", \"${endpoint_prefix}(.*)\")",
-                      "legendFormat": "{{endpoint}}",
-                      "queryType": "instant"
-                    },
-                    "version": "v0"
-                  },
-                  "refId": "A"
-                }
-              }
-            ],
-            "queryOptions": {},
-            "transformations": []
-          }
-        },
-        "description": "Possibly blocked query distribution across endpoints",
-        "id": 57,
-        "links": [],
-        "title": "Possibly Blocked by Endpoint",
-        "vizConfig": {
-          "group": "piechart",
-          "kind": "VizConfig",
-          "spec": {
-            "fieldConfig": {
-              "defaults": {
-                "color": {
-                  "mode": "palette-classic"
-                },
-                "custom": {
-                  "hideFrom": {
-                    "legend": false,
-                    "tooltip": false,
-                    "viz": false
-                  }
-                },
-                "unit": "short"
-              },
-              "overrides": []
-            },
-            "options": {
-              "displayLabels": [],
-              "legend": {
-                "calcs": [
-                  "sum"
-                ],
-                "displayMode": "table",
-                "placement": "right",
-                "showLegend": true,
-                "values": [
-                  "value"
-                ]
-              },
-              "pieType": "donut",
-              "reduceOptions": {
-                "calcs": [
-                  "sum"
-                ],
-                "fields": "",
-                "values": true
-              },
-              "sort": "desc",
-              "tooltip": {
-                "hideZeros": false,
-                "mode": "multi",
-                "sort": "desc"
-              }
-            }
-          },
-          "version": "13.0.0-23056592349"
-        }
-      }
-    },
-    "panel-58": {
-      "kind": "Panel",
-      "spec": {
-        "data": {
-          "kind": "QueryGroup",
-          "spec": {
-            "queries": [
-              {
-                "kind": "PanelQuery",
-                "spec": {
-                  "hidden": false,
-                  "query": {
-                    "datasource": {
-                      "name": "${datasource}"
-                    },
-                    "group": "loki",
-                    "kind": "DataQuery",
-                    "spec": {
-                      "direction": "backward",
-                      "editorMode": "code",
-                      "expr": "label_replace(sum(count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint, result_status | result_status = `worker blocked` [$__range])) by (endpoint), \"endpoint\", \"$1\", \"endpoint\", \"${endpoint_prefix}(.*)\")",
-                      "legendFormat": "{{endpoint}}",
-                      "queryType": "instant"
-                    },
-                    "version": "v0"
-                  },
-                  "refId": "A"
-                }
-              }
-            ],
-            "queryOptions": {},
-            "transformations": []
-          }
-        },
-        "description": "Worker-blocked (config) query distribution across endpoints",
-        "id": 58,
-        "links": [],
-        "title": "Worker Blocked by Endpoint",
-        "vizConfig": {
-          "group": "piechart",
-          "kind": "VizConfig",
-          "spec": {
-            "fieldConfig": {
-              "defaults": {
-                "color": {
-                  "mode": "palette-classic"
-                },
-                "custom": {
-                  "hideFrom": {
-                    "legend": false,
-                    "tooltip": false,
-                    "viz": false
-                  }
-                },
-                "unit": "short"
-              },
-              "overrides": []
-            },
-            "options": {
-              "displayLabels": [],
-              "legend": {
-                "calcs": [
-                  "sum"
-                ],
-                "displayMode": "table",
-                "placement": "right",
-                "showLegend": true,
-                "values": [
-                  "value"
-                ]
-              },
-              "pieType": "donut",
-              "reduceOptions": {
-                "calcs": [
-                  "sum"
-                ],
-                "fields": "",
-                "values": true
-              },
-              "sort": "desc",
-              "tooltip": {
-                "hideZeros": false,
-                "mode": "multi",
-                "sort": "desc"
-              }
-            }
-          },
-          "version": "13.0.0-23056592349"
-        }
-      }
-    },
-    "panel-59": {
-      "kind": "Panel",
-      "spec": {
-        "data": {
-          "kind": "QueryGroup",
-          "spec": {
-            "queries": [
-              {
-                "kind": "PanelQuery",
-                "spec": {
-                  "hidden": false,
-                  "query": {
-                    "datasource": {
-                      "name": "${datasource}"
-                    },
-                    "group": "loki",
-                    "kind": "DataQuery",
-                    "spec": {
-                      "direction": "backward",
-                      "editorMode": "code",
-                      "expr": "label_replace(sum(count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint, result_status | result_status = `worker allowed` [$__range])) by (endpoint), \"endpoint\", \"$1\", \"endpoint\", \"${endpoint_prefix}(.*)\")",
-                      "legendFormat": "{{endpoint}}",
-                      "queryType": "instant"
-                    },
-                    "version": "v0"
-                  },
-                  "refId": "A"
-                }
-              }
-            ],
-            "queryOptions": {},
-            "transformations": []
-          }
-        },
-        "description": "Worker-allowed (bypass) query distribution across endpoints",
-        "id": 59,
-        "links": [],
-        "title": "Worker Allowed by Endpoint",
-        "vizConfig": {
-          "group": "piechart",
-          "kind": "VizConfig",
-          "spec": {
-            "fieldConfig": {
-              "defaults": {
-                "color": {
-                  "mode": "palette-classic"
-                },
-                "custom": {
-                  "hideFrom": {
-                    "legend": false,
-                    "tooltip": false,
-                    "viz": false
-                  }
-                },
-                "unit": "short"
-              },
-              "overrides": []
-            },
-            "options": {
-              "displayLabels": [],
-              "legend": {
-                "calcs": [
-                  "sum"
-                ],
-                "displayMode": "table",
-                "placement": "right",
-                "showLegend": true,
-                "values": [
-                  "value"
-                ]
-              },
-              "pieType": "donut",
-              "reduceOptions": {
-                "calcs": [
-                  "sum"
-                ],
-                "fields": "",
-                "values": true
-              },
-              "sort": "desc",
-              "tooltip": {
-                "hideZeros": false,
-                "mode": "multi",
-                "sort": "desc"
-              }
-            }
-          },
-          "version": "13.0.0-23056592349"
-        }
-      }
-    },
-    "panel-60": {
-      "kind": "Panel",
-      "spec": {
-        "data": {
-          "kind": "QueryGroup",
-          "spec": {
-            "queries": [
-              {
-                "kind": "PanelQuery",
-                "spec": {
-                  "hidden": false,
-                  "query": {
-                    "datasource": {
-                      "name": "${datasource}"
-                    },
-                    "group": "loki",
-                    "kind": "DataQuery",
-                    "spec": {
-                      "direction": "backward",
-                      "editorMode": "code",
-                      "expr": "label_replace(sum(count_over_time({source=\"cloudflare-doh-worker\"} | json endpoint, result_status | result_status = `error` [$__range])) by (endpoint), \"endpoint\", \"$1\", \"endpoint\", \"${endpoint_prefix}(.*)\")",
-                      "legendFormat": "{{endpoint}}",
-                      "queryType": "instant"
-                    },
-                    "version": "v0"
-                  },
-                  "refId": "A"
-                }
-              }
-            ],
-            "queryOptions": {},
-            "transformations": []
-          }
-        },
-        "description": "Error query distribution across endpoints",
-        "id": 60,
-        "links": [],
-        "title": "Error by Endpoint",
-        "vizConfig": {
-          "group": "piechart",
-          "kind": "VizConfig",
-          "spec": {
-            "fieldConfig": {
-              "defaults": {
-                "color": {
-                  "mode": "palette-classic"
-                },
-                "custom": {
-                  "hideFrom": {
-                    "legend": false,
-                    "tooltip": false,
-                    "viz": false
-                  }
-                },
-                "unit": "short"
-              },
-              "overrides": []
-            },
-            "options": {
-              "displayLabels": [],
-              "legend": {
-                "calcs": [
-                  "sum"
-                ],
-                "displayMode": "table",
-                "placement": "right",
-                "showLegend": true,
-                "values": [
-                  "value"
-                ]
-              },
-              "pieType": "donut",
-              "reduceOptions": {
-                "calcs": [
-                  "sum"
-                ],
-                "fields": "",
-                "values": true
-              },
-              "sort": "desc",
-              "tooltip": {
-                "hideZeros": false,
-                "mode": "multi",
-                "sort": "desc"
-              }
-            }
-          },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -5290,7 +5385,7 @@
               }
             }
           },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     },
@@ -5506,173 +5601,7 @@
               }
             }
           },
-          "version": "13.0.0-23056592349"
-        }
-      }
-    },
-    "panel-62": {
-      "kind": "Panel",
-      "spec": {
-        "data": {
-          "kind": "QueryGroup",
-          "spec": {
-            "queries": [
-              {
-                "kind": "PanelQuery",
-                "spec": {
-                  "hidden": false,
-                  "query": {
-                    "datasource": {
-                      "name": "${datasource}"
-                    },
-                    "group": "loki",
-                    "kind": "DataQuery",
-                    "spec": {
-                      "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json shard_cache_hit | shard_cache_hit = `true` [$__auto]))",
-                      "queryType": "range"
-                    },
-                    "version": "v0"
-                  },
-                  "refId": "A"
-                }
-              }
-            ],
-            "queryOptions": {},
-            "transformations": []
-          }
-        },
-        "description": "Shard bloom filter lookups served from the in-memory LRU cache",
-        "id": 62,
-        "links": [],
-        "title": "Shard Cache Hits",
-        "vizConfig": {
-          "group": "stat",
-          "kind": "VizConfig",
-          "spec": {
-            "fieldConfig": {
-              "defaults": {
-                "color": {
-                  "mode": "thresholds"
-                },
-                "noValue": "0",
-                "thresholds": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": 0
-                    }
-                  ]
-                },
-                "unit": "none"
-              },
-              "overrides": []
-            },
-            "options": {
-              "colorMode": "value",
-              "graphMode": "area",
-              "justifyMode": "auto",
-              "orientation": "auto",
-              "percentChangeColorMode": "standard",
-              "reduceOptions": {
-                "calcs": [
-                  "sum"
-                ],
-                "fields": "",
-                "values": false
-              },
-              "showPercentChange": false,
-              "textMode": "auto",
-              "wideLayout": true
-            }
-          },
-          "version": "13.0.0-23056592349"
-        }
-      }
-    },
-    "panel-63": {
-      "kind": "Panel",
-      "spec": {
-        "data": {
-          "kind": "QueryGroup",
-          "spec": {
-            "queries": [
-              {
-                "kind": "PanelQuery",
-                "spec": {
-                  "hidden": false,
-                  "query": {
-                    "datasource": {
-                      "name": "${datasource}"
-                    },
-                    "group": "loki",
-                    "kind": "DataQuery",
-                    "spec": {
-                      "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json shard_compacted | shard_compacted = `true` [$__auto]))",
-                      "queryType": "range"
-                    },
-                    "version": "v0"
-                  },
-                  "refId": "A"
-                }
-              }
-            ],
-            "queryOptions": {},
-            "transformations": []
-          }
-        },
-        "description": "Requests where a shard pool compaction occurred, indicates cache churn",
-        "id": 63,
-        "links": [],
-        "title": "Shard Compactions",
-        "vizConfig": {
-          "group": "stat",
-          "kind": "VizConfig",
-          "spec": {
-            "fieldConfig": {
-              "defaults": {
-                "color": {
-                  "mode": "thresholds"
-                },
-                "noValue": "0",
-                "thresholds": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": 0
-                    },
-                    {
-                      "color": "orange",
-                      "value": 1
-                    }
-                  ]
-                },
-                "unit": "none"
-              },
-              "overrides": []
-            },
-            "options": {
-              "colorMode": "value",
-              "graphMode": "area",
-              "justifyMode": "auto",
-              "orientation": "auto",
-              "percentChangeColorMode": "standard",
-              "reduceOptions": {
-                "calcs": [
-                  "sum"
-                ],
-                "fields": "",
-                "values": false
-              },
-              "showPercentChange": false,
-              "textMode": "auto",
-              "wideLayout": true
-            }
-          },
-          "version": "13.0.0-23056592349"
+          "version": "13.0.0-23233118210"
         }
       }
     }
@@ -5853,7 +5782,7 @@
                         "name": "panel-43"
                       },
                       "height": 4,
-                      "width": 4,
+                      "width": 5,
                       "x": 0,
                       "y": 8
                     }
@@ -5866,8 +5795,8 @@
                         "name": "panel-51"
                       },
                       "height": 4,
-                      "width": 4,
-                      "x": 4,
+                      "width": 5,
+                      "x": 5,
                       "y": 8
                     }
                   },
@@ -5880,7 +5809,7 @@
                       },
                       "height": 4,
                       "width": 4,
-                      "x": 8,
+                      "x": 10,
                       "y": 8
                     }
                   },
@@ -5892,8 +5821,8 @@
                         "name": "panel-52"
                       },
                       "height": 4,
-                      "width": 4,
-                      "x": 12,
+                      "width": 5,
+                      "x": 14,
                       "y": 8
                     }
                   },
@@ -5905,21 +5834,8 @@
                         "name": "panel-62"
                       },
                       "height": 4,
-                      "width": 4,
-                      "x": 16,
-                      "y": 8
-                    }
-                  },
-                  {
-                    "kind": "GridLayoutItem",
-                    "spec": {
-                      "element": {
-                        "kind": "ElementReference",
-                        "name": "panel-63"
-                      },
-                      "height": 4,
-                      "width": 4,
-                      "x": 20,
+                      "width": 5,
+                      "x": 19,
                       "y": 8
                     }
                   },
@@ -6363,7 +6279,7 @@
                         "name": "panel-32"
                       },
                       "height": 7,
-                      "width": 12,
+                      "width": 24,
                       "x": 0,
                       "y": 10
                     }
@@ -6375,10 +6291,10 @@
                         "kind": "ElementReference",
                         "name": "panel-30"
                       },
-                      "height": 7,
-                      "width": 12,
-                      "x": 12,
-                      "y": 10
+                      "height": 8,
+                      "width": 24,
+                      "x": 0,
+                      "y": 17
                     }
                   },
                   {
@@ -6391,7 +6307,7 @@
                       "height": 10,
                       "width": 24,
                       "x": 0,
-                      "y": 17
+                      "y": 25
                     }
                   }
                 ]
