@@ -3,11 +3,11 @@
 # SPDX-License-Identifier: MIT
 
 """
-Download community block lists and write a single bloom filter file.
+Download community block lists and build sharded bloom filters.
 
 Reads URLs from blocklist_sources.yaml, fetches each URL, parses hosts-file
 or plain domain-per-line format, deduplicates across all sources, and writes
-a bloom filter of unique exact domains merged from all sources.
+sharded bloom filters of unique exact domains merged from all sources.
 
 Usage:
     uv run python scripts/build_blocklist.py [options]
@@ -42,11 +42,8 @@ _opener = build_opener(HTTPHandler, HTTPSHandler)
 _ROOT = Path(__file__).resolve().parents[1]
 _SOURCES_PATH = _ROOT / "blocklist_sources.yaml"
 _BLOCKLIST_DIR = _ROOT / "blocklist"
-_BLOOM_PATH = _BLOCKLIST_DIR / "bloom.bin"
 _BLOOM_META_PATH = _ROOT / "src" / "bloom_meta.py"
 _SHARD_TARGET_BYTES = 512 * 1024  # target shard size: 512 KB
-_ASSET_MAX_BYTES = 25 * 1024 * 1024  # Workers Assets per-file limit: 25 MB
-_TWO_SHARD_MAX_BYTES = 2 * _ASSET_MAX_BYTES  # max size for 2-shard split
 
 sys.path.insert(0, str(_ROOT / "src"))
 from dns_utils import _bloom_contains, _bloom_hash, parse_blocklist_text  # noqa: E402
@@ -106,41 +103,64 @@ def fetch_url(url: str) -> str:
         raise SystemExit(1) from e
 
 
-_worker_filters: list[Bloom] = []
+_fp_shard_arrays: list[bytes] = []
+_fp_shard_m: list[int] = []
+_fp_num_hashes: int = 0
 
 
-def _init_fp_worker(all_bf_bytes: list[bytes]) -> None:
-    """Pool initializer: deserialize all filters once per worker process."""
-    global _worker_filters
-    _worker_filters = [Bloom.load_bytes(raw, _bloom_hash) for raw in all_bf_bytes]
+def _init_fp_worker(
+    shard_arrays: list[bytes],
+    shard_m: list[int],
+    num_hashes: int,
+) -> None:
+    """Pool initializer: store shard data in each worker process."""
+    global _fp_shard_arrays, _fp_shard_m, _fp_num_hashes
+    _fp_shard_arrays = shard_arrays
+    _fp_shard_m = shard_m
+    _fp_num_hashes = num_hashes
 
 
 def _fp_check_chunk(start_end: tuple[int, int]) -> int:
-    """Multiprocessing worker: count false positive hits for probe indices [start, end) across all filters."""
+    """Multiprocessing worker: count false positive hits for probe indices [start, end)."""
     start, end = start_end
-    return sum(
-        1
-        for i in range(start, end)
-        if any(f"{i}.fp-probe.invalid" in bloom for bloom in _worker_filters)
-    )
+    shard_count: int = len(_fp_shard_arrays)
+    hits: int = 0
+    for i in range(start, end):
+        probe: str = f"{i}.fp-probe.invalid"
+        h: int = _bloom_hash(probe)
+        idx: int = abs(h) % shard_count
+        if _bloom_contains(
+            bit_array=_fp_shard_arrays[idx],
+            num_bits=_fp_shard_m[idx],
+            num_hashes=_fp_num_hashes,
+            hash_value=h,
+        ):
+            hits += 1
+    return hits
 
 
-def _fp_check(filters: list[Bloom], num_probes: int) -> float:
+def _fp_check(
+    shard_bit_arrays: list[bytes],
+    shard_m: list[int],
+    num_hashes: int,
+    num_probes: int,
+) -> float:
     """
-    Empirically measure the false-positive rate across all filters.
+    Empirically measure the false-positive rate across sharded bloom filters.
 
-    A probe is a false positive if it hits ANY filter, matching the worker's
+    Each probe is checked against its assigned shard, matching the worker's
     runtime behaviour. Probes use the reserved .invalid TLD and are parallelized
     across all available CPU cores.
 
     Parameters:
-    filters (list[Bloom]): All built bloom filters.
+    shard_bit_arrays (list[bytes]): List of shard bit arrays.
+    shard_m (list[int]): Number of bits per shard.
+    num_hashes (int): Number of hash functions (k).
     num_probes (int): Number of deterministic probe domains to test.
 
     Returns:
     float: Measured false-positive rate (false_hits / num_probes).
     """
-    all_bf_bytes: list[bytes] = [bloom.save_bytes() for bloom in filters]
     num_workers: int = os.cpu_count() or 1
     chunk_size: int = math.ceil(num_probes / num_workers)
     chunks: list[tuple[int, int]] = [
@@ -150,7 +170,7 @@ def _fp_check(filters: list[Bloom], num_probes: int) -> float:
     with Pool(
         processes=num_workers,
         initializer=_init_fp_worker,
-        initargs=(all_bf_bytes,),
+        initargs=(shard_bit_arrays, shard_m, num_hashes),
     ) as pool:
         false_hits: int = sum(pool.map(_fp_check_chunk, chunks))
     return false_hits / num_probes
@@ -162,33 +182,6 @@ def _parse_raw_text(raw_text: str) -> set[str]:
     exact = {domain for domain in exact if not _IP_RE.match(domain)}
     _console.print(f"  [green]→ {len(exact):,} exact domains[/green]")
     return exact
-
-
-def build_bloom(
-    all_exact: set[str],
-    fp_rate: float,
-    source_urls: list[str] | None = None,
-) -> tuple[dict, bytes, int, Bloom]:
-    """Build a single bloom filter from the deduplicated union of all source domain sets."""
-    bloom: Bloom = Bloom(max(len(all_exact), 1), fp_rate, _bloom_hash)
-    for domain in all_exact:
-        bloom.add(domain)
-    raw: bytes = bloom.save_bytes()
-    num_hashes: int = int.from_bytes(raw[:8], "little")
-    bit_array: bytes = raw[8:]
-    num_bits: int = bloom.size_in_bits
-
-    return (
-        {
-            "bloom_m": num_bits,
-            "bloom_k": num_hashes,
-            "exact_count": len(all_exact),
-            "source_urls": source_urls or [],
-        },
-        bit_array,
-        num_hashes,
-        bloom,
-    )
 
 
 def build_sharded_bloom(
@@ -240,35 +233,38 @@ def build_sharded_bloom(
     return metadata, shard_bit_arrays
 
 
-_verify_bit_array: bytes = b""
-_verify_num_bits: int = 0
+_verify_shard_arrays: list[bytes] = []
+_verify_shard_m: list[int] = []
 _verify_num_hashes: int = 0
 
 
 def _init_verify_worker(
-    bit_array: bytes,
-    num_bits: int,
+    shard_arrays: list[bytes],
+    shard_m: list[int],
     num_hashes: int,
 ) -> None:
-    """Pool initializer: store filter data in each worker process."""
-    global _verify_bit_array, _verify_num_bits, _verify_num_hashes
-    _verify_bit_array = bit_array
-    _verify_num_bits = num_bits
+    """Pool initializer: store shard data in each worker process."""
+    global _verify_shard_arrays, _verify_shard_m, _verify_num_hashes
+    _verify_shard_arrays = shard_arrays
+    _verify_shard_m = shard_m
     _verify_num_hashes = num_hashes
 
 
 def _verify_chunk(domains: list[str]) -> list[str]:
-    """Return any domains from the chunk not found in the bloom filter."""
-    return [
-        domain
-        for domain in domains
+    """Return any domains from the chunk not found in their assigned shard."""
+    shard_count: int = len(_verify_shard_arrays)
+    missed: list[str] = []
+    for domain in domains:
+        h: int = _bloom_hash(domain)
+        idx: int = abs(h) % shard_count
         if not _bloom_contains(
-            bit_array=_verify_bit_array,
-            num_bits=_verify_num_bits,
+            bit_array=_verify_shard_arrays[idx],
+            num_bits=_verify_shard_m[idx],
             num_hashes=_verify_num_hashes,
-            hash_value=_bloom_hash(domain),
-        )
-    ]
+            hash_value=h,
+        ):
+            missed.append(domain)
+    return missed
 
 
 _VALID_DOMAIN_RE = re.compile(
@@ -277,22 +273,22 @@ _VALID_DOMAIN_RE = re.compile(
 
 
 def verify_bloom_filter(
-    bit_array: bytes | bytearray,
-    num_bits: int,
+    shard_bit_arrays: list[bytes],
+    shard_m: list[int],
     num_hashes: int,
     per_source: list[set[str]],
 ) -> None:
     """
-    Verify that every domain from every original source is present in the bloom filter.
+    Verify that every domain from every original source is present in its shard.
 
     First checks that every entry is a valid domain name (lowercase alphanumeric
     labels separated by dots, no leading/trailing hyphens). Then confirms every
-    domain is present in the filter. Both checks are parallelized across all
-    available CPU cores.
+    domain is present in its assigned shard. Both checks are parallelized across
+    all available CPU cores.
 
     Parameters:
-    bit_array (bytes | bytearray): Bloom filter bit array.
-    num_bits (int): Number of bits in the filter (m).
+    shard_bit_arrays (list[bytes]): List of shard bit arrays.
+    shard_m (list[int]): Number of bits per shard.
     num_hashes (int): Number of hash functions (k).
     per_source (list[set[str]]): Per-source exact domain sets as parsed.
     """
@@ -314,7 +310,7 @@ def verify_bloom_filter(
     num_workers: int = os.cpu_count() or 1
     _console.print(
         f"\n[cyan]Verifying all {total:,} domains from {len(per_source)} source(s) "
-        f"against bloom filter using {num_workers} workers ...[/cyan]",
+        f"against {len(shard_bit_arrays)} shard(s) using {num_workers} workers ...[/cyan]",
     )
     chunk_size: int = math.ceil(total / num_workers)
     chunks: list[list[str]] = [
@@ -323,7 +319,7 @@ def verify_bloom_filter(
     with Pool(
         processes=num_workers,
         initializer=_init_verify_worker,
-        initargs=(bytes(bit_array), num_bits, num_hashes),
+        initargs=(shard_bit_arrays, shard_m, num_hashes),
     ) as pool:
         missed: list[str] = [
             domain for result in pool.map(_verify_chunk, chunks) for domain in result
@@ -349,7 +345,6 @@ def _write_bloom_meta(meta: dict) -> None:
         "# Generated by scripts/build_blocklist.py\n"
         "# Do not edit manually\n"
         "\n"
-        f"bloom_m: int = {meta.get('bloom_m', 0)}\n"
         f"bloom_k: int = {meta.get('bloom_k', 0)}\n"
         f"exact_count: int = {meta.get('exact_count', 0)}\n"
         f"bloom_shards: int = {meta.get('bloom_shards', 0)}\n"
@@ -422,9 +417,9 @@ def main() -> None:
             for stale in sorted(_BLOCKLIST_DIR.glob("*.txt")):
                 stale.unlink()
                 _console.print(f"[yellow]Removed {stale.name}[/yellow]")
-            if _BLOOM_PATH.exists():
-                _BLOOM_PATH.unlink()
-                _console.print(f"[yellow]Removed {_BLOOM_PATH.name}[/yellow]")
+            for stale in sorted(_BLOCKLIST_DIR.glob("shard_*.bin")):
+                stale.unlink()
+                _console.print(f"[yellow]Removed {stale.name}[/yellow]")
         return
 
     _BLOCKLIST_DIR.mkdir(exist_ok=True)
@@ -481,69 +476,49 @@ def main() -> None:
 
     for stale in sorted(_BLOCKLIST_DIR.glob("shard_*.bin")):
         stale.unlink()
-    if _BLOOM_PATH.exists():
-        _BLOOM_PATH.unlink()
 
-    _console.print("[cyan]Building bloom filter ...[/cyan]")
+    # Estimate total filter size to determine shard count
+    n: int = max(len(all_exact), 1)
+    estimated_bits: int = math.ceil(-n * math.log(args.fp_rate) / (math.log(2) ** 2))
+    estimated_bytes: int = math.ceil(estimated_bits / 8)
+    shard_count: int = max(1, math.ceil(estimated_bytes / _SHARD_TARGET_BYTES))
+
+    _console.print(
+        f"\n[cyan]Building bloom filter ({estimated_bytes / 1024:.1f} KB estimated, "
+        f"{shard_count} shard(s)) ...[/cyan]",
+    )
+
     meta: dict
-    bit_array: bytes
-    num_hashes: int
-    bloom: Bloom
-    meta, bit_array, num_hashes, bloom = build_bloom(
+    meta, shard_bit_arrays = build_sharded_bloom(
         all_exact=all_exact,
         fp_rate=args.fp_rate,
+        shard_count=shard_count,
         source_urls=urls,
     )
 
-    if args.verify:
-        verify_bloom_filter(
-            bit_array=bit_array,
-            num_bits=bloom.size_in_bits,
-            num_hashes=num_hashes,
-            per_source=per_source,
-        )
+    for i, shard_data in enumerate(shard_bit_arrays):
+        (_BLOCKLIST_DIR / f"shard_{i}.bin").write_bytes(shard_data)
 
-    if len(bit_array) > _ASSET_MAX_BYTES:
-        shard_count: int = (
-            2
-            if len(bit_array) <= _TWO_SHARD_MAX_BYTES
-            else math.ceil(len(bit_array) / _SHARD_TARGET_BYTES)
-        )
-
-        _console.print(
-            f"\n[cyan]Filter is {len(bit_array) / 1024 / 1024:.1f} MB, "
-            f"sharding into {shard_count} shards ...[/cyan]",
-        )
-
-        meta, shard_bit_arrays = build_sharded_bloom(
-            all_exact=all_exact,
-            fp_rate=args.fp_rate,
-            shard_count=shard_count,
-            source_urls=urls,
-        )
-
-        for i, shard_data in enumerate(shard_bit_arrays):
-            (_BLOCKLIST_DIR / f"shard_{i}.bin").write_bytes(shard_data)
-
-        _console.print(
-            f"\n[green]Written to {shard_count} shard(s) in {_BLOCKLIST_DIR.relative_to(_ROOT)}/[/green]",
-        )
-    else:
-        _BLOOM_PATH.write_bytes(bit_array)
-
-        _console.print(
-            f"\n[green]Written to {_BLOOM_PATH.relative_to(_ROOT)}[/green]",
-        )
+    _console.print(
+        f"[green]Written to {shard_count} shard(s) in {_BLOCKLIST_DIR.relative_to(_ROOT)}/[/green]",
+    )
 
     _write_bloom_meta(meta)
 
+    if args.verify:
+        verify_bloom_filter(
+            shard_bit_arrays=shard_bit_arrays,
+            shard_m=meta["shard_m"],
+            num_hashes=meta["bloom_k"],
+            per_source=per_source,
+        )
+
     if args.fp_check > 0:
-        filters: list[Bloom] = [bloom]
-        num_bits: int = bloom.size_in_bits
         exact_count: int = len(all_exact)
+        avg_m: int = sum(meta["shard_m"]) // shard_count
         theoretical: float = (
-            1.0 - math.exp(-num_hashes * exact_count / num_bits)
-        ) ** num_hashes
+            1.0 - math.exp(-meta["bloom_k"] * (exact_count / shard_count) / avg_m)
+        ) ** meta["bloom_k"]
 
         num_workers: int = os.cpu_count() or 1
 
@@ -553,7 +528,12 @@ def main() -> None:
         )
 
         start_time: float = time.monotonic()
-        measured: float = _fp_check(filters=filters, num_probes=args.fp_check)
+        measured: float = _fp_check(
+            shard_bit_arrays=shard_bit_arrays,
+            shard_m=meta["shard_m"],
+            num_hashes=meta["bloom_k"],
+            num_probes=args.fp_check,
+        )
         elapsed: float = time.monotonic() - start_time
 
         _console.print(

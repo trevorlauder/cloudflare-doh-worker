@@ -5,7 +5,6 @@
 
 import base64
 from collections import OrderedDict
-from collections.abc import Callable
 import hmac
 import json
 import logging
@@ -52,16 +51,6 @@ from dns_utils import (
     send_doh_requests_fanout,
 )
 from loki_utils import build_loki_fetch_promise
-
-
-class BlocklistCache(NamedTuple):
-    """Immutable container for a loaded blocklist."""
-
-    check: Callable[[str], bool]
-    manifest_urls: tuple[str, ...]
-    domain_count: int
-    fp_rate: float
-    bloom_size_bytes: int
 
 
 class _ShardedBlocklistMeta(NamedTuple):
@@ -303,18 +292,10 @@ logger = logging.getLogger(__name__)
 _ALLOWED_COMPILED = compile_domain_set(_ALLOWED_DOMAINS)
 _BLOCKED_COMPILED = compile_domain_set(_BLOCKED_DOMAINS)
 
-_blocklist_cache: BlocklistCache | None = None
 _sharded_meta: _ShardedBlocklistMeta | None = None
 _SHARD_CACHE_MAX_BYTES: int = 50 * 1024 * 1024
 _shard_cache_used: int = 0
 _shard_cache: OrderedDict[int, bytes] = OrderedDict()
-_EMPTY_BLOCKLIST: BlocklistCache = BlocklistCache(
-    check=lambda _: False,
-    manifest_urls=(),
-    domain_count=0,
-    fp_rate=0.0,
-    bloom_size_bytes=0,
-)
 
 _PROVIDER_LISTS = _build_provider_lists()
 
@@ -343,82 +324,6 @@ _HEADER_PROVIDERS_FAILED_STATUS = f"{_HEADER_PREFIX}-PROVIDERS-FAILED-STATUS-COD
 _HEADER_PROVIDERS_RETRIED = f"{_HEADER_PREFIX}-PROVIDERS-RETRIED"
 _HEADER_RESPONSE_FROM_MAIN = f"{_HEADER_PREFIX}-RESPONSE-FROM-MAIN"
 _HEADER_SHARD_CACHE_HIT = f"{_HEADER_PREFIX}-SHARD-CACHE-HIT"
-
-
-async def _load_blocklist_from_assets(env: object) -> BlocklistCache:
-    """Load the bloom filter from Workers Assets, caching the result."""
-    global _blocklist_cache
-
-    if _blocklist_cache is not None:
-        return _blocklist_cache
-
-    import bloom_meta
-
-    if not bloom_meta.bloom_m or not bloom_meta.bloom_k:
-        _blocklist_cache = _EMPTY_BLOCKLIST
-        return _blocklist_cache
-
-    assets: object | None = getattr(env, "ASSETS", None)
-
-    if assets is None:
-        logger.warning("ASSETS binding not found, blocklist disabled")
-        _blocklist_cache = _EMPTY_BLOCKLIST
-        return _blocklist_cache
-
-    try:
-        bin_response: object = await assets.fetch("https://assets.local/bloom.bin")
-        if bin_response.status != 200:
-            logger.warning(
-                "Failed to fetch bloom.bin from assets, status %d",
-                bin_response.status,
-            )
-            _blocklist_cache = _EMPTY_BLOCKLIST
-            return _blocklist_cache
-
-        bit_array: bytearray = bytearray(await bin_response.bytes())
-
-        fp_rate: float = (
-            (
-                1.0
-                - math.exp(
-                    -bloom_meta.bloom_k * bloom_meta.exact_count / bloom_meta.bloom_m,
-                )
-            )
-            ** bloom_meta.bloom_k
-            if bloom_meta.exact_count > 0
-            else 0.0
-        )
-
-        def _check(name: str) -> bool:
-            normalized: str = name.rstrip(".").lower()
-            if not bit_array:
-                return False
-            return _bloom_contains(
-                bit_array=bit_array,
-                num_bits=bloom_meta.bloom_m,
-                num_hashes=bloom_meta.bloom_k,
-                hash_value=_bloom_hash(normalized),
-            )
-
-        _blocklist_cache = BlocklistCache(
-            check=_check,
-            manifest_urls=tuple(bloom_meta.source_urls),
-            domain_count=bloom_meta.exact_count,
-            fp_rate=fp_rate,
-            bloom_size_bytes=len(bit_array),
-        )
-
-        logger.info(
-            "Loaded blocklist: %d domains, theoretical FP rate %.2e",
-            bloom_meta.exact_count,
-            fp_rate,
-        )
-
-        return _blocklist_cache
-    except Exception:
-        logger.warning("Unexpected error loading blocklist from assets", exc_info=True)
-        _blocklist_cache = _EMPTY_BLOCKLIST
-        return _blocklist_cache
 
 
 def _load_sharded_meta() -> _ShardedBlocklistMeta | None:
@@ -746,12 +651,6 @@ def _handle_config(request: object, env: object, cfg: _ResolvedConfig) -> Respon
         bl_fp_rate = _sharded_meta.fp_rate
         bl_bloom_bytes = sum(_sharded_meta.shard_m) // 8
         bl_shards = _sharded_meta.shard_count
-    elif _blocklist_cache is not None:
-        bl_count = _blocklist_cache.domain_count
-        bl_urls = list(_blocklist_cache.manifest_urls)
-        bl_fp_rate = _blocklist_cache.fp_rate
-        bl_bloom_bytes = _blocklist_cache.bloom_size_bytes
-        bl_shards = None
     else:
         bl_count = None
         bl_urls = None
@@ -1308,28 +1207,16 @@ async def _handle_request(
         and domain_matches(name=name, compiled=_BLOCKED_COMPILED),
     )
 
-    was_cached: bool = _blocklist_cache is not None or _sharded_meta is not None
+    was_cached: bool = _sharded_meta is not None
 
-    if not name or config_allowed or config_blocked or not _BLOCKLIST_ENABLED:
-        blocklist: BlocklistCache = _EMPTY_BLOCKLIST
-        sharded: bool = False
-    else:
-        meta: _ShardedBlocklistMeta | None = _load_sharded_meta()
-        sharded = meta is not None
-        blocklist = (
-            _EMPTY_BLOCKLIST if sharded else await _load_blocklist_from_assets(env)
-        )
+    meta: _ShardedBlocklistMeta | None = None
+    if name and not config_allowed and not config_blocked and _BLOCKLIST_ENABLED:
+        meta = _load_sharded_meta()
 
-    asset_loading: bool = not was_cached and (
-        _blocklist_cache is not None or _sharded_meta is not None
-    )
-
-    config_blocked = config_blocked or bool(
-        name and not config_allowed and blocklist.check(name),
-    )
+    asset_loading: bool = not was_cached and _sharded_meta is not None
 
     shard_cache_hit: bool = False
-    if not config_blocked and name and not config_allowed and sharded:
+    if not config_blocked and name and not config_allowed and meta is not None:
         config_blocked, shard_cache_hit = await _check_sharded_blocklist(
             name,
             env,
@@ -1459,8 +1346,6 @@ async def _handle_request(
             error=error,
             blocklist_domain_count=_sharded_meta.domain_count
             if _sharded_meta is not None
-            else _blocklist_cache.domain_count
-            if _blocklist_cache is not None
             else 0,
             blocklist_shard_count=_sharded_meta.shard_count
             if _sharded_meta is not None

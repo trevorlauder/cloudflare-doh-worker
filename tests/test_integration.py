@@ -625,13 +625,13 @@ def test_post_dns_wire_with_ipv6_ecs_no_truncation():
     )
 
 
-_BLOCKLIST_ENABLED = (
-    Path(__file__).parent.parent / "blocklist" / "bloom.json"
-).exists()
+_BLOCKLIST_ENABLED = any(
+    (Path(__file__).parent.parent / "blocklist").glob("shard_*.bin"),
+)
 _FP_CHECK_N = int(os.environ.get("FP_CHECK_PROBES", "100"))
 
 
-@pytest.mark.skipif(not _BLOCKLIST_ENABLED, reason="blocklist/bloom.json not present")
+@pytest.mark.skipif(not _BLOCKLIST_ENABLED, reason="no blocklist shards present")
 def test_blocklist_domain_returns_nxdomain():
     status, headers, body = _post_wire(_build_dns_wire("analytics.archive.org"))
     assert status == 200
@@ -646,7 +646,7 @@ def test_blocklist_domain_returns_nxdomain():
         )
 
 
-@pytest.mark.skipif(not _BLOCKLIST_ENABLED, reason="blocklist/bloom.json not present")
+@pytest.mark.skipif(not _BLOCKLIST_ENABLED, reason="no blocklist shards present")
 @pytest.mark.skipif(
     not MOCK_DOH_ENABLED,
     reason="requires mock-doh upstream to guarantee NOERROR for absent domains",
