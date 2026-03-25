@@ -39,6 +39,7 @@ jobs:
           cp -r src/ /tmp/deploy/src/
 
           cp src/bloom_meta.py.default /tmp/deploy/src/bloom_meta.py
+          rm -f /tmp/deploy/src/bloom_meta.py.default
           cp -r scripts/ /tmp/deploy/scripts/
           cp wrangler.toml pyproject.toml package.json uv.lock LICENSE .gitignore .gitattributes /tmp/deploy/
           cp mise.deploy.toml /tmp/deploy/mise.toml
