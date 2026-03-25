@@ -1,0 +1,65 @@
+[project]
+name = "doh"
+version = "2.0.0-rc4"
+requires-python = ">=3.13"
+dependencies = [
+  "dnspython",
+  "typedload",
+]
+
+[dependency-groups]
+deploy = [
+  "pyyaml",
+  "rbloom",
+  "rich",
+  "workers-py",
+  "workers-runtime-sdk",
+]
+dev = [
+  "curl-cffi",
+  "pytest-rerunfailures",
+  "pytest-xdist",
+  "pytest",
+]
+
+[tool.uv]
+default-groups = ["deploy"]
+
+[tool.pywrangler]
+main = "src/worker.py"
+
+[tool.pytest.ini_options]
+addopts = "--reruns=2 --reruns-delay=2 -vv -ra"
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+  "ANN",
+  "B",
+  "C4",
+  "COM812",
+  "E4",
+  "E501",
+  "E7",
+  "E9",
+  "F",
+  "I",
+  "N",
+  "PT",
+  "Q",
+  "RUF",
+  "S",
+  "SIM",
+  "T20",
+  "UP",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN201", "S101", "S104", "S310", "S311"]
+"scripts/**" = ["T201", "S310", "S603"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
