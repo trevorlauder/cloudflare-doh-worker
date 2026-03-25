@@ -326,11 +326,73 @@ def test_parse_blocklist_strips_trailing_dot():
     assert exact == {"ads.example.com"}
 
 
-def test_parse_blocklist_mixed_formats():
-    """Hosts-file and plain lines both parse correctly together."""
-    text = "# OISD-style list\n0.0.0.0 ads.example.com\ntracker.net\n"
+def test_parse_blocklist_adblock_format():
+    """Adblock ||domain^ lines are parsed as exact matches."""
+    text = "||ads.example.com^\n||tracker.net^\n"
     exact = parse_blocklist_text(text)
     assert exact == {"ads.example.com", "tracker.net"}
+
+
+def test_parse_blocklist_adblock_with_options():
+    """Adblock lines with options (||domain^$option) are parsed."""
+    exact = parse_blocklist_text("||ads.example.com^$third-party\n")
+    assert exact == {"ads.example.com"}
+
+
+def test_parse_blocklist_adblock_metadata_skipped():
+    """Adblock metadata lines like [Adblock Plus] are skipped."""
+    text = "[Adblock Plus]\n! Title: My List\n||ads.example.com^\n"
+    exact = parse_blocklist_text(text)
+    assert exact == {"ads.example.com"}
+
+
+def test_parse_blocklist_wildcard_rejected():
+    """Wildcard entries are rejected since bloom filters only do exact matching."""
+    exact = parse_blocklist_text("*.ads.example.com\n")
+    assert exact == set()
+
+
+def test_parse_blocklist_exclamation_comments():
+    """Lines starting with ! are treated as comments."""
+    text = "! this is a comment\nads.example.com\n"
+    exact = parse_blocklist_text(text)
+    assert exact == {"ads.example.com"}
+
+
+def test_parse_blocklist_dnsmasq_local():
+    """DNSMasq local=/domain/ lines are parsed."""
+    exact = parse_blocklist_text("local=/ads.example.com/\nlocal=/tracker.net/\n")
+    assert exact == {"ads.example.com", "tracker.net"}
+
+
+def test_parse_blocklist_dnsmasq_address_and_server():
+    """DNSMasq address= and server= variants are parsed."""
+    text = "address=/ads.example.com/\nserver=/tracker.net/\n"
+    exact = parse_blocklist_text(text)
+    assert exact == {"ads.example.com", "tracker.net"}
+
+
+def test_parse_blocklist_mixed_formats():
+    """All supported formats parse correctly together."""
+    text = (
+        "# comment\n"
+        "[Adblock Plus]\n"
+        "! metadata\n"
+        "0.0.0.0 hosts.example.com\n"
+        "0.0.0.0 compressed1.example.com compressed2.example.com\n"
+        "||adblock.example.com^\n"
+        "local=/dnsmasq.example.com/\n"
+        "plain.example.org\n"
+    )
+    exact = parse_blocklist_text(text)
+    assert exact == {
+        "hosts.example.com",
+        "compressed1.example.com",
+        "compressed2.example.com",
+        "adblock.example.com",
+        "dnsmasq.example.com",
+        "plain.example.org",
+    }
 
 
 _BLOCKLIST_SINGLE = json.loads(

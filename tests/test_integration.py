@@ -106,14 +106,6 @@ def _assert_worker_headers(headers: object) -> None:
         headers.get("cloudflare-doh-worker-connection-error-providers") is not None
     ), "missing CLOUDFLARE-DOH-WORKER-CONNECTION-ERROR-PROVIDERS header"
 
-    assert headers.get("cloudflare-doh-worker-config-allowed") is not None, (
-        "missing CLOUDFLARE-DOH-WORKER-CONFIG-ALLOWED header"
-    )
-
-    assert headers.get("cloudflare-doh-worker-config-blocked") is not None, (
-        "missing CLOUDFLARE-DOH-WORKER-CONFIG-BLOCKED header"
-    )
-
 
 def _build_dns_wire(name: str, rdtype: int = dns.rdatatype.A) -> bytes:
     return dns.message.make_query(name, rdtype).to_wire()

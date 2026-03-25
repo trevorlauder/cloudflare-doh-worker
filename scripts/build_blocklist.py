@@ -240,6 +240,42 @@ def build_sharded_bloom(
     return metadata, shard_bit_arrays
 
 
+_verify_bit_array: bytes = b""
+_verify_num_bits: int = 0
+_verify_num_hashes: int = 0
+
+
+def _init_verify_worker(
+    bit_array: bytes,
+    num_bits: int,
+    num_hashes: int,
+) -> None:
+    """Pool initializer: store filter data in each worker process."""
+    global _verify_bit_array, _verify_num_bits, _verify_num_hashes
+    _verify_bit_array = bit_array
+    _verify_num_bits = num_bits
+    _verify_num_hashes = num_hashes
+
+
+def _verify_chunk(domains: list[str]) -> list[str]:
+    """Return any domains from the chunk not found in the bloom filter."""
+    return [
+        domain
+        for domain in domains
+        if not _bloom_contains(
+            bit_array=_verify_bit_array,
+            num_bits=_verify_num_bits,
+            num_hashes=_verify_num_hashes,
+            hash_value=_bloom_hash(domain),
+        )
+    ]
+
+
+_VALID_DOMAIN_RE = re.compile(
+    r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$",
+)
+
+
 def verify_bloom_filter(
     bit_array: bytes | bytearray,
     num_bits: int,
@@ -249,8 +285,10 @@ def verify_bloom_filter(
     """
     Verify that every domain from every original source is present in the bloom filter.
 
-    Checks the pre-dedup total (sum of per-source counts), confirming no domain was
-    dropped during cross-source deduplication. Exits with an error if any are missing.
+    First checks that every entry is a valid domain name (lowercase alphanumeric
+    labels separated by dots, no leading/trailing hyphens). Then confirms every
+    domain is present in the filter. Both checks are parallelized across all
+    available CPU cores.
 
     Parameters:
     bit_array (bytes | bytearray): Bloom filter bit array.
@@ -258,22 +296,38 @@ def verify_bloom_filter(
     num_hashes (int): Number of hash functions (k).
     per_source (list[set[str]]): Per-source exact domain sets as parsed.
     """
-    total: int = sum(len(exact) for exact in per_source)
+    all_domains: list[str] = [d for exact in per_source for d in exact]
+    total: int = len(all_domains)
+
+    _console.print(
+        f"\n[cyan]Checking {total:,} entries are valid domain names ...[/cyan]",
+    )
+    invalid: list[str] = [d for d in all_domains if not _VALID_DOMAIN_RE.match(d)]
+    if invalid:
+        _err.print(
+            f"[red]ERROR: {len(invalid):,} entry/entries are not valid domain names![/red]",
+        )
+        for domain in invalid[:20]:
+            _err.print(f"  {domain!r}")
+        raise SystemExit(1)
+    _console.print("[green]OK: all entries are valid domain names.[/green]")
+    num_workers: int = os.cpu_count() or 1
     _console.print(
         f"\n[cyan]Verifying all {total:,} domains from {len(per_source)} source(s) "
-        f"against bloom filter ...[/cyan]",
+        f"against bloom filter using {num_workers} workers ...[/cyan]",
     )
-    missed: list[str] = [
-        domain
-        for exact in per_source
-        for domain in exact
-        if not _bloom_contains(
-            bit_array=bit_array,
-            num_bits=num_bits,
-            num_hashes=num_hashes,
-            hash_value=_bloom_hash(domain),
-        )
+    chunk_size: int = math.ceil(total / num_workers)
+    chunks: list[list[str]] = [
+        all_domains[i * chunk_size : (i + 1) * chunk_size] for i in range(num_workers)
     ]
+    with Pool(
+        processes=num_workers,
+        initializer=_init_verify_worker,
+        initargs=(bytes(bit_array), num_bits, num_hashes),
+    ) as pool:
+        missed: list[str] = [
+            domain for result in pool.map(_verify_chunk, chunks) for domain in result
+        ]
     if missed:
         _err.print(
             f"[red]ERROR: {len(missed):,} domain(s) NOT found in bloom filter![/red]",
@@ -457,7 +511,7 @@ def main() -> None:
         )
 
         _console.print(
-            f"[cyan]Filter is {len(bit_array) / 1024 / 1024:.1f} MB, "
+            f"\n[cyan]Filter is {len(bit_array) / 1024 / 1024:.1f} MB, "
             f"sharding into {shard_count} shards ...[/cyan]",
         )
 
