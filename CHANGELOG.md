@@ -1,4 +1,26 @@
-## [1.1.0] - 2026-03-21
+## [2.0.0] - 2026-03-25
+
+### 🐛 Bug Fixes
+
+- Log compaction events as boolean ([#132](https://github.com/trevorlauder/cloudflare-doh-worker/pull/132))
+- Fix shard compaction panel histogram ([#133](https://github.com/trevorlauder/cloudflare-doh-worker/pull/133))
+- Convert shard fetch response to native bytes to avoid PyProxy GI… ([#134](https://github.com/trevorlauder/cloudflare-doh-worker/pull/134))
+
+### 🚜 Refactor
+
+- Simplify config and move detaults to worker ([#140](https://github.com/trevorlauder/cloudflare-doh-worker/pull/140))
+- Move LCG constants back to module level ([#142](https://github.com/trevorlauder/cloudflare-doh-worker/pull/142))
+- Remove pre-allocated shard pool and reduce shard size to 512 KB ([#144](https://github.com/trevorlauder/cloudflare-doh-worker/pull/144))
+- Split into two shards if bloom filter isn't more than 50MB ([#146](https://github.com/trevorlauder/cloudflare-doh-worker/pull/146))
+- Replace bloom.json with bundled bloom_meta module ([#147](https://github.com/trevorlauder/cloudflare-doh-worker/pull/147))
+
+### ⚡ Performance
+
+- Load bloom filter from assets instead of kv ([#128](https://github.com/trevorlauder/cloudflare-doh-worker/pull/128))
+- Optimize bloom shard handling ([#130](https://github.com/trevorlauder/cloudflare-doh-worker/pull/130))
+- Native type conversions and bloom filter bitmask optimization ([#135](https://github.com/trevorlauder/cloudflare-doh-worker/pull/135))
+
+## [1.1.0] - 2026-03-19
 
 ### 🚀 Features
 
