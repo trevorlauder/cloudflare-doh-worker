@@ -22,28 +22,16 @@ else Domain in BLOCKED_DOMAINS
 else Domain not in ALLOWED_DOMAINS or BLOCKED_DOMAINS
 
 opt Blocklist enabled (cold start)
-  alt Sharded bloom filter (>25 MB)
-    "Cloudflare Worker" -> "Workers Assets": fetch bloom.json
-    "Cloudflare Worker" <- "Workers Assets": Shard metadata (bloom params, shard count)
-    note over "Cloudflare Worker": Cache shard metadata in memory
-  else Single bloom filter
-    "Cloudflare Worker" -> "Workers Assets": fetch bloom.json + bloom.bin
-    "Cloudflare Worker" <- "Workers Assets": Bloom filter + metadata
-    note over "Cloudflare Worker": Cache bloom filter in memory
-  end
+  note over "Cloudflare Worker": Load shard metadata from\nbundled bloom_meta module
 end
 
-alt Sharded bloom filter
-  note over "Cloudflare Worker": Hash domain to determine shard index
-  alt Shard in LRU cache (50 MB pool)
-    note over "Cloudflare Worker": Check bloom filter from cached shard
-  else Shard not cached
-    "Cloudflare Worker" -> "Workers Assets": fetch shard_N.bin
-    "Cloudflare Worker" <- "Workers Assets": Shard bit array
-    note over "Cloudflare Worker": Cache shard in LRU pool,\ncheck bloom filter
-  end
-else Single bloom filter
-  note over "Cloudflare Worker": Check bloom filter (in-memory)
+note over "Cloudflare Worker": Hash domain to determine shard index
+alt Shard in LRU cache (50 MB pool)
+  note over "Cloudflare Worker": Check bloom filter from cached shard
+else Shard not cached
+  "Cloudflare Worker" -> "Workers Assets": fetch shard_N.bin
+  "Cloudflare Worker" <- "Workers Assets": Bloom filter shard
+  note over "Cloudflare Worker": Cache shard in LRU cache,\ncheck bloom filter
 end
 
 alt Domain in blocklist
