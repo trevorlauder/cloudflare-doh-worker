@@ -30,6 +30,9 @@ def build_loki_fetch_promise(
     blocklist_shard_count: int = 0,
     asset_loading: bool = False,
     shard_cache_hit: bool = False,
+    isolate_id: str = "",
+    shard_cache_count: int = 0,
+    shard_cache_bytes: int = 0,
 ) -> object | None:
     """
     Build a Loki log entry and return a JS fetch Promise, or None on failure.
@@ -50,6 +53,9 @@ def build_loki_fetch_promise(
     blocklist_shard_count (int): Number of bloom filter shards (0 if not sharded).
     asset_loading (bool): Whether the blocklist was loaded from assets during this request.
     shard_cache_hit (bool): Whether the shard lookup was served from the in-memory cache.
+    isolate_id (str): Unique identifier for the worker isolate.
+    shard_cache_count (int): Number of shards currently in the LRU cache.
+    shard_cache_bytes (int): Total bytes used by cached shards.
     Returns:
     object | None: JS fetch Promise or None on failure.
     """
@@ -135,6 +141,9 @@ def build_loki_fetch_promise(
             "blocklist_shard_count": blocklist_shard_count,
             "asset_loading": asset_loading,
             "shard_cache_hit": shard_cache_hit,
+            "isolate_id": isolate_id,
+            "shard_cache_count": shard_cache_count,
+            "shard_cache_bytes": shard_cache_bytes,
         }
 
         ts_ns: str = str(request_timestamp_ms * 1_000_000)
