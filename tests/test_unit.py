@@ -9,6 +9,7 @@ import math
 from multiprocessing import Pool
 import os
 from pathlib import Path
+import sys
 from unittest.mock import MagicMock
 
 from conftest import _workers_stub
@@ -367,26 +368,17 @@ class _MockAssets:
 
     def __init__(
         self,
-        json_body: str | None = None,
         bloom_bytes: bytes | None = None,
         raise_error: bool = False,
-        json_status: int = 200,
         bin_status: int = 200,
     ) -> None:
-        self._json_body = json_body
         self._bloom_bytes = bloom_bytes
         self._raise = raise_error
-        self._json_status = json_status
         self._bin_status = bin_status
 
     async def fetch(self, url: str) -> _FakeAssetResponse:
         if self._raise:
             raise RuntimeError("Assets unavailable")
-        if "bloom.json" in url:
-            return _FakeAssetResponse(
-                body=self._json_body or "",
-                status=self._json_status,
-            )
         if "bloom.bin" in url:
             return _FakeAssetResponse(
                 body=self._bloom_bytes or b"",
@@ -395,11 +387,24 @@ class _MockAssets:
         return _FakeAssetResponse(status=404)
 
 
+def _patch_bloom_meta(monkeypatch: pytest.MonkeyPatch, meta: dict) -> None:
+    """Set bloom_meta module attributes from a metadata dict."""
+    import bloom_meta
+
+    monkeypatch.setattr(bloom_meta, "bloom_m", meta.get("bloom_m", 0))
+    monkeypatch.setattr(bloom_meta, "bloom_k", meta.get("bloom_k", 0))
+    monkeypatch.setattr(bloom_meta, "exact_count", meta.get("exact_count", 0))
+    monkeypatch.setattr(bloom_meta, "bloom_shards", meta.get("bloom_shards", 0))
+    monkeypatch.setattr(bloom_meta, "source_urls", meta.get("source_urls", []))
+    monkeypatch.setattr(bloom_meta, "shard_m", meta.get("shard_m", []))
+
+
 def test_load_blocklist_from_assets_no_binding_returns_empty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When no ASSETS binding is present, returns _EMPTY_BLOCKLIST."""
     monkeypatch.setattr(worker, "_blocklist_cache", None)
+    _patch_bloom_meta(monkeypatch, _BLOCKLIST_SINGLE)
 
     env = MagicMock(spec=[])
     result = asyncio.run(worker._load_blocklist_from_assets(env))
@@ -414,23 +419,10 @@ def test_load_blocklist_from_assets_fetch_error_returns_empty(
 ) -> None:
     """When assets.fetch() raises, returns _EMPTY_BLOCKLIST."""
     monkeypatch.setattr(worker, "_blocklist_cache", None)
+    _patch_bloom_meta(monkeypatch, _BLOCKLIST_SINGLE)
 
     env = MagicMock()
     env.ASSETS = _MockAssets(raise_error=True)
-    result = asyncio.run(worker._load_blocklist_from_assets(env))
-
-    assert result is not None
-    assert result.domain_count == 0
-
-
-def test_load_blocklist_from_assets_json_404_returns_empty(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """When bloom.json returns non-200, returns _EMPTY_BLOCKLIST."""
-    monkeypatch.setattr(worker, "_blocklist_cache", None)
-
-    env = MagicMock()
-    env.ASSETS = _MockAssets(json_status=404)
     result = asyncio.run(worker._load_blocklist_from_assets(env))
 
     assert result is not None
@@ -442,12 +434,10 @@ def test_load_blocklist_from_assets_bin_404_returns_empty(
 ) -> None:
     """When bloom.bin returns non-200, returns _EMPTY_BLOCKLIST."""
     monkeypatch.setattr(worker, "_blocklist_cache", None)
+    _patch_bloom_meta(monkeypatch, _BLOCKLIST_SINGLE)
 
     env = MagicMock()
-    env.ASSETS = _MockAssets(
-        json_body=json.dumps(_BLOCKLIST_SINGLE),
-        bin_status=404,
-    )
+    env.ASSETS = _MockAssets(bin_status=404)
     result = asyncio.run(worker._load_blocklist_from_assets(env))
 
     assert result is not None
@@ -459,13 +449,13 @@ def test_load_blocklist_from_assets_blocks_domain_in_filter(
 ) -> None:
     """When assets contain a bloom filter with apple.ca, check('apple.ca') returns True."""
     monkeypatch.setattr(worker, "_blocklist_cache", None)
-
-    manifest = {**_BLOCKLIST_SINGLE, "source_urls": ["https://example.com/hosts.txt"]}
-    env = MagicMock()
-    env.ASSETS = _MockAssets(
-        json_body=json.dumps(manifest),
-        bloom_bytes=_BLOCKLIST_SINGLE_BIN,
+    _patch_bloom_meta(
+        monkeypatch,
+        {**_BLOCKLIST_SINGLE, "source_urls": ["https://example.com/hosts.txt"]},
     )
+
+    env = MagicMock()
+    env.ASSETS = _MockAssets(bloom_bytes=_BLOCKLIST_SINGLE_BIN)
     result = asyncio.run(worker._load_blocklist_from_assets(env))
 
     assert result is not None
@@ -478,12 +468,10 @@ def test_load_blocklist_from_assets_passes_absent_domain(
 ) -> None:
     """A domain not in the bloom filter does not trigger check()."""
     monkeypatch.setattr(worker, "_blocklist_cache", None)
+    _patch_bloom_meta(monkeypatch, _BLOCKLIST_SINGLE)
 
     env = MagicMock()
-    env.ASSETS = _MockAssets(
-        json_body=json.dumps(_BLOCKLIST_SINGLE),
-        bloom_bytes=_BLOCKLIST_SINGLE_BIN,
-    )
+    env.ASSETS = _MockAssets(bloom_bytes=_BLOCKLIST_SINGLE_BIN)
     result = asyncio.run(worker._load_blocklist_from_assets(env))
 
     assert result is not None
@@ -554,19 +542,15 @@ class _MockShardedAssets:
 
     def __init__(
         self,
-        json_body: str | None = None,
         shards: dict[int, bytes] | None = None,
         raise_error: bool = False,
     ) -> None:
-        self._json_body = json_body
         self._shards = shards or {}
         self._raise = raise_error
 
     async def fetch(self, url: str) -> _FakeAssetResponse:
         if self._raise:
             raise RuntimeError("Assets unavailable")
-        if "bloom.json" in url:
-            return _FakeAssetResponse(body=self._json_body or "", status=200)
         import re as _re
 
         m = _re.search(r"shard_(\d+)\.bin", url)
@@ -594,10 +578,7 @@ def test_check_sharded_blocklist_blocks_domain(
     manifest, shards = _build_test_shards(["apple.ca"], shard_count=4)
     meta = _meta_from_manifest(manifest)
     env = MagicMock()
-    env.ASSETS = _MockShardedAssets(
-        json_body=json.dumps(manifest),
-        shards=shards,
-    )
+    env.ASSETS = _MockShardedAssets(shards=shards)
 
     blocked, cache_hit = asyncio.run(
         worker._check_sharded_blocklist("apple.ca", env, meta),
@@ -616,10 +597,7 @@ def test_check_sharded_blocklist_passes_absent_domain(
     manifest, shards = _build_test_shards(["apple.ca"], shard_count=4)
     meta = _meta_from_manifest(manifest)
     env = MagicMock()
-    env.ASSETS = _MockShardedAssets(
-        json_body=json.dumps(manifest),
-        shards=shards,
-    )
+    env.ASSETS = _MockShardedAssets(shards=shards)
 
     blocked, cache_hit = asyncio.run(
         worker._check_sharded_blocklist("safe.example.net", env, meta),
@@ -641,10 +619,7 @@ def test_check_sharded_blocklist_missing_shard_returns_false(
     del shards[target_shard]
 
     env = MagicMock()
-    env.ASSETS = _MockShardedAssets(
-        json_body=json.dumps(manifest),
-        shards=shards,
-    )
+    env.ASSETS = _MockShardedAssets(shards=shards)
 
     blocked, cache_hit = asyncio.run(
         worker._check_sharded_blocklist("apple.ca", env, meta),
@@ -656,11 +631,10 @@ def test_check_sharded_blocklist_missing_shard_returns_false(
 def test_check_sharded_blocklist_no_assets_returns_false(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """When ASSETS binding is missing, _load_sharded_meta returns None."""
+    """When bloom_meta has no shard config, _load_sharded_meta returns None."""
     _reset_shard_cache(monkeypatch)
 
-    env = MagicMock(spec=[])
-    meta = asyncio.run(worker._load_sharded_meta(env))
+    meta = worker._load_sharded_meta()
     assert meta is None
 
 
@@ -716,33 +690,30 @@ def test_bloom_false_positive_rate() -> None:
     """
     Check that the bloom filter false positive rate stays within the theoretical bound.
 
-    Loads the bloom filter from blocklist/bloom.json and probes 10,000,000
+    Loads the bloom filter from bloom_meta and probes 10,000,000
     deterministic absent domains across all CPU cores. The measured rate must not exceed
     the theoretical rate derived from the filter's k, m, and exact_count.
     """
+    sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+    from build_blocklist import _parse_raw_text, build_bloom, load_urls
+
     blocklist_dir = Path(__file__).parent.parent / "blocklist"
-    bloom_json_path = blocklist_dir / "bloom.json"
-    bloom_bin_path = blocklist_dir / "bloom.bin"
+    urls = load_urls()
+    all_exact: set[str] = set()
+    for i in range(len(urls)):
+        txt_path = blocklist_dir / f"{i}.txt"
+        if not txt_path.exists():
+            pytest.skip(f"blocklist/{i}.txt not found")
+        all_exact |= _parse_raw_text(txt_path.read_text(encoding="utf-8"))
 
-    bloom_json = json.loads(bloom_json_path.read_text())
-    num_hashes = bloom_json["bloom_k"]
-    exact_count = bloom_json["exact_count"]
-
-    shard_count = bloom_json.get("bloom_shards", 0)
-    if shard_count:
-        shard_m_list = bloom_json["shard_m"]
-        all_filters = [
-            (
-                (blocklist_dir / f"shard_{i}.bin").read_bytes(),
-                shard_m_list[i],
-                num_hashes,
-            )
-            for i in range(shard_count)
-        ]
-        num_bits = sum(shard_m_list)
-    else:
-        num_bits = bloom_json["bloom_m"]
-        all_filters = [(bloom_bin_path.read_bytes(), num_bits, num_hashes)]
+    meta, bit_array, num_hashes, _ = build_bloom(
+        all_exact=all_exact,
+        fp_rate=1e-10,
+        source_urls=urls,
+    )
+    exact_count = meta["exact_count"]
+    num_bits = meta["bloom_m"]
+    all_filters = [(bit_array, num_bits, num_hashes)]
 
     theoretical = (1.0 - math.exp(-num_hashes * exact_count / num_bits)) ** num_hashes
 

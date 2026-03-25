@@ -344,27 +344,17 @@ _HEADER_PROVIDERS_RETRIED = f"{_HEADER_PREFIX}-PROVIDERS-RETRIED"
 _HEADER_RESPONSE_FROM_MAIN = f"{_HEADER_PREFIX}-RESPONSE-FROM-MAIN"
 
 
-async def _fetch_bloom_json(assets: object) -> dict | None:
-    """Fetch and parse bloom.json from assets."""
-    try:
-        response: object = await assets.fetch("https://assets.local/bloom.json")
-        if response.status != 200:
-            logger.warning(
-                "Failed to fetch bloom.json from assets, status %d",
-                response.status,
-            )
-            return None
-        return json.loads(str(await response.text()))
-    except Exception:
-        logger.warning("Unexpected error fetching bloom.json", exc_info=True)
-        return None
-
-
 async def _load_blocklist_from_assets(env: object) -> BlocklistCache:
     """Load the bloom filter from Workers Assets, caching the result."""
     global _blocklist_cache
 
     if _blocklist_cache is not None:
+        return _blocklist_cache
+
+    import bloom_meta
+
+    if not bloom_meta.bloom_m or not bloom_meta.bloom_k:
+        _blocklist_cache = _EMPTY_BLOCKLIST
         return _blocklist_cache
 
     assets: object | None = getattr(env, "ASSETS", None)
@@ -375,16 +365,6 @@ async def _load_blocklist_from_assets(env: object) -> BlocklistCache:
         return _blocklist_cache
 
     try:
-        entry: dict | None = await _fetch_bloom_json(assets)
-        if entry is None:
-            _blocklist_cache = _EMPTY_BLOCKLIST
-            return _blocklist_cache
-
-        bloom_m: int = int(entry.get("bloom_m", 0))
-        bloom_k: int = int(entry.get("bloom_k", 0))
-        exact_count: int = int(entry.get("exact_count", 0))
-        source_urls: list = entry.get("source_urls", [])
-
         bin_response: object = await assets.fetch("https://assets.local/bloom.bin")
         if bin_response.status != 200:
             logger.warning(
@@ -397,8 +377,14 @@ async def _load_blocklist_from_assets(env: object) -> BlocklistCache:
         bit_array: bytearray = bytearray(await bin_response.bytes())
 
         fp_rate: float = (
-            (1.0 - math.exp(-bloom_k * exact_count / bloom_m)) ** bloom_k
-            if bloom_m and bloom_k and exact_count > 0
+            (
+                1.0
+                - math.exp(
+                    -bloom_meta.bloom_k * bloom_meta.exact_count / bloom_meta.bloom_m,
+                )
+            )
+            ** bloom_meta.bloom_k
+            if bloom_meta.exact_count > 0
             else 0.0
         )
 
@@ -408,22 +394,22 @@ async def _load_blocklist_from_assets(env: object) -> BlocklistCache:
                 return False
             return _bloom_contains(
                 bit_array=bit_array,
-                num_bits=bloom_m,
-                num_hashes=bloom_k,
+                num_bits=bloom_meta.bloom_m,
+                num_hashes=bloom_meta.bloom_k,
                 hash_value=_bloom_hash(normalized),
             )
 
         _blocklist_cache = BlocklistCache(
             check=_check,
-            manifest_urls=tuple(source_urls),
-            domain_count=exact_count,
+            manifest_urls=tuple(bloom_meta.source_urls),
+            domain_count=bloom_meta.exact_count,
             fp_rate=fp_rate,
             bloom_size_bytes=len(bit_array),
         )
 
         logger.info(
             "Loaded blocklist: %d domains, theoretical FP rate %.2e",
-            exact_count,
+            bloom_meta.exact_count,
             fp_rate,
         )
 
@@ -434,62 +420,53 @@ async def _load_blocklist_from_assets(env: object) -> BlocklistCache:
         return _blocklist_cache
 
 
-async def _load_sharded_meta(env: object) -> _ShardedBlocklistMeta | None:
-    """Load and cache bloom filter metadata for sharded lookups."""
+def _load_sharded_meta() -> _ShardedBlocklistMeta | None:
+    """Load bloom filter metadata from the bundled bloom_meta module."""
     global _sharded_meta
 
     if _sharded_meta is not None:
         return _sharded_meta
 
-    assets: object | None = getattr(env, "ASSETS", None)
-    if assets is None:
-        logger.warning("ASSETS binding not found, blocklist disabled")
+    import bloom_meta
+
+    if not bloom_meta.bloom_k or not bloom_meta.bloom_shards:
         return None
 
-    try:
-        entry: dict | None = await _fetch_bloom_json(assets)
-        if entry is None:
-            return None
-
-        bloom_k: int = int(entry.get("bloom_k", 0))
-        exact_count: int = int(entry.get("exact_count", 0))
-        shard_count: int = int(entry.get("bloom_shards", 0))
-        shard_m: list[int] = [int(m) for m in entry.get("shard_m", [])]
-        source_urls: list = entry.get("source_urls", [])
-
-        if not bloom_k or not shard_count or len(shard_m) != shard_count:
-            logger.warning("Invalid sharded bloom metadata")
-            return None
-
-        avg_m: int = sum(shard_m) // shard_count
-        fp_rate: float = (
-            (1.0 - math.exp(-bloom_k * exact_count / (avg_m * shard_count))) ** bloom_k
-            if exact_count > 0
-            else 0.0
-        )
-
-        _sharded_meta = _ShardedBlocklistMeta(
-            bloom_k=bloom_k,
-            shard_count=shard_count,
-            shard_m=tuple(shard_m),
-            manifest_urls=tuple(source_urls),
-            domain_count=exact_count,
-            fp_rate=fp_rate,
-        )
-
-        logger.info(
-            "Loaded sharded blocklist metadata: %d domains, %d shards",
-            exact_count,
-            shard_count,
-        )
-
-        return _sharded_meta
-    except Exception:
-        logger.warning(
-            "Unexpected error loading sharded blocklist metadata",
-            exc_info=True,
-        )
+    if len(bloom_meta.shard_m) != bloom_meta.bloom_shards:
+        logger.warning("Invalid sharded bloom metadata")
         return None
+
+    avg_m: int = sum(bloom_meta.shard_m) // bloom_meta.bloom_shards
+    fp_rate: float = (
+        (
+            1.0
+            - math.exp(
+                -bloom_meta.bloom_k
+                * bloom_meta.exact_count
+                / (avg_m * bloom_meta.bloom_shards),
+            )
+        )
+        ** bloom_meta.bloom_k
+        if bloom_meta.exact_count > 0
+        else 0.0
+    )
+
+    _sharded_meta = _ShardedBlocklistMeta(
+        bloom_k=bloom_meta.bloom_k,
+        shard_count=bloom_meta.bloom_shards,
+        shard_m=tuple(bloom_meta.shard_m),
+        manifest_urls=tuple(bloom_meta.source_urls),
+        domain_count=bloom_meta.exact_count,
+        fp_rate=fp_rate,
+    )
+
+    logger.info(
+        "Loaded sharded blocklist metadata: %d domains, %d shards",
+        bloom_meta.exact_count,
+        bloom_meta.bloom_shards,
+    )
+
+    return _sharded_meta
 
 
 def _cache_shard(shard_index: int, shard_bytes: bytes) -> None:
@@ -1335,7 +1312,7 @@ async def _handle_request(
         blocklist: BlocklistCache = _EMPTY_BLOCKLIST
         sharded: bool = False
     else:
-        meta: _ShardedBlocklistMeta | None = await _load_sharded_meta(env)
+        meta: _ShardedBlocklistMeta | None = _load_sharded_meta()
         sharded = meta is not None
         blocklist = (
             _EMPTY_BLOCKLIST if sharded else await _load_blocklist_from_assets(env)

@@ -201,7 +201,7 @@ To enable it, uncomment the entire contents of `.github/workflows/update-blockli
 
 ```shell
 uv run python scripts/build_blocklist.py
-git add blocklist/
+git add blocklist/ src/bloom_meta.py
 git commit -m "Update blocklist"
 uv run pywrangler deploy
 ```
