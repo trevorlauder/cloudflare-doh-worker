@@ -342,6 +342,7 @@ _HEADER_PROVIDERS_CONN_ERROR = f"{_HEADER_PREFIX}-PROVIDERS-CONNECTION-ERROR"
 _HEADER_PROVIDERS_FAILED_STATUS = f"{_HEADER_PREFIX}-PROVIDERS-FAILED-STATUS-CODE"
 _HEADER_PROVIDERS_RETRIED = f"{_HEADER_PREFIX}-PROVIDERS-RETRIED"
 _HEADER_RESPONSE_FROM_MAIN = f"{_HEADER_PREFIX}-RESPONSE-FROM-MAIN"
+_HEADER_SHARD_CACHE_HIT = f"{_HEADER_PREFIX}-SHARD-CACHE-HIT"
 
 
 async def _load_blocklist_from_assets(env: object) -> BlocklistCache:
@@ -769,6 +770,8 @@ def _handle_config(request: object, env: object, cfg: _ResolvedConfig) -> Respon
             "blocklist_fp_rate": bl_fp_rate,
             "bloom_size_bytes": bl_bloom_bytes,
             "bloom_shards": bl_shards,
+            "shard_cache_count": len(_shard_cache),
+            "shard_cache_bytes": _shard_cache_used,
         },
     }
 
@@ -819,6 +822,7 @@ def _build_response_headers(
     providers_failed_status: int = 0,
     providers_retried: int = 0,
     response_from_main: bool | None = None,
+    shard_cache_hit: bool = False,
 ) -> dict:
     """
     Build response headers. Adds DEBUG diagnostics when DEBUG is enabled.
@@ -848,9 +852,6 @@ def _build_response_headers(
     """
     headers = {"content-type": content_type}
 
-    if rebind:
-        headers[_HEADER_REBIND_PROTECTED] = "1"
-
     if ecs_truncated:
         headers[_HEADER_ECS_TRUNCATED] = ecs_truncated
 
@@ -871,9 +872,12 @@ def _build_response_headers(
 
     if config_blocked:
         headers[_HEADER_CONFIG_BLOCKED] = "1"
-
     if config_allowed:
         headers[_HEADER_ALLOWED] = "1"
+    if rebind:
+        headers[_HEADER_REBIND_PROTECTED] = "1"
+    if shard_cache_hit:
+        headers[_HEADER_SHARD_CACHE_HIT] = "1"
 
     if _DEBUG:
         headers.update(
@@ -884,8 +888,6 @@ def _build_response_headers(
                 _HEADER_BLOCKED: ", ".join(blocked or []),
                 _HEADER_TIMED_OUT: ", ".join(timed_out or []),
                 _HEADER_CONN_ERROR: ", ".join(connection_error or []),
-                _HEADER_ALLOWED: "1" if config_allowed else "",
-                _HEADER_CONFIG_BLOCKED: "1" if config_blocked else "",
             },
         )
 
@@ -1356,6 +1358,7 @@ async def _handle_request(
                 response_from="config",
                 config_blocked=True,
                 ecs_truncated=ecs_truncated,
+                shard_cache_hit=shard_cache_hit,
             ),
         )
     else:
