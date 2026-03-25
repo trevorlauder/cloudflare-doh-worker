@@ -5,12 +5,12 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates curl make tini && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-ARG MISE_VERSION=v2026.3.12
+ARG MISE_VERSION=v2026.3.14
 ARG TARGETARCH
 SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
 RUN case "${TARGETARCH}" in \
-    arm64) MISE_ARCH="arm64"; MISE_SHA256="5670f708c843a90fb5244f57b50aa2a4f62fc45d2b1f563bc5ab4e2538b9dd22" ;; \
-    *)     MISE_ARCH="x64";   MISE_SHA256="a4edc8d6f9dcf595f64938ecf34b613658c2fe5304466dffa5317ebd1e130acd" ;; \
+    arm64) MISE_ARCH="arm64"; MISE_SHA256="b5c46dec6596ba094d3d1b243500c68ce51f45b4f2958150d74b993268a926d9" ;; \
+    *)     MISE_ARCH="x64";   MISE_SHA256="e381451595a20bc064cb662cb3fd1ada137ea0390838f070ff3a4bebdd8ba0f2" ;; \
     esac; \
     curl -fsSL "https://github.com/jdx/mise/releases/download/${MISE_VERSION}/mise-${MISE_VERSION}-linux-${MISE_ARCH}" \
     -o /usr/local/bin/mise && \
