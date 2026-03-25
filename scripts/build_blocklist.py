@@ -7,8 +7,7 @@ Download community block lists and write a single bloom filter file.
 
 Reads URLs from blocklist_sources.yaml, fetches each URL, parses hosts-file
 or plain domain-per-line format, deduplicates across all sources, and writes
-a single blocklist/bloom.json. The file contains a bloom filter of unique
-exact domains merged from all sources.
+a bloom filter of unique exact domains merged from all sources.
 
 Usage:
     uv run python scripts/build_blocklist.py [options]
@@ -23,7 +22,6 @@ Options:
 """
 
 import argparse
-import json
 import math
 from multiprocessing import Pool
 import os
@@ -44,8 +42,8 @@ _opener = build_opener(HTTPHandler, HTTPSHandler)
 _ROOT = Path(__file__).resolve().parents[1]
 _SOURCES_PATH = _ROOT / "blocklist_sources.yaml"
 _BLOCKLIST_DIR = _ROOT / "blocklist"
-_BLOOM_JSON_PATH = _BLOCKLIST_DIR / "bloom.json"
 _BLOOM_PATH = _BLOCKLIST_DIR / "bloom.bin"
+_BLOOM_META_PATH = _ROOT / "src" / "bloom_meta.py"
 _SHARD_TARGET_BYTES = 512 * 1024  # target shard size: 512 KB
 _ASSET_MAX_BYTES = 25 * 1024 * 1024  # Workers Assets per-file limit: 25 MB
 _TWO_SHARD_MAX_BYTES = 2 * _ASSET_MAX_BYTES  # max size for 2-shard split
@@ -158,45 +156,20 @@ def _fp_check(filters: list[Bloom], num_probes: int) -> float:
     return false_hits / num_probes
 
 
-def fetch_and_parse_url(url: str) -> tuple[set[str], str]:
-    """
-    Fetch and parse one block list URL into a domain set.
-
-    Filters out bare IP addresses from the exact domain set.
-
-    Parameters:
-    url (str): Block list URL to fetch and parse.
-
-    Returns:
-    tuple[set[str], str]: (exact domains, raw text)
-    """
-    text: str = fetch_url(url)
-    exact: set[str] = parse_blocklist_text(text)
+def _parse_raw_text(raw_text: str) -> set[str]:
+    """Parse raw blocklist text into a domain set, filtering out bare IPs."""
+    exact: set[str] = parse_blocklist_text(raw_text)
     exact = {domain for domain in exact if not _IP_RE.match(domain)}
-    _console.print(
-        f"  [green]→ {len(exact):,} exact domains[/green]",
-    )
-    return exact, text
+    _console.print(f"  [green]→ {len(exact):,} exact domains[/green]")
+    return exact
 
 
-def build_bloom_json(
+def build_bloom(
     all_exact: set[str],
     fp_rate: float,
     source_urls: list[str] | None = None,
-) -> tuple[str, bytes, int, Bloom]:
-    """
-    Build a single bloom filter from the deduplicated union of all source domain sets.
-
-    Parameters:
-    all_exact (set[str]): Deduplicated set of exact domains across all sources.
-    fp_rate (float): Target false-positive rate for the bloom filter.
-    source_urls (list[str] | None): Original source URLs included in the output for
-        traceability. Stored in bloom.json and surfaced via the /config endpoint.
-
-    Returns:
-    tuple[str, bytes, int, Bloom]: JSON metadata string, raw bloom bit array,
-        number of hash functions (k), and the built bloom filter.
-    """
+) -> tuple[dict, bytes, int, Bloom]:
+    """Build a single bloom filter from the deduplicated union of all source domain sets."""
     bloom: Bloom = Bloom(max(len(all_exact), 1), fp_rate, _bloom_hash)
     for domain in all_exact:
         bloom.add(domain)
@@ -206,15 +179,12 @@ def build_bloom_json(
     num_bits: int = bloom.size_in_bits
 
     return (
-        json.dumps(
-            {
-                "bloom_m": num_bits,
-                "bloom_k": num_hashes,
-                "exact_count": len(all_exact),
-                "source_urls": source_urls or [],
-            },
-            separators=(",", ":"),
-        ),
+        {
+            "bloom_m": num_bits,
+            "bloom_k": num_hashes,
+            "exact_count": len(all_exact),
+            "source_urls": source_urls or [],
+        },
         bit_array,
         num_hashes,
         bloom,
@@ -226,7 +196,7 @@ def build_sharded_bloom(
     fp_rate: float,
     shard_count: int,
     source_urls: list[str] | None = None,
-) -> tuple[str, list[bytes]]:
+) -> tuple[dict, list[bytes]]:
     """
     Build sharded bloom filters by partitioning domains by hash.
 
@@ -237,7 +207,7 @@ def build_sharded_bloom(
     source_urls (list[str] | None): Original source URLs for traceability.
 
     Returns:
-    tuple[str, list[bytes]]: JSON metadata string and list of shard bit arrays.
+    tuple[dict, list[bytes]]: Metadata dict and list of shard bit arrays.
     """
     buckets: list[set[str]] = [set() for _ in range(shard_count)]
     for domain in all_exact:
@@ -259,16 +229,13 @@ def build_sharded_bloom(
         shard_m_values.append(bloom.size_in_bits)
         shard_bit_arrays.append(bit_array)
 
-    metadata: str = json.dumps(
-        {
-            "bloom_k": num_hashes,
-            "exact_count": len(all_exact),
-            "source_urls": source_urls or [],
-            "bloom_shards": shard_count,
-            "shard_m": shard_m_values,
-        },
-        separators=(",", ":"),
-    )
+    metadata: dict = {
+        "bloom_k": num_hashes,
+        "exact_count": len(all_exact),
+        "source_urls": source_urls or [],
+        "bloom_shards": shard_count,
+        "shard_m": shard_m_values,
+    }
 
     return metadata, shard_bit_arrays
 
@@ -319,8 +286,32 @@ def verify_bloom_filter(
     )
 
 
+def _write_bloom_meta(meta: dict) -> None:
+    """Write bloom_meta.py with bloom filter metadata."""
+    content: str = (
+        "# Copyright 2025-2026 Trevor Lauder.\n"
+        "# SPDX-License-Identifier: MIT\n"
+        "\n"
+        "# Generated by scripts/build_blocklist.py\n"
+        "# Do not edit manually\n"
+        "\n"
+        f"bloom_m: int = {meta.get('bloom_m', 0)}\n"
+        f"bloom_k: int = {meta.get('bloom_k', 0)}\n"
+        f"exact_count: int = {meta.get('exact_count', 0)}\n"
+        f"bloom_shards: int = {meta.get('bloom_shards', 0)}\n"
+        f"source_urls: list[str] = {meta.get('source_urls', [])}\n"
+        f"shard_m: list[int] = {meta.get('shard_m', [])}\n"
+    )
+    if (
+        _BLOOM_META_PATH.exists()
+        and _BLOOM_META_PATH.read_text(encoding="utf-8") == content
+    ):
+        return
+    _BLOOM_META_PATH.write_text(content, encoding="utf-8")
+
+
 def main() -> None:
-    """Entry point: download block lists, deduplicate across sources, and write bloom.json."""
+    """Entry point: download block lists, deduplicate across sources, and build bloom filter."""
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -377,10 +368,9 @@ def main() -> None:
             for stale in sorted(_BLOCKLIST_DIR.glob("*.txt")):
                 stale.unlink()
                 _console.print(f"[yellow]Removed {stale.name}[/yellow]")
-            for path in (_BLOOM_JSON_PATH, _BLOOM_PATH):
-                if path.exists():
-                    path.unlink()
-                    _console.print(f"[yellow]Removed {path.name}[/yellow]")
+            if _BLOOM_PATH.exists():
+                _BLOOM_PATH.unlink()
+                _console.print(f"[yellow]Removed {_BLOOM_PATH.name}[/yellow]")
         return
 
     _BLOCKLIST_DIR.mkdir(exist_ok=True)
@@ -414,15 +404,10 @@ def main() -> None:
                 raise SystemExit(1)
             _console.print("  [yellow]Using cached file[/yellow]")
             raw_text: str = txt_path.read_text(encoding="utf-8")
-            exact: set[str] = parse_blocklist_text(raw_text)
-            exact = {domain for domain in exact if not _IP_RE.match(domain)}
-            _console.print(
-                f"  [green]→ {len(exact):,} exact domains[/green]",
-            )
         else:
-            exact, raw_text = fetch_and_parse_url(url)
+            raw_text = fetch_url(url)
             txt_path.write_text(raw_text, encoding="utf-8")
-        per_source.append(exact)
+        per_source.append(_parse_raw_text(raw_text))
 
     total_before: int = sum(len(exact) for exact in per_source)
     all_exact: set[str] = set().union(*per_source)
@@ -445,14 +430,12 @@ def main() -> None:
     if _BLOOM_PATH.exists():
         _BLOOM_PATH.unlink()
 
-    _BLOOM_JSON_PATH.parent.mkdir(exist_ok=True)
-
     _console.print("[cyan]Building bloom filter ...[/cyan]")
-    payload: str
+    meta: dict
     bit_array: bytes
     num_hashes: int
     bloom: Bloom
-    payload, bit_array, num_hashes, bloom = build_bloom_json(
+    meta, bit_array, num_hashes, bloom = build_bloom(
         all_exact=all_exact,
         fp_rate=args.fp_rate,
         source_urls=urls,
@@ -478,30 +461,27 @@ def main() -> None:
             f"sharding into {shard_count} shards ...[/cyan]",
         )
 
-        payload, shard_bit_arrays = build_sharded_bloom(
+        meta, shard_bit_arrays = build_sharded_bloom(
             all_exact=all_exact,
             fp_rate=args.fp_rate,
             shard_count=shard_count,
             source_urls=urls,
         )
 
-        _BLOOM_JSON_PATH.write_text(payload, encoding="utf-8")
-
         for i, shard_data in enumerate(shard_bit_arrays):
             (_BLOCKLIST_DIR / f"shard_{i}.bin").write_bytes(shard_data)
 
         _console.print(
-            f"\n[green]Written to {_BLOOM_JSON_PATH.relative_to(_ROOT)}"
-            f" and {shard_count} shard(s) in {_BLOCKLIST_DIR.relative_to(_ROOT)}/[/green]",
+            f"\n[green]Written to {shard_count} shard(s) in {_BLOCKLIST_DIR.relative_to(_ROOT)}/[/green]",
         )
     else:
-        _BLOOM_JSON_PATH.write_text(payload, encoding="utf-8")
         _BLOOM_PATH.write_bytes(bit_array)
 
         _console.print(
-            f"\n[green]Written to {_BLOOM_JSON_PATH.relative_to(_ROOT)}"
-            f" and {_BLOOM_PATH.relative_to(_ROOT)}[/green]",
+            f"\n[green]Written to {_BLOOM_PATH.relative_to(_ROOT)}[/green]",
         )
+
+    _write_bloom_meta(meta)
 
     if args.fp_check > 0:
         filters: list[Bloom] = [bloom]
