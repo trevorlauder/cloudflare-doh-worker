@@ -6017,60 +6017,6 @@
           "kind": "RowsLayoutRow",
           "spec": {
             "collapse": false,
-            "hideHeader": true,
-            "layout": {
-              "kind": "GridLayout",
-              "spec": {
-                "items": [
-                  {
-                    "kind": "GridLayoutItem",
-                    "spec": {
-                      "element": {
-                        "kind": "ElementReference",
-                        "name": "panel-67"
-                      },
-                      "height": 8,
-                      "width": 4,
-                      "x": 0,
-                      "y": 0
-                    }
-                  },
-                  {
-                    "kind": "GridLayoutItem",
-                    "spec": {
-                      "element": {
-                        "kind": "ElementReference",
-                        "name": "panel-65"
-                      },
-                      "height": 8,
-                      "width": 10,
-                      "x": 4,
-                      "y": 0
-                    }
-                  },
-                  {
-                    "kind": "GridLayoutItem",
-                    "spec": {
-                      "element": {
-                        "kind": "ElementReference",
-                        "name": "panel-66"
-                      },
-                      "height": 8,
-                      "width": 10,
-                      "x": 14,
-                      "y": 0
-                    }
-                  }
-                ]
-              }
-            },
-            "title": "Isolate Health"
-          }
-        },
-        {
-          "kind": "RowsLayoutRow",
-          "spec": {
-            "collapse": false,
             "fillScreen": false,
             "hideHeader": true,
             "layout": {
@@ -6601,6 +6547,60 @@
               }
             },
             "title": "General"
+          }
+        },
+        {
+          "kind": "RowsLayoutRow",
+          "spec": {
+            "collapse": true,
+            "hideHeader": false,
+            "layout": {
+              "kind": "GridLayout",
+              "spec": {
+                "items": [
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-67"
+                      },
+                      "height": 8,
+                      "width": 4,
+                      "x": 0,
+                      "y": 0
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-65"
+                      },
+                      "height": 8,
+                      "width": 10,
+                      "x": 4,
+                      "y": 0
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-66"
+                      },
+                      "height": 8,
+                      "width": 10,
+                      "x": 14,
+                      "y": 0
+                    }
+                  }
+                ]
+              }
+            },
+            "title": "Isolate Health"
           }
         },
         {
