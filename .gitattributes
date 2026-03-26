@@ -1,0 +1,5 @@
+* merge=theirs
+src/config.py merge=ours
+src/bloom_meta.py merge=ours
+blocklist_sources.yaml merge=ours
+wrangler.toml merge=ours
