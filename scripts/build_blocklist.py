@@ -483,8 +483,13 @@ def main() -> None:
     estimated_bytes: int = math.ceil(estimated_bits / 8)
     shard_count: int = max(1, math.ceil(estimated_bytes / _SHARD_TARGET_BYTES))
 
+    if estimated_bytes >= 1024 * 1024:
+        size_str = f"{estimated_bytes / (1024 * 1024):.1f} MB"
+    else:
+        size_str = f"{estimated_bytes / 1024:.1f} KB"
+
     _console.print(
-        f"\n[cyan]Building bloom filter ({estimated_bytes / 1024:.1f} KB estimated, "
+        f"\n[cyan]Building bloom filter ({size_str} estimated, "
         f"{shard_count} shard(s)) ...[/cyan]",
     )
 
