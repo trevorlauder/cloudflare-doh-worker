@@ -13,6 +13,7 @@ import re
 import time
 from typing import NamedTuple
 import urllib.parse
+import uuid
 
 import dns.exception
 import dns.name
@@ -292,6 +293,8 @@ logger = logging.getLogger(__name__)
 _ALLOWED_COMPILED = compile_domain_set(_ALLOWED_DOMAINS)
 _BLOCKED_COMPILED = compile_domain_set(_BLOCKED_DOMAINS)
 
+_ISOLATE_ID: str = ""
+
 _sharded_meta: _ShardedBlocklistMeta | None = None
 _SHARD_CACHE_MAX_BYTES: int = 50 * 1024 * 1024
 _shard_cache_used: int = 0
@@ -378,6 +381,10 @@ def _load_sharded_meta() -> _ShardedBlocklistMeta | None:
 def _cache_shard(shard_index: int, shard_bytes: bytes) -> None:
     """Store a shard in the cache, evicting LRU entries if the size limit is reached."""
     global _shard_cache_used
+
+    if shard_index in _shard_cache:
+        _shard_cache.move_to_end(shard_index)
+        return
 
     shard_size: int = len(shard_bytes)
     if shard_size > _SHARD_CACHE_MAX_BYTES:
@@ -1150,6 +1157,10 @@ async def _handle_request(
     Returns:
     Response: Final HTTP response.
     """
+    global _ISOLATE_ID
+    if not _ISOLATE_ID:
+        _ISOLATE_ID = str(uuid.uuid4())
+
     request_timestamp_ms: int = int(time.time() * 1000)
     client_ip: str = str(request.headers.get("cf-connecting-ip") or "unknown")
     query: str = f"?{parsed_url.query}" if parsed_url.query else ""
@@ -1352,6 +1363,9 @@ async def _handle_request(
             else 0,
             asset_loading=asset_loading,
             shard_cache_hit=shard_cache_hit,
+            isolate_id=_ISOLATE_ID,
+            shard_cache_count=len(_shard_cache),
+            shard_cache_bytes=_shard_cache_used,
         )
         if promise is not None:
             ctx.waitUntil(promise)
