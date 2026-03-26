@@ -7,10 +7,15 @@ import base64
 import json
 import logging
 
+from js import AbortSignal
+from workers import fetch
+
 import config
 from dns_utils import Question
 
 logger = logging.getLogger(__name__)
+
+_cached_loki_credentials: str | None = None
 
 
 def build_loki_fetch_promise(
@@ -28,8 +33,8 @@ def build_loki_fetch_promise(
     error: bool = False,
     blocklist_domain_count: int = 0,
     blocklist_shard_count: int = 0,
-    asset_loading: bool = False,
     shard_cache_hit: bool = False,
+    shard_cache_age_ms: int = 0,
     isolate_id: str = "",
     shard_cache_count: int = 0,
     shard_cache_bytes: int = 0,
@@ -50,9 +55,10 @@ def build_loki_fetch_promise(
     config_allowed (bool): Whether the request was allowed by config bypass.
     elapsed_ms (int): Elapsed milliseconds from request start to just before Loki dispatch.
     error (bool): Whether the request resulted in an error.
-    blocklist_shard_count (int): Number of bloom filter shards (0 if not sharded).
-    asset_loading (bool): Whether the blocklist was loaded from assets during this request.
+    blocklist_shard_count (int): Number of filter shards (0 if not sharded).
+
     shard_cache_hit (bool): Whether the shard lookup was served from the in-memory cache.
+    shard_cache_age_ms (int): Age of the cache entry in milliseconds on a hit, or 0 on a miss.
     isolate_id (str): Unique identifier for the worker isolate.
     shard_cache_count (int): Number of shards currently in the LRU cache.
     shard_cache_bytes (int): Total bytes used by cached shards.
@@ -60,8 +66,7 @@ def build_loki_fetch_promise(
     object | None: JS fetch Promise or None on failure.
     """
     try:
-        from js import AbortSignal
-        from workers import fetch
+        global _cached_loki_credentials
 
         loki_username: object | None = getattr(env, "LOKI_USERNAME", None)
         loki_password: object | None = getattr(env, "LOKI_PASSWORD", None)
@@ -69,9 +74,12 @@ def build_loki_fetch_promise(
         if not loki_username or not loki_password:
             return None
 
-        credentials: str = base64.b64encode(
-            f"{loki_username}:{loki_password}".encode(),
-        ).decode()
+        if _cached_loki_credentials is None:
+            _cached_loki_credentials = base64.b64encode(
+                f"{loki_username}:{loki_password}".encode(),
+            ).decode()
+
+        credentials: str = _cached_loki_credentials
 
         response_codes: dict[str, int] = {}
         blocked_ids: list[str] = []
@@ -139,8 +147,8 @@ def build_loki_fetch_promise(
             "response_from": response_from,
             "blocklist_domain_count": blocklist_domain_count,
             "blocklist_shard_count": blocklist_shard_count,
-            "asset_loading": asset_loading,
             "shard_cache_hit": shard_cache_hit,
+            "shard_cache_age_ms": shard_cache_age_ms,
             "isolate_id": isolate_id,
             "shard_cache_count": shard_cache_count,
             "shard_cache_bytes": shard_cache_bytes,

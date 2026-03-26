@@ -37,9 +37,10 @@ jobs:
           mkdir -p /tmp/deploy/blocklist
 
           cp -r src/ /tmp/deploy/src/
+          cp -r tools/ /tmp/deploy/tools/
 
-          cp src/bloom_meta.py.default /tmp/deploy/src/bloom_meta.py
-          rm -f /tmp/deploy/src/bloom_meta.py.default
+          cp src/filter_meta.py.default /tmp/deploy/src/filter_meta.py
+          rm -f /tmp/deploy/src/filter_meta.py.default
           cp -r scripts/ /tmp/deploy/scripts/
           cp wrangler.toml pyproject.toml package.json uv.lock LICENSE .gitignore .gitattributes /tmp/deploy/
           cp mise.deploy.toml /tmp/deploy/mise.toml
@@ -68,12 +69,12 @@ jobs:
 
           \`\`\`shell
           uv run python scripts/build_blocklist.py
-          git add blocklist_sources.yaml blocklist/ src/bloom_meta.py
+          git add blocklist_sources.yaml blocklist/ src/filter_meta.py
           git commit -m "update blocklist"
           git push
           \`\`\`
 
-          The bloom filter is rebuilt and bundled as Workers Assets automatically on deploy.
+          The filter is rebuilt and bundled as Workers Assets automatically on deploy.
 
           To keep lists updated automatically, you can use the [sample workflow](https://github.com/${GH_REPOSITORY}/blob/${TAG}/workflows/update-blocklist.yml).
 

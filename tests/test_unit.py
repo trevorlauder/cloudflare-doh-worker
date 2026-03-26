@@ -10,14 +10,18 @@ from pathlib import Path
 import sys
 from unittest.mock import MagicMock
 
-from conftest import _workers_stub
+sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+
+from build_blocklist import _build_bfuse32_shard
+from conftest import _runtime_stub
 import pytest
 
-from dns_utils import (
-    ProviderResult,
-    _bloom_contains,
-    _bloom_hash,
-    parse_blocklist_text,
+from blocklist_parser import parse_blocklist_text
+from dns_utils import ProviderResult
+from filter_utils import (
+    _domain_to_key,
+    check_filter,
+    load_filter,
 )
 import worker
 from worker import (
@@ -271,7 +275,7 @@ def test_negotiate_accept_case_insensitive():
 def test_handle_health_returns_ok():
     """_handle_health returns {"status": "ok"} with HTTP 200."""
     _handle_health()
-    resp_call = _workers_stub.Response.call_args
+    resp_call = _runtime_stub.Response.call_args
     body_json = json.loads(resp_call[0][0])
     assert body_json["status"] == "ok"
     assert resp_call[1]["status"] == 200
@@ -345,7 +349,7 @@ def test_parse_blocklist_adblock_metadata_skipped():
 
 
 def test_parse_blocklist_wildcard_rejected():
-    """Wildcard entries are rejected since bloom filters only do exact matching."""
+    """Wildcard entries are rejected since filters only do exact matching."""
     exact = parse_blocklist_text("*.ads.example.com\n")
     assert exact == set()
 
@@ -415,78 +419,51 @@ class _FakeAssetResponse:
         return self._body.encode()
 
 
-def _patch_bloom_meta(monkeypatch: pytest.MonkeyPatch, meta: dict) -> None:
-    """Set bloom_meta module attributes from a metadata dict."""
-    import bloom_meta
+def _patch_filter_meta(monkeypatch: pytest.MonkeyPatch, meta: dict) -> None:
+    """Set filter_meta module attributes from a metadata dict."""
+    import filter_meta
 
-    monkeypatch.setattr(bloom_meta, "bloom_k", meta.get("bloom_k", 0))
-    monkeypatch.setattr(bloom_meta, "exact_count", meta.get("exact_count", 0))
-    monkeypatch.setattr(bloom_meta, "bloom_shards", meta.get("bloom_shards", 0))
-    monkeypatch.setattr(bloom_meta, "source_urls", meta.get("source_urls", []))
-    monkeypatch.setattr(bloom_meta, "shard_m", meta.get("shard_m", []))
+    monkeypatch.setattr(filter_meta, "filter_type", meta.get("filter_type", "bfuse32"))
+    monkeypatch.setattr(filter_meta, "exact_count", meta.get("exact_count", 0))
+    monkeypatch.setattr(filter_meta, "shard_count", meta.get("shard_count", 0))
+    monkeypatch.setattr(filter_meta, "source_urls", meta.get("source_urls", []))
 
 
 def _build_test_shards(
     domains: list[str],
     shard_count: int,
 ) -> tuple[dict, dict[int, bytes]]:
-    """Build sharded bloom filter test fixtures from a list of domains."""
-    from rbloom import Bloom
-
-    buckets: list[set[str]] = [set() for _ in range(shard_count)]
+    """Build sharded BinaryFuse32 test fixtures from a list of domains."""
+    buckets: list[list[int]] = [[] for _ in range(shard_count)]
     for domain in domains:
-        idx = abs(_bloom_hash(domain)) % shard_count
-        buckets[idx].add(domain)
+        key = _domain_to_key(domain)
+        shard_index = key % shard_count
+        buckets[shard_index].append(key)
 
     shard_data: dict[int, bytes] = {}
-    shard_m: list[int] = []
-    num_hashes: int = 0
 
-    for i, bucket in enumerate(buckets):
-        bloom = Bloom(max(len(bucket), 1), 1e-10, _bloom_hash)
-        for domain in bucket:
-            bloom.add(domain)
-        raw = bloom.save_bytes()
-        num_hashes = int.from_bytes(raw[:8], "little")
-        shard_data[i] = raw[8:]
-        shard_m.append(bloom.size_in_bits)
+    for shard_index, bucket in enumerate(buckets):
+        shard_data[shard_index] = _build_bfuse32_shard(bucket)
 
     manifest = {
-        "bloom_k": num_hashes,
         "exact_count": len(domains),
         "source_urls": ["https://example.com/hosts.txt"],
-        "bloom_shards": shard_count,
-        "shard_m": shard_m,
+        "shard_count": shard_count,
     }
     return manifest, shard_data
 
 
 def _meta_from_manifest(manifest: dict) -> _ShardedBlocklistMeta:
     """Build a _ShardedBlocklistMeta from a test manifest dict."""
-    shard_count = manifest["bloom_shards"]
-    shard_m = tuple(manifest["shard_m"])
-    exact_count = manifest["exact_count"]
-    bloom_k = manifest["bloom_k"]
-    avg_m = sum(shard_m) // shard_count
-
-    fp_rate = (
-        (1.0 - math.exp(-bloom_k * exact_count / (avg_m * shard_count))) ** bloom_k
-        if exact_count > 0
-        else 0.0
-    )
-
     return _ShardedBlocklistMeta(
-        bloom_k=bloom_k,
-        shard_count=shard_count,
-        shard_m=shard_m,
+        shard_count=manifest["shard_count"],
         manifest_urls=tuple(manifest["source_urls"]),
-        domain_count=exact_count,
-        fp_rate=fp_rate,
+        domain_count=manifest["exact_count"],
     )
 
 
 class _MockShardedAssets:
-    """ASSETS binding stub for sharded bloom filter tests."""
+    """ASSETS binding stub for sharded filter tests."""
 
     def __init__(
         self,
@@ -528,12 +505,13 @@ def test_check_sharded_blocklist_blocks_domain(
     env = MagicMock()
     env.ASSETS = _MockShardedAssets(shards=shards)
 
-    blocked, cache_hit = asyncio.run(
+    blocked, cache_hit, cache_age_ms = asyncio.run(
         worker._check_sharded_blocklist("apple.ca", env, meta),
     )
 
     assert blocked is True
     assert cache_hit is False
+    assert cache_age_ms == 0
 
 
 def test_check_sharded_blocklist_passes_absent_domain(
@@ -547,12 +525,13 @@ def test_check_sharded_blocklist_passes_absent_domain(
     env = MagicMock()
     env.ASSETS = _MockShardedAssets(shards=shards)
 
-    blocked, cache_hit = asyncio.run(
+    blocked, cache_hit, cache_age_ms = asyncio.run(
         worker._check_sharded_blocklist("safe.example.net", env, meta),
     )
 
     assert blocked is False
     assert cache_hit is False
+    assert cache_age_ms == 0
 
 
 def test_check_sharded_blocklist_missing_shard_returns_false(
@@ -563,105 +542,85 @@ def test_check_sharded_blocklist_missing_shard_returns_false(
 
     manifest, shards = _build_test_shards(["apple.ca"], shard_count=4)
     meta = _meta_from_manifest(manifest)
-    target_shard = abs(_bloom_hash("apple.ca")) % 4
+    target_shard = _domain_to_key("apple.ca") % 4
     del shards[target_shard]
 
     env = MagicMock()
     env.ASSETS = _MockShardedAssets(shards=shards)
 
-    blocked, cache_hit = asyncio.run(
+    blocked, cache_hit, cache_age_ms = asyncio.run(
         worker._check_sharded_blocklist("apple.ca", env, meta),
     )
     assert blocked is False
     assert cache_hit is False
+    assert cache_age_ms == 0
 
 
-def test_check_sharded_blocklist_no_assets_returns_false(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """When bloom_meta has no shard config, _load_sharded_meta returns None."""
-    _reset_shard_cache(monkeypatch)
-    _patch_bloom_meta(monkeypatch, {"bloom_k": 0, "bloom_shards": 0})
+def test_sharded_meta_initialized_from_filter_meta() -> None:
+    """_sharded_meta is set at module level from filter_meta."""
+    import filter_meta
 
-    meta = worker._load_sharded_meta()
-    assert meta is None
-
-
-def test_bloom_contains_inserted_domain() -> None:
-    """Inserted domain is found in the bloom filter built from test shards."""
-    manifest, shards = _build_test_shards(["apple.ca"], shard_count=1)
-    bit_array = bytearray(shards[0])
-    assert _bloom_contains(
-        bit_array=bit_array,
-        num_bits=manifest["shard_m"][0],
-        num_hashes=manifest["bloom_k"],
-        hash_value=_bloom_hash("apple.ca"),
-    )
+    if filter_meta.shard_count:
+        assert worker._sharded_meta is not None
+        assert worker._sharded_meta.shard_count == filter_meta.shard_count
+    else:
+        assert worker._sharded_meta is None
 
 
-def test_bloom_contains_absent_domain() -> None:
-    """Domain not inserted into the bloom filter is not found."""
-    manifest, shards = _build_test_shards(["apple.ca"], shard_count=1)
-    bit_array = bytearray(shards[0])
-    assert not _bloom_contains(
-        bit_array=bit_array,
-        num_bits=manifest["shard_m"][0],
-        num_hashes=manifest["bloom_k"],
-        hash_value=_bloom_hash("safe.example.net"),
-    )
+def test_filter_contains_inserted_domain() -> None:
+    """Inserted domain is found in the filter built from test shards."""
+    _, shards = _build_test_shards(["apple.ca"], shard_count=1)
+    test_filter = load_filter(shards[0])
+    assert check_filter(test_filter, _domain_to_key("apple.ca"))
 
 
-def test_bloom_false_positive_rate() -> None:
+def test_filter_absent_domain() -> None:
+    """Domain not inserted into the filter is not found."""
+    _, shards = _build_test_shards(["apple.ca"], shard_count=1)
+    test_filter = load_filter(shards[0])
+    assert not check_filter(test_filter, _domain_to_key("safe.example.net"))
+
+
+def test_false_positive_rate() -> None:
     """
-    Check that the bloom filter false positive rate stays within the theoretical bound.
+    Check that the BinaryFuse32 false positive rate stays within bounds.
 
-    Builds sharded bloom filters and probes 10,000,000 deterministic absent domains
-    across all CPU cores. The measured rate must not exceed the theoretical rate.
+    Builds sharded filters and probes 10,000,000 deterministic absent domains
+    across all CPU cores. The theoretical BinaryFuse32 FP rate is 1/2^32.
     """
-    sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
     from build_blocklist import (
         _fp_check,
         _parse_raw_text,
-        build_sharded_bloom,
+        build_sharded_filters,
         load_urls,
     )
 
     blocklist_dir = Path(__file__).parent.parent / "blocklist"
     urls = load_urls()
     all_exact: set[str] = set()
-    for i in range(len(urls)):
-        txt_path = blocklist_dir / f"{i}.txt"
+    for source_index in range(len(urls)):
+        txt_path = blocklist_dir / f"{source_index}.txt"
         if not txt_path.exists():
-            pytest.skip(f"blocklist/{i}.txt not found")
+            pytest.skip(f"blocklist/{source_index}.txt not found")
         all_exact |= _parse_raw_text(txt_path.read_text(encoding="utf-8"))
 
-    estimated_bits = math.ceil(
-        -max(len(all_exact), 1) * math.log(1e-10) / (math.log(2) ** 2),
-    )
-    shard_count = max(1, math.ceil(estimated_bits / 8 / (512 * 1024)))
+    domain_count: int = max(len(all_exact), 1)
+    estimated_bytes = math.ceil(domain_count * 36 / 8)
+    shard_count = max(1, math.ceil(estimated_bytes / (512 * 1024)))
 
-    meta, shard_bit_arrays = build_sharded_bloom(
+    _, shard_bytes_list = build_sharded_filters(
         all_exact=all_exact,
-        fp_rate=1e-10,
         shard_count=shard_count,
         source_urls=urls,
     )
-    exact_count = meta["exact_count"]
-    num_hashes = meta["bloom_k"]
-    avg_m = sum(meta["shard_m"]) // shard_count
-
-    theoretical = (
-        1.0 - math.exp(-num_hashes * (exact_count / shard_count) / avg_m)
-    ) ** num_hashes
 
     num_probes = 10_000_000
     measured = _fp_check(
-        shard_bit_arrays=shard_bit_arrays,
-        shard_m=meta["shard_m"],
-        num_hashes=num_hashes,
+        shard_bytes_list=shard_bytes_list,
         num_probes=num_probes,
     )
 
-    assert measured <= theoretical, (
-        f"false positive rate {measured:.2e} exceeds theoretical {theoretical:.2e}"
+    max_fp_rate: float = 2.33e-10
+    assert measured <= max_fp_rate, (
+        f"false positive rate {measured:.2e} exceeds bound {max_fp_rate:.2e}"
     )
