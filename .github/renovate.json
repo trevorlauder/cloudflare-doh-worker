@@ -12,20 +12,14 @@
       "/(^|/)mise\\.dev\\.toml$/"
     ]
   },
-  "customManagers": [
-    {
-      "customType": "regex",
-      "managerFilePatterns": [
-        "/^Dockerfile$/"
-      ],
-      "matchStrings": [
-        "ARG MISE_VERSION=(?<currentValue>v[\\d.]+)\\n"
-      ],
-      "depNameTemplate": "jdx/mise",
-      "datasourceTemplate": "github-releases"
-    }
-  ],
   "packageRules": [
+    {
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "automerge": true
+    },
     {
       "matchManagers": [
         "github-actions"
