@@ -1,21 +1,16 @@
 FROM ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b
 
 # hadolint ignore=DL3008
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates curl make tini && \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-ARG MISE_VERSION=v2026.4.10
-ARG TARGETARCH
-SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
-RUN case "${TARGETARCH}" in \
-    arm64) MISE_ARCH="arm64"; MISE_SHA256="b0cee25b0405113ed6fe2a54cf21d49720ee571d3d5b4a9c695721cd123d24f8" ;; \
-    *)     MISE_ARCH="x64";   MISE_SHA256="84636e19a0e5001d7499f58ae5a868cec8f6ba4f52f9028680bb7cd802564229" ;; \
-    esac; \
-    curl -fsSL "https://github.com/jdx/mise/releases/download/${MISE_VERSION}/mise-${MISE_VERSION}-linux-${MISE_ARCH}" \
-    -o /usr/local/bin/mise && \
-    echo "${MISE_SHA256}  /usr/local/bin/mise" | sha256sum -c - && \
-    chmod +x /usr/local/bin/mise
+COPY mise-gpg-key.pub /etc/apt/keyrings/mise-archive-keyring.asc
+COPY mise.list /etc/apt/sources.list.d/mise.list
+
+# hadolint ignore=DL3008
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl make tini mise && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --shell /bin/bash app
 

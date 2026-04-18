@@ -3,6 +3,8 @@
 src/config.py
 !entrypoint.sh
 !mise.toml
+!mise.list
+!mise-gpg-key.pub
 !pyproject.toml
 !uv.lock
 !wrangler.toml
