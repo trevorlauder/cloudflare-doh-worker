@@ -22,16 +22,16 @@ else Domain in BLOCKED_DOMAINS
 else Domain not in ALLOWED_DOMAINS or BLOCKED_DOMAINS
 
 opt Blocklist enabled (cold start)
-  note over "Cloudflare Worker": Load shard metadata from\nbundled bloom_meta module
+  note over "Cloudflare Worker": Load shard metadata from\nbundled filter_meta module
 end
 
 note over "Cloudflare Worker": Hash domain to determine shard index
 alt Shard in LRU cache (50 MB pool)
-  note over "Cloudflare Worker": Check bloom filter from cached shard
+  note over "Cloudflare Worker": Check filter from cached shard
 else Shard not cached
   "Cloudflare Worker" -> "Workers Assets": fetch shard_N.bin
-  "Cloudflare Worker" <- "Workers Assets": Bloom filter shard
-  note over "Cloudflare Worker": Cache shard in LRU cache,\ncheck bloom filter
+  "Cloudflare Worker" <- "Workers Assets": Filter shard
+  note over "Cloudflare Worker": Cache shard in LRU cache,\ncheck filter
 end
 
 alt Domain in blocklist

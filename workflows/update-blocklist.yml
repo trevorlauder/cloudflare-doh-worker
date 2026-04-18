@@ -16,7 +16,7 @@ jobs:
     name: Download and update block list
     runs-on: ubuntu-24.04
     permissions:
-      contents: write # required to commit updated blocklist.txt
+      contents: write # required to commit updated blocklist
       pull-requests: write # required to open/update the pull request
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -27,22 +27,24 @@ jobs:
         with:
           install: true
           cache: true
-          install_args: uv
+          install_args: uv rust
 
       - run: uv sync
 
-      - name: Download and save block lists
+      - name: Download and build block list filter
         run: uv run python scripts/build_blocklist.py
 
       - name: Open pull request
         uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8.1.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          add-paths: blocklist/
+          add-paths: |
+            blocklist/*.bin
+            src/filter_meta.py
           commit-message: "chore: update community block lists"
           branch: update-blocklist
           delete-branch: true
           title: "chore: update community block lists"
           body: |
-            Automated weekly refresh of per-source `blocklist/*.txt` files from upstream sources.
+            Weekly refresh of block list filter from upstream sources.
           labels: blocklist

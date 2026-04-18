@@ -20,7 +20,7 @@ RUN chown app:app /usr/src/app
 USER app
 
 COPY --chown=app:app mise.toml .
-RUN mise trust && mise install python node uv
+RUN mise trust && mise install python node uv rust
 ENV PATH="/home/app/.local/share/mise/shims:/home/app/.local/bin:${PATH}"
 ENV PYTHONDONTWRITEBYTECODE=1
 
@@ -30,14 +30,14 @@ RUN uv sync --group dev --frozen
 COPY --chown=app:app src/ src/
 COPY --chown=app:app tests/ tests/
 COPY --chown=app:app scripts/ scripts/
-COPY --chown=app:app blocklist/ blocklist/
+COPY --chown=app:app tools/ tools/
 COPY --chown=app:app blocklist_sources.yaml .
 COPY --chown=app:app Makefile ./
 COPY --chown=app:app wrangler.toml .
 COPY --chown=app:app entrypoint.sh entrypoint.sh
 
 RUN echo 'BLOCKLIST_ENABLED = True' > src/config.py \
-    && uv run python scripts/build_blocklist.py --skip-download \
+    && uv run python scripts/build_blocklist.py \
     && rm src/config.py
 
 EXPOSE 8787

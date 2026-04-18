@@ -7,6 +7,9 @@ import base64
 import logging
 import urllib.parse
 
+from js import Object, caches
+from js import Response as JsResponse
+from pyodide.ffi import to_js
 from workers import Response
 
 from dns_utils import Question
@@ -25,8 +28,6 @@ def _to_js_body(body: bytes | bytearray | str) -> object:
     object: JS Uint8Array for bytes/bytearray, original value otherwise.
     """
     if isinstance(body, (bytes, bytearray)):
-        from pyodide.ffi import to_js
-
         return to_js(body)
 
     return body
@@ -81,8 +82,6 @@ async def _try_cache_get(cache_key: str) -> Response | None:
     Response | None: Cached response with a HIT header, or None on miss/error.
     """
     try:
-        from js import caches
-
         cached = await caches.default.match(cache_key)
 
         if cached is None:
@@ -169,10 +168,6 @@ def _schedule_cache_put(
     None
     """
     try:
-        from js import Object, caches
-        from js import Response as JsResponse
-        from pyodide.ffi import to_js
-
         js_body: object = _to_js_body(body)
 
         stored_headers: dict[str, str] = {

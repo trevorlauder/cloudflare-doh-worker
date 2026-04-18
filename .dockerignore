@@ -13,3 +13,4 @@ src/config.py
 !blocklist/
 !blocklist_sources.yaml
 !scripts/
+!tools/

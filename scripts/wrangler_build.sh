@@ -2,8 +2,7 @@
 
 set -e
 
-if [ -d blocklist ]; then
-    uv run python scripts/build_blocklist.py --skip-download
+if ls blocklist/shard_*.bin 1>/dev/null 2>&1; then
     mkdir -p public
-    cp blocklist/shard_*.bin public/ 2>/dev/null || true
+    cp blocklist/shard_*.bin public/
 fi

@@ -8,7 +8,6 @@ from collections import OrderedDict
 import hmac
 import json
 import logging
-import math
 import re
 import time
 from typing import NamedTuple
@@ -42,8 +41,6 @@ from dns_utils import (
     DnsParseResult,
     ProviderResult,
     Question,
-    _bloom_contains,
-    _bloom_hash,
     compile_domain_set,
     domain_matches,
     get_response_min_ttl,
@@ -51,40 +48,9 @@ from dns_utils import (
     parse_dns_wire_request,
     send_doh_requests_fanout,
 )
+import filter_meta
+from filter_utils import BinaryFuse32Filter, _domain_to_key, check_filter, load_filter
 from loki_utils import build_loki_fetch_promise
-
-
-class _ShardedBlocklistMeta(NamedTuple):
-    """Cached metadata for sharded bloom filter lookups."""
-
-    bloom_k: int
-    shard_count: int
-    shard_m: tuple[int, ...]
-    manifest_urls: tuple[str, ...]
-    domain_count: int
-    fp_rate: float
-
-
-class _ResolvedConfig(NamedTuple):
-    """Runtime configuration with all ${SECRET} placeholders resolved."""
-
-    prefix: str
-    loki_url: str
-    provider_lists: dict[str, list[dict]]
-    bypass_provider_list: list[dict]
-    full_config: dict
-
-
-class _RejectError(Exception):
-    """Raised to short-circuit request parsing with an error response."""
-
-    def __init__(self, message: str, status: int = 406) -> None:
-        """
-        Parameters:
-        message (str): Error message.
-        status (int): HTTP status code.
-        """
-        self.response = Response(message, status=status)
 
 
 class Default(WorkerEntrypoint):
@@ -100,18 +66,20 @@ class Default(WorkerEntrypoint):
         Returns:
         Response: HTTP response.
         """
+        request_timestamp_ms: int = time.time_ns() // 1_000_000
         try:
-            return await self._handle(request)
+            return await self._handle(request, request_timestamp_ms)
         except Exception:
             logger.exception("Unhandled exception in fetch")
             return Response("Internal server error", status=500)
 
-    async def _handle(self, request: object) -> Response:
+    async def _handle(self, request: object, request_timestamp_ms: int) -> Response:
         """
         Route the request to the health, config, or DoH handler.
 
         Parameters:
         request (object): Incoming HTTP request.
+        request_timestamp_ms (int): Epoch milliseconds at request start.
 
         Returns:
         Response: HTTP response.
@@ -144,7 +112,38 @@ class Default(WorkerEntrypoint):
             env=self.env,
             ctx=self.ctx,
             parsed_url=parsed_url,
+            request_timestamp_ms=request_timestamp_ms,
         )
+
+
+class _ShardedBlocklistMeta(NamedTuple):
+    """Cached metadata for sharded filter lookups."""
+
+    shard_count: int
+    manifest_urls: tuple[str, ...]
+    domain_count: int
+
+
+class _ResolvedConfig(NamedTuple):
+    """Runtime configuration with all ${SECRET} placeholders resolved."""
+
+    prefix: str
+    loki_url: str
+    provider_lists: dict[str, list[dict]]
+    bypass_provider_list: list[dict]
+    full_config: dict
+
+
+class _RejectError(Exception):
+    """Raised to short-circuit request parsing with an error response."""
+
+    def __init__(self, message: str, status: int = 406) -> None:
+        """
+        Parameters:
+        message (str): Error message.
+        status (int): HTTP status code.
+        """
+        self.response = Response(message, status=status)
 
 
 class _JsonFormatter(logging.Formatter):
@@ -259,166 +258,51 @@ def _build_provider_lists() -> dict[str, list[dict]]:
     return result
 
 
-_DEBUG: bool = getattr(config, "DEBUG", False)
-_TIMEOUT_MS: int = getattr(config, "TIMEOUT_MS", 5000)
-_LOKI_TIMEOUT_MS: int = getattr(config, "LOKI_TIMEOUT_MS", 5000)
-_RETRY_MAX_ATTEMPTS: int = getattr(config, "RETRY_MAX_ATTEMPTS", 2)
-_CACHE_DNS: bool = getattr(config, "CACHE_DNS", True)
-_BLOCKLIST_ENABLED: bool = getattr(config, "BLOCKLIST_ENABLED", True)
-_LOKI_URL: str = getattr(config, "LOKI_URL", "")
-_REBIND_PROTECTION: bool = getattr(config, "REBIND_PROTECTION", True)
-_ALLOWED_DOMAINS: list = getattr(config, "ALLOWED_DOMAINS", [])
-_BLOCKED_DOMAINS: list = getattr(config, "BLOCKED_DOMAINS", [])
-_ENDPOINTS: dict = config.ENDPOINTS
-_ECS_TRUNCATION: dict = getattr(config, "ECS_TRUNCATION", {"enabled": False})
-
-_BYPASS_PROVIDER: dict = getattr(
-    config,
-    "BYPASS_PROVIDER",
-    {
-        "url": "https://cloudflare-dns.com/dns-query",
-        "dns_json": True,
-    },
-)
-
-_validate_config()
-
-_handler = logging.StreamHandler()
-_handler.setFormatter(_JsonFormatter())
-logging.root.addHandler(_handler)
-logging.root.setLevel(logging.DEBUG if _DEBUG else logging.WARNING)
-
-logger = logging.getLogger(__name__)
-
-_ALLOWED_COMPILED = compile_domain_set(_ALLOWED_DOMAINS)
-_BLOCKED_COMPILED = compile_domain_set(_BLOCKED_DOMAINS)
-
-_ISOLATE_ID: str = ""
-
-_sharded_meta: _ShardedBlocklistMeta | None = None
-_SHARD_CACHE_MAX_BYTES: int = 50 * 1024 * 1024
-_shard_cache_used: int = 0
-_shard_cache: OrderedDict[int, bytes] = OrderedDict()
-
-_PROVIDER_LISTS = _build_provider_lists()
-
-_BYPASS_PROVIDER_LIST = (
-    [_with_provider_id({**_BYPASS_PROVIDER, "main": True})] if _ALLOWED_DOMAINS else []
-)
-
-_resolved_config_cache: "_ResolvedConfig | None" = None
-
-_HEADER_PREFIX = "CLOUDFLARE-DOH-WORKER"
-_HEADER_RESPONSE_FROM = f"{_HEADER_PREFIX}-RESPONSE-FROM"
-_HEADER_RESPONSE_CODES = f"{_HEADER_PREFIX}-RESPONSE-CODES"
-_HEADER_POSSIBLY_BLOCKED = f"{_HEADER_PREFIX}-POSSIBLY-BLOCKED-PROVIDERS"
-_HEADER_BLOCKED = f"{_HEADER_PREFIX}-BLOCKED-PROVIDERS"
-_HEADER_TIMED_OUT = f"{_HEADER_PREFIX}-TIMED-OUT-PROVIDERS"
-_HEADER_CONN_ERROR = f"{_HEADER_PREFIX}-CONNECTION-ERROR-PROVIDERS"
-_HEADER_ALLOWED = f"{_HEADER_PREFIX}-CONFIG-ALLOWED"
-_HEADER_CONFIG_BLOCKED = f"{_HEADER_PREFIX}-CONFIG-BLOCKED"
-_HEADER_REBIND_PROTECTED = f"{_HEADER_PREFIX}-REBIND-PROTECTED"
-_HEADER_ECS_TRUNCATED = f"{_HEADER_PREFIX}-ECS-TRUNCATED"
-_HEADER_PROVIDERS_QUERIED = f"{_HEADER_PREFIX}-PROVIDERS-QUERIED"
-_HEADER_PROVIDERS_FAILED = f"{_HEADER_PREFIX}-PROVIDERS-FAILED"
-_HEADER_PROVIDERS_TIMED_OUT = f"{_HEADER_PREFIX}-PROVIDERS-TIMED-OUT"
-_HEADER_PROVIDERS_CONN_ERROR = f"{_HEADER_PREFIX}-PROVIDERS-CONNECTION-ERROR"
-_HEADER_PROVIDERS_FAILED_STATUS = f"{_HEADER_PREFIX}-PROVIDERS-FAILED-STATUS-CODE"
-_HEADER_PROVIDERS_RETRIED = f"{_HEADER_PREFIX}-PROVIDERS-RETRIED"
-_HEADER_RESPONSE_FROM_MAIN = f"{_HEADER_PREFIX}-RESPONSE-FROM-MAIN"
-_HEADER_SHARD_CACHE_HIT = f"{_HEADER_PREFIX}-SHARD-CACHE-HIT"
-
-
-def _load_sharded_meta() -> _ShardedBlocklistMeta | None:
-    """Load bloom filter metadata from the bundled bloom_meta module."""
-    global _sharded_meta
-
-    if _sharded_meta is not None:
-        return _sharded_meta
-
-    import bloom_meta
-
-    if not bloom_meta.bloom_k or not bloom_meta.bloom_shards:
-        return None
-
-    if len(bloom_meta.shard_m) != bloom_meta.bloom_shards:
-        logger.warning("Invalid sharded bloom metadata")
-        return None
-
-    avg_m: int = sum(bloom_meta.shard_m) // bloom_meta.bloom_shards
-    fp_rate: float = (
-        (
-            1.0
-            - math.exp(
-                -bloom_meta.bloom_k
-                * bloom_meta.exact_count
-                / (avg_m * bloom_meta.bloom_shards),
-            )
-        )
-        ** bloom_meta.bloom_k
-        if bloom_meta.exact_count > 0
-        else 0.0
-    )
-
-    _sharded_meta = _ShardedBlocklistMeta(
-        bloom_k=bloom_meta.bloom_k,
-        shard_count=bloom_meta.bloom_shards,
-        shard_m=tuple(bloom_meta.shard_m),
-        manifest_urls=tuple(bloom_meta.source_urls),
-        domain_count=bloom_meta.exact_count,
-        fp_rate=fp_rate,
-    )
-
-    logger.info(
-        "Loaded sharded blocklist metadata: %d domains, %d shards",
-        bloom_meta.exact_count,
-        bloom_meta.bloom_shards,
-    )
-
-    return _sharded_meta
-
-
-def _cache_shard(shard_index: int, shard_bytes: bytes) -> None:
-    """Store a shard in the cache, evicting LRU entries if the size limit is reached."""
+def _cache_shard(
+    shard_index: int,
+    filter_obj: BinaryFuse32Filter,
+    byte_size: int,
+) -> None:
+    """Store a deserialized filter in the cache, evicting LRU entries if the size limit is reached."""
     global _shard_cache_used
 
     if shard_index in _shard_cache:
         _shard_cache.move_to_end(shard_index)
         return
 
-    shard_size: int = len(shard_bytes)
-    if shard_size > _SHARD_CACHE_MAX_BYTES:
+    if byte_size > _SHARD_CACHE_MAX_BYTES:
         return
 
-    while _shard_cache and _shard_cache_used + shard_size > _SHARD_CACHE_MAX_BYTES:
-        _, evicted = _shard_cache.popitem(last=False)
-        _shard_cache_used -= len(evicted)
+    while _shard_cache and _shard_cache_used + byte_size > _SHARD_CACHE_MAX_BYTES:
+        _, (_, evicted_size, _) = _shard_cache.popitem(last=False)
+        _shard_cache_used -= evicted_size
 
-    if _shard_cache_used + shard_size > _SHARD_CACHE_MAX_BYTES:
+    if _shard_cache_used + byte_size > _SHARD_CACHE_MAX_BYTES:
         return
 
-    _shard_cache[shard_index] = shard_bytes
-    _shard_cache_used += shard_size
+    _shard_cache[shard_index] = (filter_obj, byte_size, time.monotonic())
+    _shard_cache_used += byte_size
 
 
 async def _check_sharded_blocklist(
     name: str,
     env: object,
     meta: _ShardedBlocklistMeta,
-) -> tuple[bool, bool]:
-    """Check a domain against the sharded bloom filter by fetching one shard.
+) -> tuple[bool, bool, int]:
+    """Check a domain against the sharded filter by fetching one shard.
 
     Returns:
-    tuple[bool, bool]: (is_blocked, shard_cache_hit).
+    tuple[bool, bool, int]: (is_blocked, shard_cache_hit, shard_cache_age_ms).
+        shard_cache_age_ms is the age in milliseconds of the cache entry on a hit, or 0 on a miss.
     """
-    normalized: str = name.rstrip(".").lower()
-    h: int = _bloom_hash(normalized)
-    shard_index: int = abs(h) % meta.shard_count
+    key: int = _domain_to_key(name)
+    shard_index: int = key % meta.shard_count
 
-    cached: bytes | None = _shard_cache.get(shard_index)
+    cached: tuple[BinaryFuse32Filter, int, float] | None = _shard_cache.get(shard_index)
     if cached is not None:
         _shard_cache.move_to_end(shard_index)
-        bit_array: bytes = cached
+        filter_obj = cached[0]
+        cache_age_ms: int = int((time.monotonic() - cached[2]) * 1000)
         cache_hit: bool = True
     else:
         assets: object = env.ASSETS
@@ -435,9 +319,9 @@ async def _check_sharded_blocklist(
                     response.status,
                 )
 
-                return False, False
+                return False, False, 0
 
-            bit_array = bytes(await response.bytes())
+            shard_bytes: bytes = bytes(await response.bytes())
         except Exception:
             logger.warning(
                 "Unexpected error checking shard_%d.bin",
@@ -445,18 +329,18 @@ async def _check_sharded_blocklist(
                 exc_info=True,
             )
 
-            return False, False
+            return False, False, 0
 
-        _cache_shard(shard_index, bit_array)
+        filter_obj = load_filter(shard_bytes)
+        _cache_shard(shard_index, filter_obj, len(shard_bytes))
+        cache_age_ms = 0
         cache_hit = False
 
-    blocked: bool = _bloom_contains(
-        bit_array=bit_array,
-        num_bits=meta.shard_m[shard_index],
-        num_hashes=meta.bloom_k,
-        hash_value=h,
-    )
-    return blocked, cache_hit
+    blocked: bool = check_filter(filter_obj, key)
+    return blocked, cache_hit, cache_age_ms
+
+
+_SECRET_RE: re.Pattern = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
 
 
 def _resolve_secrets(data: object, env: object) -> object:
@@ -470,7 +354,7 @@ def _resolve_secrets(data: object, env: object) -> object:
     Returns:
     object: Data with all placeholders replaced.
     """
-    secret_re = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
+    secret_re = _SECRET_RE
     missing: list[str] = []
 
     def _resolve(value: object) -> object:
@@ -607,6 +491,9 @@ def _resolve_config(env: object) -> _ResolvedConfig:
     return resolved
 
 
+_HEALTH_BODY: str = '{"status":"ok"}'
+
+
 def _handle_health() -> Response:
     """
     Return a 200 JSON health response.
@@ -614,9 +501,8 @@ def _handle_health() -> Response:
     Returns:
     Response: {"status": "ok"} with no-cache headers.
     """
-    body: str = json.dumps({"status": "ok"})
     return Response(
-        body,
+        _HEALTH_BODY,
         status=200,
         headers={
             "content-type": "application/json",
@@ -655,27 +541,22 @@ def _handle_config(request: object, env: object, cfg: _ResolvedConfig) -> Respon
     if _sharded_meta is not None:
         bl_count = _sharded_meta.domain_count
         bl_urls = list(_sharded_meta.manifest_urls)
-        bl_fp_rate = _sharded_meta.fp_rate
-        bl_bloom_bytes = sum(_sharded_meta.shard_m) // 8
         bl_shards = _sharded_meta.shard_count
     else:
         bl_count = None
         bl_urls = None
-        bl_fp_rate = None
-        bl_bloom_bytes = None
         bl_shards = None
 
     payload: dict[str, object] = {
         "config": cfg.full_config,
         "stats": {
+            "isolate_id": _ISOLATE_ID,
             "endpoints": len(cfg.provider_lists),
             "allowed_domains": len(_ALLOWED_DOMAINS),
             "blocked_domains": len(_BLOCKED_DOMAINS),
-            "blocklist": bl_count,
+            "blocklist_domains": bl_count,
             "blocklist_urls": bl_urls,
-            "blocklist_fp_rate": bl_fp_rate,
-            "bloom_size_bytes": bl_bloom_bytes,
-            "bloom_shards": bl_shards,
+            "filter_shards": bl_shards,
             "shard_cache_count": len(_shard_cache),
             "shard_cache_bytes": _shard_cache_used,
         },
@@ -810,8 +691,12 @@ def _negotiate_accept(raw: str) -> str:
     Returns:
     str: Supported media type or empty string.
     """
-    for part in raw.split(","):
-        media_type: str = part.split(";", 1)[0].strip().lower()
+    lowered: str = raw.lower()
+    if lowered in SUPPORTED_ACCEPT_HEADERS:
+        return lowered
+
+    for part in lowered.split(","):
+        media_type: str = part.split(";", 1)[0].strip()
         if media_type in SUPPORTED_ACCEPT_HEADERS:
             return media_type
 
@@ -1141,6 +1026,7 @@ async def _handle_request(
     env: object,
     ctx: object,
     parsed_url: urllib.parse.ParseResult,
+    request_timestamp_ms: int,
 ) -> Response:
     """
     Core DoH handler: parse request, fan out to providers, return best result.
@@ -1161,19 +1047,24 @@ async def _handle_request(
     if not _ISOLATE_ID:
         _ISOLATE_ID = str(uuid.uuid4())
 
-    request_timestamp_ms: int = int(time.time() * 1000)
     client_ip: str = str(request.headers.get("cf-connecting-ip") or "unknown")
     query: str = f"?{parsed_url.query}" if parsed_url.query else ""
     method: str = str(request.method).upper()
     raw_accept: str = str(request.headers.get("accept") or "")
     accept: str = _negotiate_accept(raw_accept)
 
+    global _loki_enabled_cache
+
     loki_url: str = cfg.loki_url
-    loki_enabled: bool = bool(
-        loki_url
-        and getattr(env, "LOKI_USERNAME", None)
-        and getattr(env, "LOKI_PASSWORD", None),
-    )
+    if _loki_enabled_cache is not None:
+        loki_enabled: bool = _loki_enabled_cache
+    else:
+        loki_enabled = bool(
+            loki_url
+            and getattr(env, "LOKI_USERNAME", None)
+            and getattr(env, "LOKI_PASSWORD", None),
+        )
+        _loki_enabled_cache = loki_enabled
 
     parsed: DnsParseResult | Response = await _parse_dns_request(
         request=request,
@@ -1218,17 +1109,18 @@ async def _handle_request(
         and domain_matches(name=name, compiled=_BLOCKED_COMPILED),
     )
 
-    was_cached: bool = _sharded_meta is not None
-
     meta: _ShardedBlocklistMeta | None = None
     if name and not config_allowed and not config_blocked and _BLOCKLIST_ENABLED:
-        meta = _load_sharded_meta()
-
-    asset_loading: bool = not was_cached and _sharded_meta is not None
+        meta = _sharded_meta
 
     shard_cache_hit: bool = False
+    shard_cache_age_ms: int = 0
     if not config_blocked and name and not config_allowed and meta is not None:
-        config_blocked, shard_cache_hit = await _check_sharded_blocklist(
+        (
+            config_blocked,
+            shard_cache_hit,
+            shard_cache_age_ms,
+        ) = await _check_sharded_blocklist(
             name,
             env,
             meta,
@@ -1248,6 +1140,7 @@ async def _handle_request(
             request_wire=request_wire,
             parsed_request=parsed_request,
         )
+
         final_response = Response(
             _to_js_body(body),
             status=200,
@@ -1331,8 +1224,32 @@ async def _handle_request(
                     else:
                         error = True
 
+                        response_body = "All providers responded with an error"
+
+                        if _DEBUG:
+                            error_details: list[str] = []
+
+                            for r in results:
+                                body = r.response_body
+                                if isinstance(body, bytes):
+                                    body = body[:512].decode("utf-8", errors="replace")
+                                elif isinstance(body, str):
+                                    body = body[:512]
+                                else:
+                                    body = ""
+
+                                error_details.append(
+                                    f"{r.provider_id}: "
+                                    f"status={r.response_status} "
+                                    f"timed_out={r.timed_out} "
+                                    f"conn_error={r.connection_error} "
+                                    f"body={body!r}",
+                                )
+
+                            response_body += "\n\n" + "\n".join(error_details)
+
                         final_response = Response(
-                            "All providers responded with an error",
+                            response_body,
                             status=500,
                         )
                 except Exception:
@@ -1341,7 +1258,7 @@ async def _handle_request(
                     final_response = Response("Internal server error", status=500)
 
     if loki_enabled:
-        elapsed_ms: int = int(time.time() * 1000) - request_timestamp_ms
+        elapsed_ms: int = time.time_ns() // 1_000_000 - request_timestamp_ms
         promise: object | None = build_loki_fetch_promise(
             request_timestamp_ms=request_timestamp_ms,
             elapsed_ms=elapsed_ms,
@@ -1361,8 +1278,8 @@ async def _handle_request(
             blocklist_shard_count=_sharded_meta.shard_count
             if _sharded_meta is not None
             else 0,
-            asset_loading=asset_loading,
             shard_cache_hit=shard_cache_hit,
+            shard_cache_age_ms=shard_cache_age_ms,
             isolate_id=_ISOLATE_ID,
             shard_cache_count=len(_shard_cache),
             shard_cache_bytes=_shard_cache_used,
@@ -1371,3 +1288,82 @@ async def _handle_request(
             ctx.waitUntil(promise)
 
     return final_response
+
+
+_DEBUG: bool = getattr(config, "DEBUG", False)
+_TIMEOUT_MS: int = getattr(config, "TIMEOUT_MS", 5000)
+_LOKI_TIMEOUT_MS: int = getattr(config, "LOKI_TIMEOUT_MS", 5000)
+_RETRY_MAX_ATTEMPTS: int = getattr(config, "RETRY_MAX_ATTEMPTS", 2)
+_CACHE_DNS: bool = getattr(config, "CACHE_DNS", True)
+_BLOCKLIST_ENABLED: bool = getattr(config, "BLOCKLIST_ENABLED", True)
+_LOKI_URL: str = getattr(config, "LOKI_URL", "")
+_REBIND_PROTECTION: bool = getattr(config, "REBIND_PROTECTION", True)
+_ALLOWED_DOMAINS: list = getattr(config, "ALLOWED_DOMAINS", [])
+_BLOCKED_DOMAINS: list = getattr(config, "BLOCKED_DOMAINS", [])
+_ENDPOINTS: dict = config.ENDPOINTS
+_ECS_TRUNCATION: dict = getattr(config, "ECS_TRUNCATION", {"enabled": False})
+
+_BYPASS_PROVIDER: dict = getattr(
+    config,
+    "BYPASS_PROVIDER",
+    {
+        "url": "https://cloudflare-dns.com/dns-query",
+        "dns_json": True,
+    },
+)
+
+_validate_config()
+
+_handler = logging.StreamHandler()
+_handler.setFormatter(_JsonFormatter())
+logging.root.addHandler(_handler)
+logging.root.setLevel(logging.DEBUG if _DEBUG else logging.WARNING)
+
+logger = logging.getLogger(__name__)
+
+_ALLOWED_COMPILED = compile_domain_set(_ALLOWED_DOMAINS)
+_BLOCKED_COMPILED = compile_domain_set(_BLOCKED_DOMAINS)
+
+_ISOLATE_ID: str = ""
+
+_sharded_meta: _ShardedBlocklistMeta | None = (
+    _ShardedBlocklistMeta(
+        shard_count=filter_meta.shard_count,
+        manifest_urls=tuple(filter_meta.source_urls),
+        domain_count=filter_meta.exact_count,
+    )
+    if filter_meta.shard_count
+    else None
+)
+_SHARD_CACHE_MAX_BYTES: int = 50 * 1024 * 1024
+_shard_cache_used: int = 0
+_shard_cache: OrderedDict[int, tuple[BinaryFuse32Filter, int, float]] = OrderedDict()
+
+_PROVIDER_LISTS = _build_provider_lists()
+
+_BYPASS_PROVIDER_LIST = (
+    [_with_provider_id({**_BYPASS_PROVIDER, "main": True})] if _ALLOWED_DOMAINS else []
+)
+
+_resolved_config_cache: "_ResolvedConfig | None" = None
+_loki_enabled_cache: bool | None = None
+
+_HEADER_PREFIX = "CLOUDFLARE-DOH-WORKER"
+_HEADER_RESPONSE_FROM = f"{_HEADER_PREFIX}-RESPONSE-FROM"
+_HEADER_RESPONSE_CODES = f"{_HEADER_PREFIX}-RESPONSE-CODES"
+_HEADER_POSSIBLY_BLOCKED = f"{_HEADER_PREFIX}-POSSIBLY-BLOCKED-PROVIDERS"
+_HEADER_BLOCKED = f"{_HEADER_PREFIX}-BLOCKED-PROVIDERS"
+_HEADER_TIMED_OUT = f"{_HEADER_PREFIX}-TIMED-OUT-PROVIDERS"
+_HEADER_CONN_ERROR = f"{_HEADER_PREFIX}-CONNECTION-ERROR-PROVIDERS"
+_HEADER_ALLOWED = f"{_HEADER_PREFIX}-CONFIG-ALLOWED"
+_HEADER_CONFIG_BLOCKED = f"{_HEADER_PREFIX}-CONFIG-BLOCKED"
+_HEADER_REBIND_PROTECTED = f"{_HEADER_PREFIX}-REBIND-PROTECTED"
+_HEADER_ECS_TRUNCATED = f"{_HEADER_PREFIX}-ECS-TRUNCATED"
+_HEADER_PROVIDERS_QUERIED = f"{_HEADER_PREFIX}-PROVIDERS-QUERIED"
+_HEADER_PROVIDERS_FAILED = f"{_HEADER_PREFIX}-PROVIDERS-FAILED"
+_HEADER_PROVIDERS_TIMED_OUT = f"{_HEADER_PREFIX}-PROVIDERS-TIMED-OUT"
+_HEADER_PROVIDERS_CONN_ERROR = f"{_HEADER_PREFIX}-PROVIDERS-CONNECTION-ERROR"
+_HEADER_PROVIDERS_FAILED_STATUS = f"{_HEADER_PREFIX}-PROVIDERS-FAILED-STATUS-CODE"
+_HEADER_PROVIDERS_RETRIED = f"{_HEADER_PREFIX}-PROVIDERS-RETRIED"
+_HEADER_RESPONSE_FROM_MAIN = f"{_HEADER_PREFIX}-RESPONSE-FROM-MAIN"
+_HEADER_SHARD_CACHE_HIT = f"{_HEADER_PREFIX}-SHARD-CACHE-HIT"

@@ -30,7 +30,7 @@ This started as [a workaround](https://www.lauder.family/blog/2021/09/25/Avoidin
 ## Requirements
 
 - A Cloudflare account (free tier should be fine for personal use)
-- [mise](https://mise.jdx.dev) for installing dependencies (`uv`, `node`, `python`)
+- [mise](https://mise.jdx.dev) for installing dependencies (`uv`, `node`, `python`, `rust`)
 - Grafana Loki (optional, for request logging)
 
 ## Deploy
@@ -43,6 +43,8 @@ This started as [a workaround](https://www.lauder.family/blog/2021/09/25/Avoidin
 Use this button to deploy this worker to your Cloudflare account.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/trevorlauder/cloudflare-doh-worker/tree/deploy-2.0.1)
+
+- When prompted during setup, set **Deploy command** to `npm run deploy` and leave **Build command** empty.
 
 - Update [`wrangler.toml`](wrangler.toml) and [`src/config.py`](src/config.py) **in your new repo** created by Cloudflare, based on your needs. See [Configuration](#configuration) for details.
 
@@ -113,7 +115,7 @@ If your repo is public, use `${SECRET_NAME}` placeholders for sensitive values l
 | -------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ALLOWED_DOMAINS`    | `[]`                                                                | Domains to bypass fan-out and send to `BYPASS_PROVIDER` only                                                                                            |
 | `BLOCKED_DOMAINS`    | `[]`                                                                | Domains to block with synthetic `NXDOMAIN` (supports `*.example.com` wildcards)                                                                         |
-| `BLOCKLIST_ENABLED`  | `True`                                                              | Enable the community block list. Set to `False` to disable all bloom filter checks                                                                      |
+| `BLOCKLIST_ENABLED`  | `True`                                                              | Enable the community block list. Set to `False` to disable all filter checks                                                                            |
 | `BYPASS_PROVIDER`    | `{"url": "https://cloudflare-dns.com/dns-query", "dns_json": True}` | Non-filtering provider used for allowed domains                                                                                                         |
 | `CACHE_DNS`          | `True`                                                              | Cache DNS responses in the Cloudflare Cache API using the response TTL                                                                                  |
 | `DEBUG`              | `False`                                                             | Enable verbose logging and diagnostic response headers                                                                                                  |
@@ -130,11 +132,11 @@ If your repo is public, use `${SECRET_NAME}` placeholders for sensitive values l
 
 ## Blocking Methods
 
-| Method                                                                     | How it works                                                                                                                                                                               | When to use it                                                                |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| Upstream provider filtering                                                | Providers like NextDNS and Quad9 apply their own lists and return blocked responses                                                                                                        | Zero config, no maintenance                                                   |
-| `BLOCKED_DOMAINS` in config                                                | Checked before any upstream query                                                                                                                                                          | Personal overrides or domains upstream providers don't cover. Keep this small |
-| Community block lists ([`blocklist_sources.yaml`](blocklist_sources.yaml)) | Lists are fetched, merged, and bundled as Workers Assets as ~512 KB bloom filter shards. Only the shard matching the queried domain is fetched per request and cached in a 50 MB LRU cache | Large curated lists that are too big to put in config                         |
+| Method                                                                     | How it works                                                                                                                                                                                      | When to use it                                                                |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Upstream provider filtering                                                | Providers like NextDNS and Quad9 apply their own lists and return blocked responses                                                                                                               | Zero config, no maintenance                                                   |
+| `BLOCKED_DOMAINS` in config                                                | Checked before any upstream query                                                                                                                                                                 | Personal overrides or domains upstream providers don't cover. Keep this small |
+| Community block lists ([`blocklist_sources.yaml`](blocklist_sources.yaml)) | Lists are fetched, merged, and bundled as Workers Assets as ~512 KB BinaryFuse32 filter shards. Only the shard matching the queried domain is fetched per request and cached in a 50 MB LRU cache | Large curated lists that are too big to put in config                         |
 
 Both block lists are checked on every request. `ALLOWED_DOMAINS` takes precedence over both.
 
@@ -156,42 +158,32 @@ Then run:
 uv run python scripts/build_blocklist.py
 ```
 
-Commit the generated per-source files in [`blocklist/`](blocklist/) (e.g. `blocklist/0.txt`, `blocklist/1.txt`, ...). The bloom filter is gitignored and rebuilt automatically at deploy time from these files. Only the plain domain-list files live in git, so blocklist update PRs produce readable diffs.
+Commit the generated filter shards and metadata. The raw download files are gitignored.
 
-At the `1e-10` false-positive rate target, ~**4.2 million** unique domains produce a bloom filter of roughly **25 MB**. The filter is split into ~512 KB shards so that only the shard matching the queried domain is fetched per request and cached in a 50 MB LRU cache, keeping memory use low.
+The filter uses [BinaryFuse32](https://crates.io/crates/xorf), a compact probabilistic data structure with a fixed false-positive rate of ~1/2^32. At ~4.5 bytes per domain, ~**4.2 million** unique domains produce a filter of roughly **18 MB**. The filter is split into ~512 KB shards so that only the shard matching the queried domain is fetched per request and cached in a 50 MB LRU cache, keeping memory use low.
 
 #### Options
 
-| Flag              | Default | Description                                                                                                    |
-| ----------------- | ------- | -------------------------------------------------------------------------------------------------------------- |
-| `--fp-rate RATE`  | `1e-10` | Target false-positive rate for the bloom filter. Lower values reduce false positives but increase filter size. |
-| `--dry-run`       | —       | Download and parse only. Print stats without writing files.                                                    |
-| `--verify`        | —       | After building, re-check every domain to confirm zero false negatives.                                         |
-| `--fp-check N`    | `0`     | Probe N absent domains and report the empirical false-positive rate.                                           |
-| `--skip-download` | —       | Skip fetching URLs. Load existing `blocklist/combined.json` instead.                                           |
+| Flag              | Default | Description                                                            |
+| ----------------- | ------- | ---------------------------------------------------------------------- |
+| `--verify`        |         | After building, re-check every domain to confirm zero false negatives. |
+| `--fp-check N`    | `0`     | Probe N absent domains and report the empirical false-positive rate.   |
+| `--skip-download` |         | Skip fetching URLs. Re-use existing `blocklist/<i>.txt` files instead. |
 
-### Bloom filter false-positive rate
+### False-positive rate
 
-The community blocklist uses a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter), a probabilistic data structure that can say "definitely not blocked" or "probably blocked." It has **no false negatives** (a domain in the list is always detected), but it does have a small **false-positive rate**: an unlisted domain may occasionally be matched and blocked.
-
-The `--fp-rate` option controls the target false-positive rate. **Lowering** the false-positive rate (e.g., from `1e-6` to `1e-10`) makes the filter more accurate (fewer false positives), but **requires more memory**—the filter gets larger. **Raising** the false-positive rate (e.g., from `1e-10` to `1e-6`) makes the filter smaller, but increases the chance of blocking legitimate domains.
-
-The default is `1e-10` (one-in-ten-billion). With a list of one million domains, you'd expect about one legitimate domain blocked incorrectly for every ten billion queries. In practice, this is negligible, but not zero.
+The community blocklist uses a [BinaryFuse32 filter](https://crates.io/crates/xorf), a probabilistic data structure that can say "definitely not blocked" or "probably blocked." It has **no false negatives** (a domain in the list is always detected), but it does have a small **false-positive rate** of ~1/2^32 (~2.3e-10): an unlisted domain may very occasionally be matched and blocked. This rate is fixed by the data structure and is not configurable.
 
 **What if a legitimate domain is blocked by mistake?**
-If you notice a legitimate domain being blocked due to a false positive, add it to your `ALLOWED_DOMAINS` list in `src/config.py`. This will ensure it is always allowed, even if the Bloom filter matches it. After updating the allowlist, redeploy the worker to apply the change.
+If you notice a legitimate domain being blocked due to a false positive, add it to your `ALLOWED_DOMAINS` list in `src/config.py`. This will ensure it is always allowed, even if the filter matches it. After updating the allowlist, redeploy the worker to apply the change.
 
 **What happens if you add a very large source?**
 
-The filter automatically resizes to maintain the target false-positive rate as you add more domains. If you want to save memory, you can set a higher `--fp-rate` (e.g., `1e-6`), but this will increase the chance of false positives.
-
-**Tip:** After changing your blocklist sources or the `--fp-rate`, always re-run `build_blocklist.py` and check the output stats to confirm the filter size and expected false-positive rate.
-
-**Observing the false-positive rate at runtime:** The config endpoint (requires `ADMIN_TOKEN`) includes a `blocklist_fp_rate` field in its `stats` object showing the theoretical false-positive rate of the loaded filter. The rate is also logged at `INFO` level each time a Worker instance loads the blocklist.
+The filter automatically resizes as you add more domains while maintaining the same fixed false-positive rate. At ~4.5 bytes per domain, even millions of domains produce a compact filter.
 
 ### GitHub Actions (automatic)
 
-Enable the included `.github/workflows/update-blocklist.yml` workflow (commented out by default). It runs weekly, re-fetches each source, updates the per-source files in `blocklist/`, and opens a PR if anything changed. The bloom filter is rebuilt at deploy time.
+Enable the included `.github/workflows/update-blocklist.yml` workflow (commented out by default). It runs weekly, re-fetches each source, rebuilds the filter shards, and opens a PR if anything changed.
 
 This file is included in the deploy branch and will be present in your repo after following the [deploy instructions](#quickstart-deploy).
 
@@ -201,12 +193,12 @@ To enable it, uncomment the entire contents of `.github/workflows/update-blockli
 
 ```shell
 uv run python scripts/build_blocklist.py
-git add blocklist/ src/bloom_meta.py
+git add blocklist/shard_*.bin src/filter_meta.py
 git commit -m "Update blocklist"
 uv run pywrangler deploy
 ```
 
-`build_blocklist.py` downloads the sources and writes per-source files to `blocklist/`. The bloom filter is rebuilt from those files automatically during deploy.
+`build_blocklist.py` downloads the sources, builds the filter shards, and writes them to `blocklist/`. The raw download files are not committed.
 
 ## Updating
 
@@ -237,7 +229,7 @@ After applying any changes, redeploy.
 
 Measured with [k6](https://k6.io/) from a residential connection in Alberta, Canada using [`tests/latency.js`](tests/latency.js). Your numbers will differ depending on how close you are to each provider's PoPs.
 
-Queries for domains on the worker's own blocklist never leave the worker. They hit the blocklist, return a synthetic NXDOMAIN, and take ~36-38ms regardless of provider config, even with a ~4.2 million domain bloom filter loaded. That's the worker's base overhead. Everything above that on a normal query is time spent waiting for upstream providers.
+Queries for domains on the worker's own blocklist never leave the worker. They hit the blocklist, return a synthetic NXDOMAIN, and take ~36-38ms regardless of provider config, even with a ~4.2 million domain filter loaded. That's the worker's base overhead. Everything above that on a normal query is time spent waiting for upstream providers.
 
 ### Single provider through worker
 

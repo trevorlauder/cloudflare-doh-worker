@@ -100,7 +100,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -682,7 +682,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -767,7 +767,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -1012,7 +1012,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -1237,7 +1237,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -1322,7 +1322,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -1547,7 +1547,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -1632,7 +1632,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -1878,7 +1878,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -1962,7 +1962,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -2221,7 +2221,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -2468,7 +2468,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -2721,7 +2721,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -2811,7 +2811,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -2993,7 +2993,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -3074,7 +3074,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -3154,92 +3154,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23371162702"
-        }
-      }
-    },
-    "panel-44": {
-      "kind": "Panel",
-      "spec": {
-        "data": {
-          "kind": "QueryGroup",
-          "spec": {
-            "queries": [
-              {
-                "kind": "PanelQuery",
-                "spec": {
-                  "hidden": false,
-                  "query": {
-                    "datasource": {
-                      "name": "${datasource}"
-                    },
-                    "group": "loki",
-                    "kind": "DataQuery",
-                    "spec": {
-                      "editorMode": "code",
-                      "expr": "sum(count_over_time({source=\"cloudflare-doh-worker\"} | json asset_loading | asset_loading = `true` [$__auto]))",
-                      "queryType": "range"
-                    },
-                    "version": "v0"
-                  },
-                  "refId": "A"
-                }
-              }
-            ],
-            "queryOptions": {},
-            "transformations": []
-          }
-        },
-        "description": "Queries served while the community blocklist was still loading from assets",
-        "id": 44,
-        "links": [],
-        "title": "Blocklist Loading Queries",
-        "vizConfig": {
-          "group": "stat",
-          "kind": "VizConfig",
-          "spec": {
-            "fieldConfig": {
-              "defaults": {
-                "color": {
-                  "mode": "thresholds"
-                },
-                "noValue": "0",
-                "thresholds": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": 0
-                    },
-                    {
-                      "color": "orange",
-                      "value": 1
-                    }
-                  ]
-                },
-                "unit": "none"
-              },
-              "overrides": []
-            },
-            "options": {
-              "colorMode": "value",
-              "graphMode": "area",
-              "justifyMode": "auto",
-              "orientation": "auto",
-              "percentChangeColorMode": "standard",
-              "reduceOptions": {
-                "calcs": [
-                  "sum"
-                ],
-                "fields": "",
-                "values": false
-              },
-              "showPercentChange": false,
-              "textMode": "auto",
-              "wideLayout": true
-            }
-          },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -3330,7 +3245,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -3421,7 +3336,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -3512,7 +3427,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -3603,7 +3518,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -3694,7 +3609,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -3894,7 +3809,7 @@
               "xTickLabelSpacing": 150
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -3985,7 +3900,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -4066,7 +3981,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -4155,7 +4070,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -4264,7 +4179,7 @@
               "xTickLabelSpacing": 150
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -4453,7 +4368,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -4569,7 +4484,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -4660,7 +4575,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -4751,7 +4666,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -4842,7 +4757,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -4933,7 +4848,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -5024,7 +4939,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -5213,7 +5128,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -5249,7 +5164,7 @@
             "transformations": []
           }
         },
-        "description": "Shard bloom filter lookups served from the in-memory LRU cache",
+        "description": "Shard filter lookups served from the in-memory LRU cache",
         "id": 62,
         "links": [],
         "title": "Shard Cache Hits",
@@ -5294,7 +5209,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -5331,10 +5246,10 @@
             "transformations": []
           }
         },
-        "description": "Number of bloom filter shards the community blocklist is split into (0 if not sharded)",
+        "description": "Number of filter shards the community blocklist is split into (0 if not sharded)",
         "id": 64,
         "links": [],
-        "title": "Bloom Shards",
+        "title": "Filter Shards",
         "vizConfig": {
           "group": "stat",
           "kind": "VizConfig",
@@ -5376,7 +5291,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -5481,12 +5396,12 @@
               },
               "legend": {
                 "calcs": [
-                  "last"
+                  "max"
                 ],
                 "displayMode": "table",
                 "placement": "right",
                 "showLegend": true,
-                "sortBy": "Last",
+                "sortBy": "Max",
                 "sortDesc": true
               },
               "tooltip": {
@@ -5496,7 +5411,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -5601,12 +5516,12 @@
               },
               "legend": {
                 "calcs": [
-                  "last"
+                  "max"
                 ],
                 "displayMode": "table",
                 "placement": "right",
                 "showLegend": true,
-                "sortBy": "Last",
+                "sortBy": "Max",
                 "sortDesc": true
               },
               "tooltip": {
@@ -5616,7 +5531,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -5638,6 +5553,7 @@
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
+                      "direction": "backward",
                       "editorMode": "code",
                       "expr": "count(sum by (isolate_id) (count_over_time({source=\"cloudflare-doh-worker\"} | json isolate_id | isolate_id != \"\" [$__range])))",
                       "queryType": "instant"
@@ -5655,7 +5571,7 @@
         "description": "Number of distinct worker isolates seen in the selected time range",
         "id": 67,
         "links": [],
-        "title": "Active Isolates",
+        "title": "Distinct Isolates",
         "vizConfig": {
           "group": "stat",
           "kind": "VizConfig",
@@ -5697,7 +5613,171 @@
               "wideLayout": true
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
+        }
+      }
+    },
+    "panel-68": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "avg(quantile_over_time(0.50, {source=\"cloudflare-doh-worker\"} | json shard_cache_hit, shard_cache_age_ms | shard_cache_hit = `true` | unwrap shard_cache_age_ms [$__auto]) / 1000)",
+                      "legendFormat": "P50",
+                      "queryType": "range"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "avg(quantile_over_time(0.95, {source=\"cloudflare-doh-worker\"} | json shard_cache_hit, shard_cache_age_ms | shard_cache_hit = `true` | unwrap shard_cache_age_ms [$__auto]) / 1000)",
+                      "legendFormat": "P95",
+                      "queryType": "range"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "B"
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "avg(quantile_over_time(0.99, {source=\"cloudflare-doh-worker\"} | json shard_cache_hit, shard_cache_age_ms | shard_cache_hit = `true` | unwrap shard_cache_age_ms [$__auto]) / 1000)",
+                      "legendFormat": "P99",
+                      "queryType": "range"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "C"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Age distribution of shard cache entries at time of hit (p50, p95, p99). Low values indicate recent eviction and re-fetch.",
+        "id": 68,
+        "links": [],
+        "title": "Shard Cache Entry Age (s)",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "line",
+                  "fillOpacity": 5,
+                  "gradientMode": "none",
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  },
+                  "insertNulls": false,
+                  "lineInterpolation": "smooth",
+                  "lineWidth": 2,
+                  "pointSize": 5,
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
+                  "showPoints": "never",
+                  "showValues": false,
+                  "spanNulls": true,
+                  "stacking": {
+                    "group": "A",
+                    "mode": "none"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    }
+                  ]
+                },
+                "unit": "s"
+              },
+              "overrides": []
+            },
+            "options": {
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
+              "legend": {
+                "calcs": [
+                  "mean"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "sortBy": "Mean",
+                "sortDesc": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -5788,7 +5868,338 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
+        }
+      }
+    },
+    "panel-71": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "sum by (isolate_id) (count_over_time({source=\"cloudflare-doh-worker\"} | json isolate_id | isolate_id != \"\" [$__range]))",
+                      "legendFormat": "{{isolate_id}}",
+                      "queryType": "instant"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Query volume distribution across isolates",
+        "id": 71,
+        "links": [],
+        "title": "Queries per Isolate",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  }
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "displayLabels": [],
+              "legend": {
+                "calcs": [
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "values": [
+                  "value"
+                ]
+              },
+              "pieType": "donut",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": true
+              },
+              "sort": "desc",
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23605486576"
+        }
+      }
+    },
+    "panel-74": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "sum by (isolate_id) (count_over_time({source=\"cloudflare-doh-worker\"} | json isolate_id, result_status | isolate_id != \"\" | result_status = `error` [$__auto]))",
+                      "legendFormat": "{{isolate_id}}",
+                      "queryType": "range"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Error count per isolate over time",
+        "id": 74,
+        "links": [],
+        "title": "Errors by Isolate",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "line",
+                  "fillOpacity": 5,
+                  "gradientMode": "none",
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  },
+                  "insertNulls": false,
+                  "lineInterpolation": "smooth",
+                  "lineWidth": 2,
+                  "pointSize": 5,
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
+                  "showPoints": "never",
+                  "showValues": false,
+                  "spanNulls": true,
+                  "stacking": {
+                    "group": "A",
+                    "mode": "none"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    }
+                  ]
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
+              "legend": {
+                "calcs": [
+                  "lastNotNull"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "sortBy": "Last *",
+                "sortDesc": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23605486576"
+        }
+      }
+    },
+    "panel-77": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "direction": "backward",
+                      "editorMode": "code",
+                      "expr": "sum by (isolate_id) (count_over_time({source=\"cloudflare-doh-worker\"} | json isolate_id, timed_out_providers | isolate_id != \"\" | timed_out_providers != \"\" [$__auto]))",
+                      "legendFormat": "{{isolate_id}}",
+                      "queryType": "range"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Timeout count per isolate over time",
+        "id": 77,
+        "links": [],
+        "title": "Timeouts by Isolate",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "line",
+                  "fillOpacity": 5,
+                  "gradientMode": "none",
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  },
+                  "insertNulls": false,
+                  "lineInterpolation": "smooth",
+                  "lineWidth": 2,
+                  "pointSize": 5,
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
+                  "showPoints": "never",
+                  "showValues": false,
+                  "spanNulls": true,
+                  "stacking": {
+                    "group": "A",
+                    "mode": "none"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    }
+                  ]
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
+              "legend": {
+                "calcs": [
+                  "lastNotNull"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true,
+                "sortBy": "Last",
+                "sortDesc": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.0-23605486576"
         }
       }
     },
@@ -6004,7 +6415,7 @@
               }
             }
           },
-          "version": "13.0.0-23371162702"
+          "version": "13.0.0-23605486576"
         }
       }
     }
@@ -6223,7 +6634,7 @@
                     "spec": {
                       "element": {
                         "kind": "ElementReference",
-                        "name": "panel-44"
+                        "name": "panel-67"
                       },
                       "height": 4,
                       "width": 4,
@@ -6563,24 +6974,11 @@
                     "spec": {
                       "element": {
                         "kind": "ElementReference",
-                        "name": "panel-67"
-                      },
-                      "height": 8,
-                      "width": 4,
-                      "x": 0,
-                      "y": 0
-                    }
-                  },
-                  {
-                    "kind": "GridLayoutItem",
-                    "spec": {
-                      "element": {
-                        "kind": "ElementReference",
                         "name": "panel-65"
                       },
                       "height": 8,
-                      "width": 10,
-                      "x": 4,
+                      "width": 12,
+                      "x": 0,
                       "y": 0
                     }
                   },
@@ -6592,9 +6990,61 @@
                         "name": "panel-66"
                       },
                       "height": 8,
-                      "width": 10,
-                      "x": 14,
+                      "width": 12,
+                      "x": 12,
                       "y": 0
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-68"
+                      },
+                      "height": 8,
+                      "width": 24,
+                      "x": 0,
+                      "y": 8
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-71"
+                      },
+                      "height": 8,
+                      "width": 12,
+                      "x": 0,
+                      "y": 16
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-74"
+                      },
+                      "height": 8,
+                      "width": 12,
+                      "x": 12,
+                      "y": 16
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "panel-77"
+                      },
+                      "height": 8,
+                      "width": 12,
+                      "x": 0,
+                      "y": 24
                     }
                   }
                 ]
