@@ -42,7 +42,7 @@ jobs:
             blocklist/*.bin
             src/filter_meta.py
           commit-message: "chore: update community block lists"
-          branch: update-blocklist
+          branch: update-blocklist-${{ github.run_id }}
           delete-branch: true
           title: "chore: update community block lists"
           body: |
