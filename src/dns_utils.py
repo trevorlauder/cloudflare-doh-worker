@@ -3,7 +3,6 @@
 
 """DNS wire-format helpers, ECS truncation, and upstream provider fan-out."""
 
-import asyncio
 import base64
 from dataclasses import dataclass
 import ipaddress
@@ -18,8 +17,6 @@ import dns.message
 import dns.name
 import dns.rcode
 import dns.rdatatype
-from js import AbortSignal
-from workers import fetch as workers_fetch
 
 import config
 
@@ -614,6 +611,12 @@ async def send_doh_requests_fanout(
     Returns:
     list[ProviderResult]: One result per queried provider.
     """
+    import asyncio
+
+    # Deferred imports: only available in the Pyodide/Workers runtime.
+    from js import AbortSignal
+    from workers import fetch as workers_fetch
+
     if not doh_providers:
         return []
 

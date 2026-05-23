@@ -7,9 +7,6 @@ import base64
 import json
 import logging
 
-from js import AbortSignal
-from workers import fetch
-
 import config
 from dns_utils import Question
 
@@ -66,6 +63,9 @@ def build_loki_fetch_promise(
     object | None: JS fetch Promise or None on failure.
     """
     try:
+        from js import AbortSignal
+        from workers import fetch
+
         global _cached_loki_credentials
 
         loki_username: object | None = getattr(env, "LOKI_USERNAME", None)
