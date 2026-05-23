@@ -19,7 +19,7 @@ RUN chown app:app /usr/src/app
 
 USER app
 
-COPY --chown=app:app mise.toml .
+COPY --chown=app:app mise.toml rust-toolchain.toml ./
 RUN mise trust && mise install python node uv rust
 ENV PATH="/home/app/.local/share/mise/shims:/home/app/.local/bin:${PATH}"
 ENV PYTHONDONTWRITEBYTECODE=1
