@@ -295,7 +295,7 @@ async def _check_sharded_blocklist(
     tuple[bool, bool, int]: (is_blocked, shard_cache_hit, shard_cache_age_ms).
         shard_cache_age_ms is the age in milliseconds of the cache entry on a hit, or 0 on a miss.
     """
-    key: int = _domain_to_key(name)
+    key: int = _domain_to_key(name.rstrip(".").lower())
     shard_index: int = key % meta.shard_count
 
     cached: tuple[BinaryFuse32Filter, int, float] | None = _shard_cache.get(shard_index)

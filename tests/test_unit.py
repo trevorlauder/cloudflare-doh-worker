@@ -556,6 +556,31 @@ def test_check_sharded_blocklist_missing_shard_returns_false(
     assert cache_age_ms == 0
 
 
+def test_check_sharded_blocklist_normalizes_query_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mixed-case and trailing-dot names match the lowercased shard contents.
+
+    The DNS-JSON GET ?name= path builds a Question directly from the raw query
+    parameter without normalizing it, so the lookup itself must normalize
+    before hashing. Otherwise a blocked domain is bypassed by varying case or
+    appending a trailing dot.
+    """
+    manifest, shards = _build_test_shards(["apple.ca"], shard_count=4)
+    meta = _meta_from_manifest(manifest)
+
+    for variant in ("Apple.CA", "APPLE.CA", "apple.ca."):
+        _reset_shard_cache(monkeypatch)
+        env = MagicMock()
+        env.ASSETS = _MockShardedAssets(shards=shards)
+
+        blocked, _, _ = asyncio.run(
+            worker._check_sharded_blocklist(variant, env, meta),
+        )
+
+        assert blocked is True, f"{variant!r} should be blocked"
+
+
 def test_sharded_meta_initialized_from_filter_meta() -> None:
     """_sharded_meta is set at module level from filter_meta."""
     import filter_meta

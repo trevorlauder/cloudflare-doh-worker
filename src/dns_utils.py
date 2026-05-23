@@ -274,11 +274,12 @@ def domain_matches(name: str, compiled: tuple[frozenset, tuple]) -> bool:
     Returns:
     bool: True if match found.
     """
+    normalized_name: str = name.rstrip(".").lower()
     exact_domains, wildcard_suffixes = compiled
-    if name in exact_domains:
+    if normalized_name in exact_domains:
         return True
 
-    return any(name.endswith(suffix) for suffix in wildcard_suffixes)
+    return any(normalized_name.endswith(suffix) for suffix in wildcard_suffixes)
 
 
 def make_blocked_response(

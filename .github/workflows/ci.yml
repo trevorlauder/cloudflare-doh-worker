@@ -80,7 +80,7 @@ jobs:
         with:
           install: true
           cache: true
-          install_args: uv
+          install_args: uv rust
       - run: uv sync --group dev
       - name: Rebuild combined.json from source cache
         run: uv run python scripts/build_blocklist.py
