@@ -111,7 +111,7 @@ jobs:
           GH_REPOSITORY: ${{ github.repository }}
         run: |
           if [[ "${TAG}" == *-* ]]; then
-            notes=$(git cliff --latest --strip header)
+            notes=$(git cliff --tag-pattern '^[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$' --latest --strip header)
           else
             prev=$(git tag -l --sort=-v:refname '[0-9]*' | grep -v rc | grep -v "^${TAG}$" | head -1)
             notes=$(git cliff --ignore-tags "rc" --tag "${TAG}" --strip header "${prev}..${TAG}")
