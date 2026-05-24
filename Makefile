@@ -2,6 +2,7 @@
 
 changelog:
 	@GITHUB_TOKEN=$(shell gh auth token) git cliff $(if $(TAG),--tag $(TAG)) -o CHANGELOG.md
+	@dprint fmt CHANGELOG.md
 
 dev:
 	uv run pywrangler dev

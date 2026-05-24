@@ -1,3 +1,14 @@
+## [2.0.1] - 2026-03-26
+
+### 🚀 Features
+
+- Support more blocklist formats ([#153](https://github.com/trevorlauder/cloudflare-doh-worker/pull/153))
+- Add isolate ID and shard cache metrics to Loki logs ([#155](https://github.com/trevorlauder/cloudflare-doh-worker/pull/155))
+
+### 🚜 Refactor
+
+- Always use 512KB shards ([#154](https://github.com/trevorlauder/cloudflare-doh-worker/pull/154))
+
 ## [2.0.0] - 2026-03-25
 
 ### 🐛 Bug Fixes
