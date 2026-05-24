@@ -2,6 +2,7 @@
 !src/
 src/config.py
 !entrypoint.sh
+!rust-toolchain.toml
 !mise.toml
 !mise.list
 !mise-gpg-key.pub
@@ -13,3 +14,4 @@ src/config.py
 !blocklist/
 !blocklist_sources.yaml
 !scripts/
+!tools/

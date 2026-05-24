@@ -10,9 +10,12 @@ import sys
 from unittest.mock import MagicMock
 import urllib.request
 
-_workers_stub = MagicMock()
-_workers_stub.WorkerEntrypoint = object
-sys.modules["workers"] = _workers_stub
+_runtime_stub = MagicMock()
+_runtime_stub.WorkerEntrypoint = object
+sys.modules["workers"] = _runtime_stub
+sys.modules["js"] = MagicMock()
+sys.modules["pyodide"] = MagicMock()
+sys.modules["pyodide.ffi"] = MagicMock()
 
 
 def resolve_env(s: str) -> str:
