@@ -1,5 +1,7 @@
 [settings]
 python.precompiled_flavor = "install_only_stripped"
+experimental = true
+idiomatic_version_file_enable_tools = ["rust"]
 
 [tools]
 actionlint = "1.7.12"

@@ -8,5 +8,6 @@ __pycache__/
 .vscode
 .pytest_cache/
 .ruff_cache/
-blocklist/*.bin
+blocklist/*.txt
 public/
+tools/filter-build/target/

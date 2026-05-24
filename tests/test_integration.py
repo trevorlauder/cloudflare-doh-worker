@@ -657,7 +657,7 @@ def test_blocklist_false_positive_rate():
 
     Uses deterministic {i}.fp-probe.invalid probe names matching the build script convention.
     The reserved .invalid TLD cannot appear in any real blocklist, and because mock-doh always
-    returns NOERROR, any NXDOMAIN response can only come from the worker's bloom filter.
+    returns NOERROR, any NXDOMAIN response can only come from the worker's blocklist filter.
 
     Set FP_CHECK_PROBES env var to override the default probe count (default: 1000).
 
