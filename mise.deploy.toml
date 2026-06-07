@@ -5,4 +5,4 @@ idiomatic_version_file_enable_tools = ["rust"]
 [tools]
 node = "24.16.0"
 python = "3.14.5"
-uv = "0.11.16"
+uv = "0.11.19"
