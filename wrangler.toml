@@ -3,7 +3,7 @@ workers_dev = false
 preview_urls = false
 send_metrics = false
 
-compatibility_date = "2026-05-26"
+compatibility_date = "2026-06-16"
 
 compatibility_flags = [
   "python_workers",
