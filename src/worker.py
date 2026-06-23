@@ -3,6 +3,8 @@
 
 """Cloudflare Worker entrypoint for the DNS-over-HTTPS proxy."""
 
+import json_pure  # noqa: F401, I001
+
 import base64
 from collections import OrderedDict
 import hmac
