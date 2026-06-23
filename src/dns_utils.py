@@ -665,7 +665,11 @@ async def send_doh_requests_fanout(
             logger.error("send_doh_requests failed for %s: %s", item.request.url, exc)
             return _failed_result(item.provider, item.main, exc)
 
-        result = _failed_result(item.provider, item.main, Exception("retries exhausted"))
+        result = _failed_result(
+            item.provider,
+            item.main,
+            Exception("retries exhausted"),
+        )
         result.retry_count = _RETRY_MAX_ATTEMPTS
         return result
 
@@ -676,6 +680,8 @@ async def send_doh_requests_fanout(
 
     for task in unfinished:
         item: _FetchItem = tasks[task]
-        results.append(_failed_result(item.provider, item.main, TimeoutError("deadline exceeded")))
+        results.append(
+            _failed_result(item.provider, item.main, TimeoutError("deadline exceeded")),
+        )
 
     return results
