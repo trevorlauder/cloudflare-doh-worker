@@ -379,7 +379,6 @@ def _build_provider_fetch_request(
     provider: dict,
     method: str,
     accept: str,
-    abort_signal: object,
     body_bytes: bytes | None = None,
     query: str = "",
 ) -> _ProviderFetchRequest:
@@ -390,7 +389,6 @@ def _build_provider_fetch_request(
     provider (dict): Provider config dict.
     method (str): HTTP method.
     accept (str): Accept header value.
-    abort_signal (object): Abort signal object.
     body_bytes (bytes | None): DNS wire-format body (optional).
     query (str): Query string (optional).
 
@@ -418,7 +416,6 @@ def _build_provider_fetch_request(
     fetch_options: dict = {
         "method": method,
         "headers": headers,
-        "signal": abort_signal,
     }
 
     if body_bytes is not None and method == "POST":
@@ -595,7 +592,8 @@ async def send_doh_requests_fanout(
     """
     Fan out DNS queries to multiple providers and collect results.
 
-    Uses asyncio.gather with workers.fetch for concurrent upstream requests.
+    Each provider runs its own fetch and retry coroutine, bounded by a
+    single deadline via asyncio.wait.
 
     Parameters:
     doh_providers (list): Provider config dicts, each with url, etc.
@@ -603,35 +601,32 @@ async def send_doh_requests_fanout(
     accept (str): Accept header value.
     body_bytes (bytes | None): DNS wire-format body for POST requests.
     query (str): Query string for GET JSON requests.
-    safety_timeout_ms (int): Overall safety timeout in milliseconds.
-        When positive, all fetches use this as their AbortSignal timeout
-        instead of _TIMEOUT_MS, enforcing a hard deadline across
-        the entire fanout including retries.
+    safety_timeout_ms (int): Overall deadline in milliseconds for the whole
+        fanout. When positive it is used instead of _TIMEOUT_MS. Providers
+        still in flight at the deadline are reported as timed out.
 
     Returns:
     list[ProviderResult]: One result per queried provider.
     """
     import asyncio
 
-    # Deferred imports: only available in the Pyodide/Workers runtime.
-    from js import AbortSignal
+    # Deferred import: only available in the Pyodide/Workers runtime.
     from workers import fetch as workers_fetch
 
     if not doh_providers:
         return []
 
     timeout_ms: int = safety_timeout_ms if safety_timeout_ms > 0 else _TIMEOUT_MS
-    abort_signal: object = AbortSignal.timeout(timeout_ms)
     is_json: bool = accept == "application/dns-json"
     is_json_query: bool = is_json and body_bytes is None
 
-    pending: list[_FetchItem] = []
+    items: list[_FetchItem] = []
 
     for provider in doh_providers:
         if is_json_query and not provider.get("dns_json", False):
             continue
 
-        pending.append(
+        items.append(
             _FetchItem(
                 provider=provider,
                 main=provider.get("main", False),
@@ -639,98 +634,54 @@ async def send_doh_requests_fanout(
                     provider=provider,
                     method=method,
                     accept=accept,
-                    abort_signal=abort_signal,
                     body_bytes=body_bytes,
                     query=query,
                 ),
             ),
         )
 
-    if not pending:
+    if not items:
         return []
 
-    done: list[ProviderResult] = []
+    async def _query_provider(item: _FetchItem) -> ProviderResult:
+        try:
+            for attempt in range(1 + _RETRY_MAX_ATTEMPTS):
+                resp = await workers_fetch(item.request.url, **item.request.options)
+                if resp.status in _RETRY_STATUS_CODES and attempt < _RETRY_MAX_ATTEMPTS:
+                    continue
 
-    for attempt in range(1 + _RETRY_MAX_ATTEMPTS):
-        responses: list = await asyncio.gather(
-            *[
-                workers_fetch(item.request.url, **item.request.options)
-                for item in pending
-            ],
-            return_exceptions=True,
-        )
-
-        next_pending: list[_FetchItem] = []
-
-        for item, resp in zip(pending, responses, strict=True):
-            if isinstance(resp, BaseException):
-                logger.error(
-                    "send_doh_requests fetch rejected for %s: %s",
-                    item.provider.get("url", ""),
-                    resp,
-                )
-
-                done.append(
-                    _failed_result(
-                        provider=item.provider,
-                        main=item.main,
-                        exception=resp,
-                    ),
-                )
-                continue
-
-            status: int = resp.status
-
-            if status in _RETRY_STATUS_CODES and attempt < _RETRY_MAX_ATTEMPTS:
-                next_pending.append(item)
-                continue
-
-            try:
-                resp_body: str | bytes
-                if is_json:
-                    resp_body = await resp.text()
-                else:
-                    resp_body = await resp.bytes()
-
+                body: str | bytes = await resp.text() if is_json else await resp.bytes()
                 result: ProviderResult = _build_provider_result(
-                    resp_body=resp_body,
+                    resp_body=body,
                     response_ok=resp.ok,
-                    status=status,
+                    status=resp.status,
                     provider=item.provider,
                     main=item.main,
                     accept=accept,
                 )
-
                 result.retry_count = attempt
-            except Exception as e:
-                logger.error(
-                    "send_doh_requests processing failed for %s: %s: %s",
-                    item.provider.get("url", ""),
-                    type(e).__name__,
-                    e,
-                )
+                return result
+        except Exception as exc:
+            logger.error("send_doh_requests failed for %s: %s", item.request.url, exc)
+            return _failed_result(item.provider, item.main, exc)
 
-                result = _failed_result(
-                    provider=item.provider,
-                    main=item.main,
-                    exception=e,
-                )
-
-            done.append(result)
-
-        pending = next_pending
-
-        if not pending:
-            break
-
-    for item in pending:
         result = _failed_result(
-            provider=item.provider,
-            main=item.main,
-            exception=Exception("retries exhausted"),
+            item.provider,
+            item.main,
+            Exception("retries exhausted"),
+        )
+        result.retry_count = _RETRY_MAX_ATTEMPTS
+        return result
+
+    tasks: dict = {asyncio.ensure_future(_query_provider(item)): item for item in items}
+    finished, unfinished = await asyncio.wait(tasks, timeout=timeout_ms / 1000)
+
+    results: list[ProviderResult] = [task.result() for task in finished]
+
+    for task in unfinished:
+        item: _FetchItem = tasks[task]
+        results.append(
+            _failed_result(item.provider, item.main, TimeoutError("deadline exceeded")),
         )
 
-        result.retry_count = _RETRY_MAX_ATTEMPTS
-        done.append(result)
-
-    return done
+    return results
