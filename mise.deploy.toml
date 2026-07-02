@@ -3,6 +3,6 @@ experimental = true
 idiomatic_version_file_enable_tools = ["rust"]
 
 [tools]
-node = "24.17.0"
+node = "24.18.0"
 python = "3.14.6"
-uv = "0.11.23"
+uv = "0.11.26"
