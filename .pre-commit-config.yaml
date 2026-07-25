@@ -35,6 +35,11 @@ repos:
         language: system
         entry: actionlint
         pass_filenames: false
+      - id: vale
+        name: vale
+        language: system
+        entry: vale
+        types: [markdown, rst]
       - id: zizmor
         name: zizmor
         language: system
