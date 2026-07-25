@@ -649,3 +649,99 @@ def test_false_positive_rate() -> None:
     assert measured <= max_fp_rate, (
         f"false positive rate {measured:.2e} exceeds bound {max_fp_rate:.2e}"
     )
+
+
+class _FakeFetchResponse:
+    """Minimal stand-in for a workers.fetch response."""
+
+    def __init__(self, body: bytes = b"", status: int = 200) -> None:
+        self._body = body
+        self.status = status
+        self.ok = 200 <= status < 300
+
+    async def text(self) -> str:
+        return self._body.decode()
+
+    async def bytes(self) -> bytes:
+        return self._body
+
+
+def test_fanout_drains_stragglers_via_wait_until(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Providers still in flight at the deadline are reported as timed out and
+    the straggler tasks are drained through ctx.waitUntil.
+    """
+    from dns_utils import send_doh_requests_fanout
+
+    fast_provider = {"url": "https://fast.example.com/dns-query", "main": True}
+    slow_provider = {"url": "https://slow.example.com/dns-query"}
+
+    async def run() -> tuple[list, MagicMock]:
+        release = asyncio.Event()
+
+        async def fake_fetch(url: str, **options: object) -> _FakeFetchResponse:
+            if "slow" in url:
+                await release.wait()
+            return _FakeFetchResponse()
+
+        monkeypatch.setattr(_runtime_stub, "fetch", fake_fetch)
+
+        ctx = MagicMock()
+        results = await send_doh_requests_fanout(
+            doh_providers=[fast_provider, slow_provider],
+            method="POST",
+            accept="application/dns-message",
+            body_bytes=b"\x00" * 12,
+            safety_timeout_ms=100,
+            ctx=ctx,
+        )
+
+        release.set()
+
+        pending = [
+            task for task in asyncio.all_tasks() if task is not asyncio.current_task()
+        ]
+        await asyncio.gather(*pending, return_exceptions=True)
+
+        return results, ctx
+
+    results, ctx = asyncio.run(run())
+
+    assert len(results) == 2
+
+    by_url = {result.url: result for result in results}
+    assert by_url["https://fast.example.com/dns-query"].failed is False
+    assert by_url["https://slow.example.com/dns-query"].timed_out is True
+
+    ctx.waitUntil.assert_called_once()
+
+
+def test_fanout_no_drain_when_all_providers_finish(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No drain is scheduled when every provider finishes before the deadline."""
+    from dns_utils import send_doh_requests_fanout
+
+    async def fake_fetch(url: str, **options: object) -> _FakeFetchResponse:
+        return _FakeFetchResponse()
+
+    monkeypatch.setattr(_runtime_stub, "fetch", fake_fetch)
+
+    ctx = MagicMock()
+    results = asyncio.run(
+        send_doh_requests_fanout(
+            doh_providers=[{"url": "https://fast.example.com/dns-query", "main": True}],
+            method="POST",
+            accept="application/dns-message",
+            body_bytes=b"\x00" * 12,
+            safety_timeout_ms=1000,
+            ctx=ctx,
+        ),
+    )
+
+    assert len(results) == 1
+    assert results[0].failed is False
+
+    ctx.waitUntil.assert_not_called()

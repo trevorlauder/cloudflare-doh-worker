@@ -26,6 +26,7 @@ _ECS_TRUNCATION: dict = getattr(config, "ECS_TRUNCATION", {"enabled": False})
 _REBIND_PROTECTION: bool = getattr(config, "REBIND_PROTECTION", True)
 _TIMEOUT_MS: int = getattr(config, "TIMEOUT_MS", 5000)
 _RETRY_MAX_ATTEMPTS: int = getattr(config, "RETRY_MAX_ATTEMPTS", 2)
+_FANOUT_DRAIN_TIMEOUT_MS: int = getattr(config, "FANOUT_DRAIN_TIMEOUT_MS", 10000)
 
 
 SUPPORTED_ACCEPT_HEADERS = frozenset(
@@ -588,12 +589,14 @@ async def send_doh_requests_fanout(
     body_bytes: bytes | None = None,
     query: str = "",
     safety_timeout_ms: int = 0,
+    ctx: object | None = None,
 ) -> list:
     """
     Fan out DNS queries to multiple providers and collect results.
 
     Each provider runs its own fetch and retry coroutine, bounded by a
-    single deadline via asyncio.wait.
+    single deadline via asyncio.wait. Stragglers are drained under
+    ctx.waitUntil so their continuations fire in a live request context.
 
     Parameters:
     doh_providers (list): Provider config dicts, each with url, etc.
@@ -604,6 +607,7 @@ async def send_doh_requests_fanout(
     safety_timeout_ms (int): Overall deadline in milliseconds for the whole
         fanout. When positive it is used instead of _TIMEOUT_MS. Providers
         still in flight at the deadline are reported as timed out.
+    ctx (object | None): Worker execution context for draining stragglers.
 
     Returns:
     list[ProviderResult]: One result per queried provider.
@@ -684,4 +688,32 @@ async def send_doh_requests_fanout(
             _failed_result(item.provider, item.main, TimeoutError("deadline exceeded")),
         )
 
+    if unfinished and ctx is not None:
+        _schedule_fanout_drain(ctx, unfinished)
+
     return results
+
+
+def _schedule_fanout_drain(ctx: object, tasks: set) -> None:
+    """
+    Keep the request context alive until straggler tasks settle.
+
+    Parameters:
+    ctx (object): Worker execution context.
+    tasks (set): Unfinished fanout tasks.
+
+    Returns:
+    None
+    """
+    import asyncio
+
+    async def _drain() -> None:
+        await asyncio.wait(tasks, timeout=_FANOUT_DRAIN_TIMEOUT_MS / 1000)
+
+    try:
+        # Deferred import: only available in the Pyodide/Workers runtime.
+        from js import Promise
+
+        ctx.waitUntil(Promise.resolve(asyncio.ensure_future(_drain())))
+    except Exception:
+        logger.debug("Failed to schedule fanout drain", exc_info=True)

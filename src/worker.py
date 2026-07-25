@@ -1172,6 +1172,7 @@ async def _handle_request(
                     body_bytes=body_bytes,
                     query=query,
                     safety_timeout_ms=safety_timeout_ms,
+                    ctx=ctx,
                 )
             except Exception:
                 logger.exception("send_doh_requests_fanout failed")
