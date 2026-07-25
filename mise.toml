@@ -5,6 +5,9 @@ lockfile = true
 minimum_release_age = "7d"
 idiomatic_version_file_enable_tools = ["rust"]
 
+[env]
+_.path = ["node_modules/.bin"]
+
 [tools]
 actionlint = "1.7.12"
 dprint = "0.55.2"
@@ -17,9 +20,10 @@ shellcheck = "0.11.0"
 tilt = "0.37.5"
 trufflehog = "3.96.0"
 zizmor = "1.28.0"
-node = "24.18.0"
+node = { version = "24.18.0", postinstall = "npm install --include dev" }
 python = "3.14.6"
 uv = "0.11.32"
 buildifier = "8.5.1"
 k6 = "2.1.0"
 prek = "0.4.11"
+vale = "3.15.1"
