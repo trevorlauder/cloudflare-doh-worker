@@ -30,6 +30,7 @@ from cache_utils import (
     _try_cache_get,
 )
 import config
+import config_defaults
 from config_types import (
     EndpointConfig,
     NonNegativeInt,
@@ -401,19 +402,20 @@ def _resolve_secrets(data: object, env: object) -> object:
 
 def _resolve_providers(providers: list[Provider], env: object) -> list[dict]:
     """
-    Resolve secret placeholders in providers and update provider_id.
+    Resolve secret placeholders in providers, preserving provider_id.
 
     Parameters:
     providers (list[dict]): List of provider dicts.
     env (object): Worker environment with secrets.
 
     Returns:
-    list[dict]: Resolved provider dicts.
+    list[dict]: Resolved provider dicts with a secret-free provider_id.
     """
+    provider_ids: list[str] = [provider["provider_id"] for provider in providers]
     resolved: list = _resolve_secrets(data=providers, env=env)
 
-    for provider in resolved:
-        provider["provider_id"] = provider["url"]
+    for provider, provider_id in zip(resolved, provider_ids, strict=True):
+        provider["provider_id"] = provider_id
 
     return resolved
 
@@ -434,7 +436,7 @@ def _resolve_config(env: object) -> _ResolvedConfig:
         return _resolved_config_cache
 
     prefix: str = _resolve_secrets(
-        data=getattr(config, "PATH_PREFIX", "/"),
+        data=_PATH_PREFIX,
         env=env,
     ).rstrip("/")
 
@@ -458,14 +460,13 @@ def _resolve_config(env: object) -> _ResolvedConfig:
 
     full_config: dict = _resolve_secrets(
         data={
-            "PATH_PREFIX": getattr(config, "PATH_PREFIX", "/"),
+            "PATH_PREFIX": _PATH_PREFIX,
             "DEBUG": _DEBUG,
             "TIMEOUT_MS": _TIMEOUT_MS,
             "LOKI_TIMEOUT_MS": _LOKI_TIMEOUT_MS,
             "RETRY_MAX_ATTEMPTS": _RETRY_MAX_ATTEMPTS,
             "CACHE_DNS": _CACHE_DNS,
             "BLOCKLIST_ENABLED": _BLOCKLIST_ENABLED,
-            "LOKI_URL": _LOKI_URL,
             "REBIND_PROTECTION": _REBIND_PROTECTION,
             "ECS_TRUNCATION": _ECS_TRUNCATION,
             "BLOCKED_DOMAINS": _BLOCKED_DOMAINS,
@@ -475,6 +476,7 @@ def _resolve_config(env: object) -> _ResolvedConfig:
         },
         env=env,
     )
+    full_config["LOKI_URL"] = loki_url
 
     resolved: _ResolvedConfig = _ResolvedConfig(
         prefix=prefix,
@@ -683,34 +685,117 @@ def _build_response_headers(
     return headers
 
 
-def _negotiate_accept(raw: str) -> str:
+def _accept_quality(params: str) -> float:
     """
-    Return the first supported media type from a raw Accept header.
+    Return the q-value from Accept header parameters.
+
+    Parameters:
+    params (str): Parameter string following the media type.
+
+    Returns:
+    float: Parsed q-value, or 1.0 when absent or malformed.
+    """
+    for param in params.split(";"):
+        key, _, value = param.partition("=")
+        if key.strip() == "q":
+            try:
+                return float(value)
+            except ValueError:
+                return 1.0
+
+    return 1.0
+
+
+def _negotiate_accept(raw: str) -> frozenset[str]:
+    """
+    Return the set of supported media types the Accept header allows.
+
+    A missing or wildcard ("*/*") header accepts any supported type. Types
+    offered with q=0 are ignored.
 
     Parameters:
     raw (str): Raw Accept header value.
 
     Returns:
-    str: Supported media type or empty string.
+    frozenset[str]: Supported media types the client will accept.
     """
-    lowered: str = raw.lower()
-    if lowered in SUPPORTED_ACCEPT_HEADERS:
-        return lowered
+    if not raw:
+        return SUPPORTED_ACCEPT_HEADERS
 
-    for part in lowered.split(","):
-        media_type: str = part.split(";", 1)[0].strip()
+    accepted: set[str] = set()
+
+    for part in raw.lower().split(","):
+        media_type, _, params = part.partition(";")
+        if _accept_quality(params) <= 0:
+            continue
+
+        media_type = media_type.strip()
+        if media_type == "*/*":
+            return SUPPORTED_ACCEPT_HEADERS
         if media_type in SUPPORTED_ACCEPT_HEADERS:
-            return media_type
+            accepted.add(media_type)
 
-    return ""
+    return frozenset(accepted)
+
+
+_JSON_CACHEABLE_PARAMS = frozenset({"cd", "do"})
+_JSON_UNCACHED_PARAMS = frozenset({"random_padding"})
+
+
+def _split_json_params(query_string: str) -> tuple[dict[str, str], dict[str, str]]:
+    """
+    Split JSON GET query parameters into cacheable and forward-only sets.
+
+    Unknown parameters are dropped so a client can't fan out to every
+    provider under a distinct cache key. edns_client_subnet stays unknown on
+    purpose. Its value is unbounded, so keying on it would let a client miss
+    the cache at will, and ECS_TRUNCATION only reaches wire requests.
+
+    Parameters:
+    query_string (str): Raw request query string.
+
+    Returns:
+    tuple[dict[str, str], dict[str, str]]: Cache key params, forward-only params.
+    """
+    params: dict[str, list[str]] = urllib.parse.parse_qs(
+        query_string,
+        keep_blank_values=True,
+    )
+    first: dict[str, str] = {k: v[0] for k, v in params.items() if v}
+
+    return (
+        {k: v for k, v in first.items() if k in _JSON_CACHEABLE_PARAMS},
+        {k: v for k, v in first.items() if k in _JSON_UNCACHED_PARAMS},
+    )
+
+
+def _parse_rdatatype(type_param: str) -> int:
+    """
+    Parse an RR type from a mnemonic or bare numeric string.
+
+    dns.rdatatype.from_text rejects bare numbers (e.g. "65"), a common
+    convention in JSON DoH APIs, unless given as "TYPE65".
+
+    Parameters:
+    type_param (str): RR type as a mnemonic or bare number.
+
+    Returns:
+    int: Numeric RR type.
+    """
+    try:
+        return dns.rdatatype.from_text(type_param)
+    except dns.rdatatype.UnknownRdatatype:
+        if type_param.isdigit():
+            return dns.rdatatype.from_text(f"TYPE{type_param}")
+        raise
 
 
 async def _parse_dns_request(
     request: object,
     query_string: str,
     method: str,
-    accept: str,
-) -> DnsParseResult | Response:
+    accepted_types: frozenset[str],
+) -> tuple[DnsParseResult, str] | Response:
     """
     Parse the DNS request. Returns a Response directly on error.
 
@@ -718,35 +803,39 @@ async def _parse_dns_request(
     request (object): Incoming HTTP request.
     query_string (str): Query string.
     method (str): HTTP method.
-    accept (str): Negotiated Accept header value.
+    accepted_types (frozenset[str]): Media types accepted by the client.
 
     Returns:
-    DnsParseResult | Response: Parsed result or error response.
+    tuple[DnsParseResult, str] | Response: Parsed result and the resolved
+    media type, or an error response.
     """
     try:
         if method == "GET":
-            return _parse_get(query_string=query_string, accept=accept)
+            return _parse_get(query_string=query_string, accepted_types=accepted_types)
 
         if method == "POST":
-            return await _parse_post(request=request, accept=accept)
+            return await _parse_post(request=request, accepted_types=accepted_types)
 
         raise _RejectError(f"Method not allowed: {method}", status=405)
     except _RejectError as r:
         return r.response
 
 
-def _parse_get(query_string: str, accept: str) -> DnsParseResult:
+def _parse_get(
+    query_string: str,
+    accepted_types: frozenset[str],
+) -> tuple[DnsParseResult, str]:
     """
     Parse a DNS question from GET query parameters.
 
     Parameters:
     query_string (str): Query string.
-    accept (str): Negotiated Accept header value.
+    accepted_types (frozenset[str]): Media types accepted by the client.
 
     Returns:
-    DnsParseResult: Parsed DNS result.
+    tuple[DnsParseResult, str]: Parsed DNS result and the resolved media type.
     """
-    if not accept:
+    if not accepted_types:
         supported: str = ", ".join(sorted(SUPPORTED_ACCEPT_HEADERS))
         raise _RejectError(f"Unsupported Accept header\n\nUse one of: {supported}")
 
@@ -758,14 +847,14 @@ def _parse_get(query_string: str, accept: str) -> DnsParseResult:
     name_param: str | None = params.get("name", [None])[0]
 
     if dns_param:
-        if accept != "application/dns-message":
+        if "application/dns-message" not in accepted_types:
             raise _RejectError("GET ?dns= requires Accept: application/dns-message")
 
         padded: str = dns_param + "=" * (-len(dns_param) % 4)
 
         try:
             data: bytes = base64.urlsafe_b64decode(padded)
-            return parse_dns_wire_request(data)
+            return parse_dns_wire_request(data), "application/dns-message"
         except Exception:
             raise _RejectError(
                 "Failed to decode dns query parameter",
@@ -773,15 +862,16 @@ def _parse_get(query_string: str, accept: str) -> DnsParseResult:
             ) from None
 
     if name_param:
-        if accept != "application/dns-json":
+        if "application/dns-json" not in accepted_types:
             raise _RejectError("GET ?name= requires Accept: application/dns-json")
 
         type_param: str | None = params.get("type", [None])[0]
+        normalized_type: str = ""
         try:
             dns.name.from_text(name_param)
 
             if type_param is not None:
-                dns.rdatatype.from_text(type_param)
+                normalized_type = dns.rdatatype.to_text(_parse_rdatatype(type_param))
         except (
             dns.exception.DNSException,
             dns.name.LabelTooLong,
@@ -791,11 +881,11 @@ def _parse_get(query_string: str, accept: str) -> DnsParseResult:
             raise _RejectError("Invalid DNS name or type", status=400) from None
 
         question: Question = Question(
-            name=name_param,
-            type=type_param if type_param else "",
+            name=name_param.rstrip(".").lower() or ".",
+            type=normalized_type,
         )
 
-        return DnsParseResult(question, None, "", None)
+        return DnsParseResult(question, None, "", None), "application/dns-json"
 
     raise _RejectError(
         "GET requests must include one of name or dns as query parameters",
@@ -803,18 +893,21 @@ def _parse_get(query_string: str, accept: str) -> DnsParseResult:
     )
 
 
-async def _parse_post(request: object, accept: str) -> DnsParseResult:
+async def _parse_post(
+    request: object,
+    accepted_types: frozenset[str],
+) -> tuple[DnsParseResult, str]:
     """
     Parse a DNS wire message from the POST body.
 
     Parameters:
     request (object): Incoming HTTP request.
-    accept (str): Negotiated Accept header value.
+    accepted_types (frozenset[str]): Media types accepted by the client.
 
     Returns:
-    DnsParseResult: Parsed DNS result.
+    tuple[DnsParseResult, str]: Parsed DNS result and the resolved media type.
     """
-    if accept != "application/dns-message":
+    if "application/dns-message" not in accepted_types:
         raise _RejectError("POST requires Accept: application/dns-message")
 
     try:
@@ -828,7 +921,7 @@ async def _parse_post(request: object, accept: str) -> DnsParseResult:
         raise _RejectError("Request body too large", status=413)
 
     try:
-        return parse_dns_wire_request(raw_bytes)
+        return parse_dns_wire_request(raw_bytes), "application/dns-message"
     except Exception as e:
         logger.debug("Failed to decode DNS packet: %s", e)
         raise _RejectError("Failed to decode DNS packet", status=400) from None
@@ -1053,7 +1146,7 @@ async def _handle_request(
     query: str = f"?{parsed_url.query}" if parsed_url.query else ""
     method: str = str(request.method).upper()
     raw_accept: str = str(request.headers.get("accept") or "")
-    accept: str = _negotiate_accept(raw_accept)
+    accepted_types: frozenset[str] = _negotiate_accept(raw_accept)
 
     global _loki_enabled_cache
 
@@ -1068,14 +1161,16 @@ async def _handle_request(
         )
         _loki_enabled_cache = loki_enabled
 
-    parsed: DnsParseResult | Response = await _parse_dns_request(
+    parse_result: tuple[DnsParseResult, str] | Response = await _parse_dns_request(
         request=request,
         query_string=parsed_url.query,
         method=method,
-        accept=accept,
+        accepted_types=accepted_types,
     )
-    if isinstance(parsed, Response):
-        return parsed
+    if isinstance(parse_result, Response):
+        return parse_result
+
+    parsed, accept = parse_result
 
     question: Question = parsed.question
     body_bytes: bytes | None = parsed.body_bytes
@@ -1083,11 +1178,16 @@ async def _handle_request(
     request_wire: bytes | None = parsed.request_wire
     parsed_request: object = parsed.parsed_request
 
+    json_extra_query: dict[str, str] = {}
     if method == "GET" and body_bytes is None and question.name:
-        _json_params: dict[str, str] = {"name": question.name}
+        json_extra_query, json_uncached = _split_json_params(parsed_url.query)
+
+        json_params: dict[str, str] = {"name": question.name}
         if question.type:
-            _json_params["type"] = question.type
-        query = "?" + urllib.parse.urlencode(_json_params)
+            json_params["type"] = question.type
+        json_params.update(json_extra_query)
+        json_params.update(json_uncached)
+        query = "?" + urllib.parse.urlencode(json_params)
 
     name: str = question.name
     config_allowed: bool = bool(
@@ -1100,6 +1200,7 @@ async def _handle_request(
             endpoint=endpoint,
             body_bytes=body_bytes,
             question=question,
+            extra_query=json_extra_query or None,
         )
 
     if config_allowed:
@@ -1156,7 +1257,11 @@ async def _handle_request(
         )
     else:
         if cache_key:
-            cached_response: Response | None = await _try_cache_get(cache_key)
+            cached_response: Response | None = await _try_cache_get(
+                cache_key,
+                request_id=request_wire[:2] if request_wire else None,
+                ecs_truncated=ecs_truncated,
+            )
             if cached_response is not None:
                 response_from = "cache"
                 final_response = cached_response
@@ -1214,8 +1319,6 @@ async def _handle_request(
                             stable_headers: dict[str, str] = {}
                             if config_allowed:
                                 stable_headers[_HEADER_ALLOWED] = "1"
-                            if ecs_truncated:
-                                stable_headers[_HEADER_ECS_TRUNCATED] = ecs_truncated
                             _schedule_cache_put(
                                 ctx=ctx,
                                 cache_key=cache_key,
@@ -1293,27 +1396,20 @@ async def _handle_request(
     return final_response
 
 
-_DEBUG: bool = getattr(config, "DEBUG", False)
-_TIMEOUT_MS: int = getattr(config, "TIMEOUT_MS", 5000)
-_LOKI_TIMEOUT_MS: int = getattr(config, "LOKI_TIMEOUT_MS", 5000)
-_RETRY_MAX_ATTEMPTS: int = getattr(config, "RETRY_MAX_ATTEMPTS", 2)
-_CACHE_DNS: bool = getattr(config, "CACHE_DNS", True)
-_BLOCKLIST_ENABLED: bool = getattr(config, "BLOCKLIST_ENABLED", True)
-_LOKI_URL: str = getattr(config, "LOKI_URL", "")
-_REBIND_PROTECTION: bool = getattr(config, "REBIND_PROTECTION", True)
-_ALLOWED_DOMAINS: list = getattr(config, "ALLOWED_DOMAINS", [])
-_BLOCKED_DOMAINS: list = getattr(config, "BLOCKED_DOMAINS", [])
+_PATH_PREFIX: str = config_defaults.PATH_PREFIX
+_DEBUG: bool = config_defaults.DEBUG
+_TIMEOUT_MS: int = config_defaults.TIMEOUT_MS
+_LOKI_TIMEOUT_MS: int = config_defaults.LOKI_TIMEOUT_MS
+_RETRY_MAX_ATTEMPTS: int = config_defaults.RETRY_MAX_ATTEMPTS
+_CACHE_DNS: bool = config_defaults.CACHE_DNS
+_BLOCKLIST_ENABLED: bool = config_defaults.BLOCKLIST_ENABLED
+_LOKI_URL: str = config_defaults.LOKI_URL
+_REBIND_PROTECTION: bool = config_defaults.REBIND_PROTECTION
+_ALLOWED_DOMAINS: list = config_defaults.ALLOWED_DOMAINS
+_BLOCKED_DOMAINS: list = config_defaults.BLOCKED_DOMAINS
 _ENDPOINTS: dict = config.ENDPOINTS
-_ECS_TRUNCATION: dict = getattr(config, "ECS_TRUNCATION", {"enabled": False})
-
-_BYPASS_PROVIDER: dict = getattr(
-    config,
-    "BYPASS_PROVIDER",
-    {
-        "url": "https://cloudflare-dns.com/dns-query",
-        "dns_json": True,
-    },
-)
+_ECS_TRUNCATION: dict = config_defaults.ECS_TRUNCATION
+_BYPASS_PROVIDER: dict = config_defaults.BYPASS_PROVIDER
 
 _validate_config()
 

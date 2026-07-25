@@ -270,6 +270,10 @@ Queries for domains on the worker's own blocklist never leave the worker. They h
 
 - **ECS truncation**: strips EDNS Client Subnet prefixes down when enabled.
 
+- **Caching**: responses are cached and reused until their TTL expires.
+
+- **Accept negotiation**: with no `Accept` header, `?dns=` gets wire and `?name=` gets JSON.
+
 - **Debug mode** (`DEBUG = True`) sets log level to `DEBUG` and adds diagnostic headers to every DNS response.
 
   Always-present headers (when applicable):

@@ -14,10 +14,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 from build_blocklist import _build_bfuse32_shard
 from conftest import _runtime_stub
+import dns.message
+import dns.rdatatype
 import pytest
 
 from blocklist_parser import parse_blocklist_text
-from dns_utils import ProviderResult
+import cache_utils
+from cache_utils import _build_cache_key
+from dns_utils import SUPPORTED_ACCEPT_HEADERS, ProviderResult, Question
 from filter_utils import (
     _domain_to_key,
     check_filter,
@@ -239,37 +243,284 @@ def test_validate_config_bypass_empty_url(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_negotiate_accept_json():
-    assert _negotiate_accept("application/dns-json") == "application/dns-json"
-
-
-def test_negotiate_accept_wire():
-    assert _negotiate_accept("application/dns-message") == "application/dns-message"
-
-
-def test_negotiate_accept_unsupported():
-    assert _negotiate_accept("text/html") == ""
-
-
-def test_negotiate_accept_empty():
-    assert _negotiate_accept("") == ""
-
-
-def test_negotiate_accept_picks_first_supported():
-    assert (
-        _negotiate_accept("text/html, application/dns-json") == "application/dns-json"
+    assert _negotiate_accept("application/dns-json") == frozenset(
+        {"application/dns-json"},
     )
 
 
+def test_negotiate_accept_wire():
+    assert _negotiate_accept("application/dns-message") == frozenset(
+        {"application/dns-message"},
+    )
+
+
+def test_negotiate_accept_unsupported():
+    assert _negotiate_accept("text/html") == frozenset()
+
+
+def test_negotiate_accept_empty():
+    assert _negotiate_accept("") == SUPPORTED_ACCEPT_HEADERS
+
+
+def test_negotiate_accept_picks_all_supported():
+    assert _negotiate_accept("text/html, application/dns-json") == frozenset(
+        {"application/dns-json"},
+    )
+    assert _negotiate_accept(
+        "application/dns-json, application/dns-message",
+    ) == frozenset({"application/dns-json", "application/dns-message"})
+
+
 def test_negotiate_accept_with_quality_param():
-    assert _negotiate_accept("application/dns-json; q=0.9") == "application/dns-json"
+    assert _negotiate_accept("application/dns-json; q=0.9") == frozenset(
+        {"application/dns-json"},
+    )
 
 
-def test_negotiate_accept_wildcard_not_matched():
-    assert _negotiate_accept("*/*") == ""
+def test_negotiate_accept_wildcard_matches_all():
+    assert _negotiate_accept("*/*") == SUPPORTED_ACCEPT_HEADERS
 
 
 def test_negotiate_accept_case_insensitive():
-    assert _negotiate_accept("APPLICATION/DNS-JSON") == "application/dns-json"
+    assert _negotiate_accept("APPLICATION/DNS-JSON") == frozenset(
+        {"application/dns-json"},
+    )
+
+
+def test_negotiate_accept_zero_quality_ignored():
+    assert _negotiate_accept("application/dns-json;q=0") == frozenset()
+    assert _negotiate_accept("*/*;q=0.0") == frozenset()
+
+
+def test_negotiate_accept_nonzero_quality_kept():
+    assert _negotiate_accept("application/dns-json;q=0.1") == frozenset(
+        {"application/dns-json"},
+    )
+
+
+def _wire(name: str, ident: int) -> bytes:
+    """Build a DNS wire query with an explicit transaction ID."""
+
+    query = dns.message.make_query(name, dns.rdatatype.A)
+    query.id = ident
+
+    return query.to_wire()
+
+
+def test_cache_key_ignores_transaction_id():
+    question = Question(name="example.com", type="A")
+    first = _build_cache_key("/dns", _wire("example.com", 0x1234), question)
+    second = _build_cache_key("/dns", _wire("example.com", 0xABCD), question)
+
+    assert first == second
+    assert first is not None
+
+
+def test_cache_key_differs_by_question():
+    question = Question(name="example.com", type="A")
+    other = Question(name="example.org", type="A")
+    first = _build_cache_key("/dns", _wire("example.com", 1), question)
+    second = _build_cache_key("/dns", _wire("example.org", 1), other)
+
+    assert first != second
+
+
+def test_cache_key_json_sorts_and_drops_unknown_params():
+    question = Question(name="example.com", type="A")
+    key = _build_cache_key(
+        "/dns",
+        None,
+        question,
+        extra_query={"do": "1", "cd": "1"},
+    )
+
+    assert key == "https://doh-cache.internal/dns?cd=1&do=1&name=example.com&type=A"
+
+
+def test_split_json_params_allowlists():
+    cacheable, uncached = worker._split_json_params(
+        "name=example.com&type=A&cd=1&random_padding=xyz&junk=abc",
+    )
+
+    assert cacheable == {"cd": "1"}
+    assert uncached == {"random_padding": "xyz"}
+
+
+def test_split_json_params_drops_client_ecs():
+    cacheable, uncached = worker._split_json_params(
+        "name=example.com&edns_client_subnet=1.2.3.4/32",
+    )
+
+    assert cacheable == {}
+    assert uncached == {}
+
+
+def test_client_ecs_does_not_split_the_cache_key():
+    keys = set()
+    for ecs in ("1.2.3.4/32", "5.6.7.8/32", "9.9.9.9/32"):
+        query = f"name=example.com&type=A&edns_client_subnet={ecs}"
+        extra, _ = worker._split_json_params(query)
+        parsed, _ = worker._parse_get(
+            query_string=query,
+            accepted_types=frozenset({"application/dns-json"}),
+        )
+        keys.add(_build_cache_key("/dns", None, parsed.question, extra or None))
+
+    assert len(keys) == 1
+
+
+class _FakeCached:
+    """Minimal stand-in for a Cache API response."""
+
+    def __init__(self, body: bytes, headers: dict) -> None:
+        self._body = body
+        self.headers = MagicMock()
+        self.headers.get = lambda key: headers.get(key.lower())
+
+    async def bytes(self) -> object:
+        raw = MagicMock()
+        raw.to_bytes.return_value = self._body
+        return raw
+
+
+def _cache_get_response(
+    monkeypatch: pytest.MonkeyPatch,
+    body: bytes,
+    headers: dict,
+    request_id: bytes | None,
+    ecs_truncated: str = "",
+) -> dict:
+    """Run _try_cache_get against a stubbed Cache API and return the Response args."""
+
+    captured: dict = {}
+
+    async def _match(_key: str) -> object:
+        return _FakeCached(body, headers)
+
+    monkeypatch.setattr(cache_utils, "_to_js_body", lambda value: value)
+    monkeypatch.setattr(
+        cache_utils,
+        "Response",
+        lambda value, status, headers: captured.update(body=value, headers=headers),
+    )
+    monkeypatch.setattr(sys.modules["js"].caches.default, "match", _match)
+
+    asyncio.run(
+        cache_utils._try_cache_get(
+            "https://x/y",
+            request_id=request_id,
+            ecs_truncated=ecs_truncated,
+        ),
+    )
+
+    assert "body" in captured, "no Response was built from the cached entry"
+
+    return captured
+
+
+def _cache_get(
+    monkeypatch: pytest.MonkeyPatch,
+    body: bytes,
+    headers: dict,
+    request_id: bytes | None,
+) -> bytes:
+    """Run _try_cache_get against a stubbed Cache API and return the body."""
+
+    return _cache_get_response(monkeypatch, body, headers, request_id)["body"]
+
+
+def test_cache_get_restores_transaction_id(monkeypatch: pytest.MonkeyPatch):
+    cached_body = _wire("example.com", 0x1111)
+    body = _cache_get(
+        monkeypatch,
+        cached_body,
+        {"content-type": "application/dns-message"},
+        request_id=b"\x99\x88",
+    )
+
+    assert body[:2] == b"\x99\x88"
+    assert body[2:] == cached_body[2:]
+
+
+def test_cache_get_restores_transaction_id_with_content_type_params(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    cached_body = _wire("example.com", 0x1111)
+    body = _cache_get(
+        monkeypatch,
+        cached_body,
+        {"content-type": "application/dns-message; charset=binary"},
+        request_id=b"\x99\x88",
+    )
+
+    assert body[:2] == b"\x99\x88"
+
+
+def test_cache_get_leaves_json_body_untouched(monkeypatch: pytest.MonkeyPatch):
+    cached_body = b'{"Status":0}'
+    body = _cache_get(
+        monkeypatch,
+        cached_body,
+        {"content-type": "application/dns-json"},
+        request_id=None,
+    )
+
+    assert body == cached_body
+
+
+_ECS_HEADER = "CLOUDFLARE-DOH-WORKER-ECS-TRUNCATED"
+
+
+def test_cache_get_reports_this_requests_ecs_truncation(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured = _cache_get_response(
+        monkeypatch,
+        _wire("example.com", 0x1111),
+        {"content-type": "application/dns-message"},
+        request_id=b"\x99\x88",
+        ecs_truncated="203.0.113.1/32 -> 203.0.113.1/24",
+    )
+
+    assert captured["headers"][_ECS_HEADER] == "203.0.113.1/32 -> 203.0.113.1/24"
+
+
+def test_cache_get_does_not_replay_a_stored_ecs_truncation(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured = _cache_get_response(
+        monkeypatch,
+        _wire("example.com", 0x1111),
+        {
+            "content-type": "application/dns-message",
+            _ECS_HEADER.lower(): "203.0.113.1/32 -> 203.0.113.1/24",
+        },
+        request_id=b"\x99\x88",
+    )
+
+    assert _ECS_HEADER not in captured["headers"]
+
+
+def test_parse_get_root_name_kept_cacheable():
+    parsed, media_type = worker._parse_get(
+        query_string="name=.&type=NS",
+        accepted_types=frozenset({"application/dns-json"}),
+    )
+
+    assert parsed.question.name == "."
+    assert parsed.question.type == "NS"
+    assert media_type == "application/dns-json"
+    assert _build_cache_key("/dns", None, parsed.question) is not None
+
+
+def test_parse_get_normalizes_name_and_numeric_type():
+    parsed, _ = worker._parse_get(
+        query_string="name=Example.COM.&type=65",
+        accepted_types=frozenset({"application/dns-json"}),
+    )
+
+    assert parsed.question.name == "example.com"
+    assert parsed.question.type == "HTTPS"
 
 
 def test_handle_health_returns_ok():
