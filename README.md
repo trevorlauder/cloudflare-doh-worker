@@ -155,7 +155,7 @@ Each URL should point to a hosts-file format or plain domain-per-line list.
 Then run:
 
 ```shell
-uv run python scripts/build_blocklist.py
+uv run scripts/build_blocklist.py
 ```
 
 Commit the generated filter shards and metadata. The raw download files are gitignored.
@@ -192,7 +192,7 @@ To enable it, uncomment the entire contents of `.github/workflows/update-blockli
 ### Manual
 
 ```shell
-uv run python scripts/build_blocklist.py
+uv run scripts/build_blocklist.py
 git add blocklist/shard_*.bin src/filter_meta.py
 git commit -m "Update blocklist"
 uv run pywrangler deploy
