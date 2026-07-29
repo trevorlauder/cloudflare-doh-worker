@@ -313,36 +313,34 @@ checksum = "sha256:ba76657b79d0ebcc3c029c171fc83c96351ba5ce0e71d185f1e5b8b873360
 url = "https://dl.k8s.io/v1.36.3/bin/windows/amd64/kubectl.exe"
 
 [[tools.node]]
-version = "24.18.0"
+version = "24.18.1"
 backend = "core:node"
 
 [tools.node."platforms.linux-arm64"]
-checksum = "sha256:6b4484c2190274175df9aa8f28e2d758a819cb1c1fe6ab481e2f95b463ab8508"
-url = "https://nodejs.org/dist/v24.18.0/node-v24.18.0-linux-arm64.tar.gz"
+checksum = "sha256:df224555a083b918e46260cc969838501b9f9a87140c1195e5b9597b56d5dae2"
+url = "https://nodejs.org/dist/v24.18.1/node-v24.18.1-linux-arm64.tar.gz"
 
 [tools.node."platforms.linux-arm64-musl"]
-checksum = "sha256:b1c6c2dc31b46dd8fb2322f4fe75b07e775c5120bc37251deeea28f529d4567b"
-url = "https://unofficial-builds.nodejs.org/download/release/v24.18.0/node-v24.18.0-linux-arm64-musl.tar.gz"
+url = "https://unofficial-builds.nodejs.org/download/release/v24.18.1/node-v24.18.1-linux-arm64-musl.tar.gz"
 
 [tools.node."platforms.linux-x64"]
-checksum = "sha256:783130984963db7ba9cbd01089eaf2c2efb055c7c1693c943174b967b3050cb8"
-url = "https://nodejs.org/dist/v24.18.0/node-v24.18.0-linux-x64.tar.gz"
+checksum = "sha256:9f5eb6ac21845a66c493c91a253b1da32fd684e89e9b7202d4936982336be4ca"
+url = "https://nodejs.org/dist/v24.18.1/node-v24.18.1-linux-x64.tar.gz"
 
 [tools.node."platforms.linux-x64-musl"]
-checksum = "sha256:ea58409911e141ec6b19d9178efa2d9185a13295005b1cbf5521b3157eed1d95"
-url = "https://unofficial-builds.nodejs.org/download/release/v24.18.0/node-v24.18.0-linux-x64-musl.tar.gz"
+url = "https://unofficial-builds.nodejs.org/download/release/v24.18.1/node-v24.18.1-linux-x64-musl.tar.gz"
 
 [tools.node."platforms.macos-arm64"]
-checksum = "sha256:e1a97e14c99c803e96c7339403282ea05a499c32f8d83defe9ef5ec66f979ed1"
-url = "https://nodejs.org/dist/v24.18.0/node-v24.18.0-darwin-arm64.tar.gz"
+checksum = "sha256:eb02f7fab96d3d67de40c5ec8566096fcb4c2026728787683ae5a97eb612b941"
+url = "https://nodejs.org/dist/v24.18.1/node-v24.18.1-darwin-arm64.tar.gz"
 
 [tools.node."platforms.macos-x64"]
-checksum = "sha256:dfd0dbd3e721503434df7b7205e719f61b3a3a31b2bcf9729b8b91fea240f080"
-url = "https://nodejs.org/dist/v24.18.0/node-v24.18.0-darwin-x64.tar.gz"
+checksum = "sha256:6fb20fceacbb157c2f95825b80df4a454a0f6d81cdcd7bb81eeae9147e0e76ec"
+url = "https://nodejs.org/dist/v24.18.1/node-v24.18.1-darwin-x64.tar.gz"
 
 [tools.node."platforms.windows-x64"]
-checksum = "sha256:0ae68406b42d7725661da979b1403ec9926da205c6770827f33aac9d8f26e821"
-url = "https://nodejs.org/dist/v24.18.0/node-v24.18.0-win-x64.zip"
+checksum = "sha256:ec56b84a7551893ab2324ebdfdc4ab974a63b4781162600b68a1293cc3e53765"
+url = "https://nodejs.org/dist/v24.18.1/node-v24.18.1-win-x64.zip"
 
 [[tools.prek]]
 version = "0.4.11"
@@ -525,43 +523,43 @@ url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellche
 url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056944"
 
 [[tools.tilt]]
-version = "0.37.5"
+version = "0.37.6"
 backend = "aqua:tilt-dev/tilt"
 
 [tools.tilt."platforms.linux-arm64"]
-checksum = "sha256:1f9c62dcce0608aeb0c63533b14e260fc2e8c5797f81589b0914c398ba53d5b0"
-url = "https://github.com/tilt-dev/tilt/releases/download/v0.37.5/tilt.0.37.5.linux.arm64.tar.gz"
-url_api = "https://api.github.com/repos/tilt-dev/tilt/releases/assets/464694447"
+checksum = "sha256:9ceee4fb4fbf9bc8085a77b9d42046a734671112c1399982d40b8852c354cac5"
+url = "https://github.com/tilt-dev/tilt/releases/download/v0.37.6/tilt.0.37.6.linux.arm64.tar.gz"
+url_api = "https://api.github.com/repos/tilt-dev/tilt/releases/assets/493480794"
 
 [tools.tilt."platforms.linux-arm64-musl"]
-checksum = "sha256:1f9c62dcce0608aeb0c63533b14e260fc2e8c5797f81589b0914c398ba53d5b0"
-url = "https://github.com/tilt-dev/tilt/releases/download/v0.37.5/tilt.0.37.5.linux.arm64.tar.gz"
-url_api = "https://api.github.com/repos/tilt-dev/tilt/releases/assets/464694447"
+checksum = "sha256:9ceee4fb4fbf9bc8085a77b9d42046a734671112c1399982d40b8852c354cac5"
+url = "https://github.com/tilt-dev/tilt/releases/download/v0.37.6/tilt.0.37.6.linux.arm64.tar.gz"
+url_api = "https://api.github.com/repos/tilt-dev/tilt/releases/assets/493480794"
 
 [tools.tilt."platforms.linux-x64"]
-checksum = "sha256:9efb56969c48ddea4adfb56a604b9ca5ed254924ddf140fc3e068a305cacf558"
-url = "https://github.com/tilt-dev/tilt/releases/download/v0.37.5/tilt.0.37.5.linux.x86_64.tar.gz"
-url_api = "https://api.github.com/repos/tilt-dev/tilt/releases/assets/464694446"
+checksum = "sha256:e9672b8a18d43501f35dcfe98465969a7db0e436b36cf0c50c7e6f8d40de5fe6"
+url = "https://github.com/tilt-dev/tilt/releases/download/v0.37.6/tilt.0.37.6.linux.x86_64.tar.gz"
+url_api = "https://api.github.com/repos/tilt-dev/tilt/releases/assets/493480795"
 
 [tools.tilt."platforms.linux-x64-musl"]
-checksum = "sha256:9efb56969c48ddea4adfb56a604b9ca5ed254924ddf140fc3e068a305cacf558"
-url = "https://github.com/tilt-dev/tilt/releases/download/v0.37.5/tilt.0.37.5.linux.x86_64.tar.gz"
-url_api = "https://api.github.com/repos/tilt-dev/tilt/releases/assets/464694446"
+checksum = "sha256:e9672b8a18d43501f35dcfe98465969a7db0e436b36cf0c50c7e6f8d40de5fe6"
+url = "https://github.com/tilt-dev/tilt/releases/download/v0.37.6/tilt.0.37.6.linux.x86_64.tar.gz"
+url_api = "https://api.github.com/repos/tilt-dev/tilt/releases/assets/493480795"
 
 [tools.tilt."platforms.macos-arm64"]
-checksum = "sha256:d8c701ada9d3ee29c983651a8f344d8a4c13363e6c25a843b478aa4444ee6f30"
-url = "https://github.com/tilt-dev/tilt/releases/download/v0.37.5/tilt.0.37.5.mac.arm64.tar.gz"
-url_api = "https://api.github.com/repos/tilt-dev/tilt/releases/assets/464694448"
+checksum = "sha256:eb08d07ff97aae2dd2721f747a30192354fc9f0e69a3d582e17211b878f3ab6d"
+url = "https://github.com/tilt-dev/tilt/releases/download/v0.37.6/tilt.0.37.6.mac.arm64.tar.gz"
+url_api = "https://api.github.com/repos/tilt-dev/tilt/releases/assets/493480817"
 
 [tools.tilt."platforms.macos-x64"]
-checksum = "sha256:5db0bd3a690db4d12ddf22afbe14df5a56f0d6351731694c2e1e59158b3eb00c"
-url = "https://github.com/tilt-dev/tilt/releases/download/v0.37.5/tilt.0.37.5.mac.x86_64.tar.gz"
-url_api = "https://api.github.com/repos/tilt-dev/tilt/releases/assets/464694464"
+checksum = "sha256:1ece69812bacb644252d67d997904b48ce793d75f0f2ef26ca98c23ddc96a089"
+url = "https://github.com/tilt-dev/tilt/releases/download/v0.37.6/tilt.0.37.6.mac.x86_64.tar.gz"
+url_api = "https://api.github.com/repos/tilt-dev/tilt/releases/assets/493480793"
 
 [tools.tilt."platforms.windows-x64"]
-checksum = "sha256:2b7536b38f09d4eee1851352fef4c6e25c15d49b10d1349bca428748615eed54"
-url = "https://github.com/tilt-dev/tilt/releases/download/v0.37.5/tilt.0.37.5.windows.x86_64.zip"
-url_api = "https://api.github.com/repos/tilt-dev/tilt/releases/assets/464694465"
+checksum = "sha256:a13f5d1c56a4d6aba979511b292fa9fc47abf8da9eee202c105cdbfe9d43866b"
+url = "https://github.com/tilt-dev/tilt/releases/download/v0.37.6/tilt.0.37.6.windows.x86_64.zip"
+url_api = "https://api.github.com/repos/tilt-dev/tilt/releases/assets/493480792"
 
 [[tools.trufflehog]]
 version = "3.96.0"
@@ -603,89 +601,89 @@ url = "https://github.com/trufflesecurity/trufflehog/releases/download/v3.96.0/t
 url_api = "https://api.github.com/repos/trufflesecurity/trufflehog/releases/assets/488705174"
 
 [[tools.uv]]
-version = "0.11.32"
+version = "0.12.0"
 backend = "aqua:astral-sh/uv"
 
 [tools.uv."platforms.linux-arm64"]
-checksum = "sha256:d70cdae687feb6aad9a09fe8d686df8c8efaf69a1007fa581379a2025adc10a5"
-url = "https://github.com/astral-sh/uv/releases/download/0.11.32/uv-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/487747547"
+checksum = "sha256:936fbbf20188a2b1c66bce3dca3f4009a5c9cdf12bb2bbd084e71926f75d6a15"
+url = "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/493071360"
 provenance = "github-attestations"
 
 [tools.uv."platforms.linux-arm64-musl"]
-checksum = "sha256:d70cdae687feb6aad9a09fe8d686df8c8efaf69a1007fa581379a2025adc10a5"
-url = "https://github.com/astral-sh/uv/releases/download/0.11.32/uv-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/487747547"
+checksum = "sha256:936fbbf20188a2b1c66bce3dca3f4009a5c9cdf12bb2bbd084e71926f75d6a15"
+url = "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/493071360"
 provenance = "github-attestations"
 
 [tools.uv."platforms.linux-x64"]
-checksum = "sha256:1fd052f196108d87e61fc3d98fe06b4ec758c9a1eb1466a6fd1a436fe45885f2"
-url = "https://github.com/astral-sh/uv/releases/download/0.11.32/uv-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/487747669"
+checksum = "sha256:3340a9d8cffc4d801bc1a7459ebfaf5790c79400720d9b6963d806f058526684"
+url = "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/493071451"
 provenance = "github-attestations"
 
 [tools.uv."platforms.linux-x64-musl"]
-checksum = "sha256:1fd052f196108d87e61fc3d98fe06b4ec758c9a1eb1466a6fd1a436fe45885f2"
-url = "https://github.com/astral-sh/uv/releases/download/0.11.32/uv-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/487747669"
+checksum = "sha256:3340a9d8cffc4d801bc1a7459ebfaf5790c79400720d9b6963d806f058526684"
+url = "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/493071451"
 provenance = "github-attestations"
 
 [tools.uv."platforms.macos-arm64"]
-checksum = "sha256:ed336d0ba49db8ef89b2b41fffa372ce63bd032f22a56f001c265891aec32829"
-url = "https://github.com/astral-sh/uv/releases/download/0.11.32/uv-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/487747526"
+checksum = "sha256:2b9e582af54f84fa50c115427451a6c13e80f43b52f8282b8af5791077317bbf"
+url = "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/493071342"
 provenance = "github-attestations"
 
 [tools.uv."platforms.macos-x64"]
-checksum = "sha256:77f5ca26c0de20e992a3677a174fe1121ee25c36f9b1434a863f75bf077a05eb"
-url = "https://github.com/astral-sh/uv/releases/download/0.11.32/uv-x86_64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/487747646"
+checksum = "sha256:d41593beaefc54bab7d062af0ef6ca093bfb81d001d58ebbef39e44423f9c496"
+url = "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/493071438"
 provenance = "github-attestations"
 
 [tools.uv."platforms.windows-x64"]
-checksum = "sha256:acfde570451cfdb8689fa159a138ee805ba4e241c466432750302c86254b0984"
-url = "https://github.com/astral-sh/uv/releases/download/0.11.32/uv-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/487747656"
+checksum = "sha256:68200e25de594df92387186bbfb9d9df606ec1d87efaa0ae0c7f690970e53db6"
+url = "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/493071443"
 provenance = "github-attestations"
 
 [[tools.vale]]
-version = "3.15.1"
+version = "3.16.0"
 backend = "aqua:vale-cli/vale"
 
 [tools.vale."platforms.linux-arm64"]
-checksum = "sha256:281a419e140da11a408935356bab7a4ef770fed047a9d7bd1765c76acd647d01"
-url = "https://github.com/vale-cli/vale/releases/download/v3.15.1/vale_3.15.1_Linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/446050985"
+checksum = "sha256:1d7d3c559886d2582d327eb7f12b0f8eaf061ad6b9feb415ac7d1df3610b2ea8"
+url = "https://github.com/vale-cli/vale/releases/download/v3.16.0/vale_3.16.0_Linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/494247135"
 
 [tools.vale."platforms.linux-arm64-musl"]
-checksum = "sha256:281a419e140da11a408935356bab7a4ef770fed047a9d7bd1765c76acd647d01"
-url = "https://github.com/vale-cli/vale/releases/download/v3.15.1/vale_3.15.1_Linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/446050985"
+checksum = "sha256:1d7d3c559886d2582d327eb7f12b0f8eaf061ad6b9feb415ac7d1df3610b2ea8"
+url = "https://github.com/vale-cli/vale/releases/download/v3.16.0/vale_3.16.0_Linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/494247135"
 
 [tools.vale."platforms.linux-x64"]
-checksum = "sha256:c024d9c157874fb043d4f24a055d60050d1bb18755251f590593eed5bace1857"
-url = "https://github.com/vale-cli/vale/releases/download/v3.15.1/vale_3.15.1_Linux_64-bit.tar.gz"
-url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/446050982"
+checksum = "sha256:1049f4a585ccd1af96dcf4bdc16800cb3ce426b432da2b27893def42dcfe0ccb"
+url = "https://github.com/vale-cli/vale/releases/download/v3.16.0/vale_3.16.0_Linux_64-bit.tar.gz"
+url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/494247134"
 
 [tools.vale."platforms.linux-x64-musl"]
-checksum = "sha256:c024d9c157874fb043d4f24a055d60050d1bb18755251f590593eed5bace1857"
-url = "https://github.com/vale-cli/vale/releases/download/v3.15.1/vale_3.15.1_Linux_64-bit.tar.gz"
-url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/446050982"
+checksum = "sha256:1049f4a585ccd1af96dcf4bdc16800cb3ce426b432da2b27893def42dcfe0ccb"
+url = "https://github.com/vale-cli/vale/releases/download/v3.16.0/vale_3.16.0_Linux_64-bit.tar.gz"
+url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/494247134"
 
 [tools.vale."platforms.macos-arm64"]
-checksum = "sha256:968c6d8bf2052bc97aa24274234cc466dbcc249b55ace33dd382c2cdfa93b08c"
-url = "https://github.com/vale-cli/vale/releases/download/v3.15.1/vale_3.15.1_macOS_arm64.tar.gz"
-url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/446050986"
+checksum = "sha256:9452b8429c6f23aec292c83d474fe3cdb8e3bb00e48dbd3a6ac7a4b3a9a5c39e"
+url = "https://github.com/vale-cli/vale/releases/download/v3.16.0/vale_3.16.0_macOS_arm64.tar.gz"
+url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/494247133"
 
 [tools.vale."platforms.macos-x64"]
-checksum = "sha256:9268383c9e244332c4483cb359e52bd4cb030542873e2cafc48e3bbfff6a989a"
-url = "https://github.com/vale-cli/vale/releases/download/v3.15.1/vale_3.15.1_macOS_64-bit.tar.gz"
-url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/446050984"
+checksum = "sha256:d2a6620513c8295294f724afe902e2e97641ace5004f739f6c25b046799af22c"
+url = "https://github.com/vale-cli/vale/releases/download/v3.16.0/vale_3.16.0_macOS_64-bit.tar.gz"
+url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/494247132"
 
 [tools.vale."platforms.windows-x64"]
-checksum = "sha256:3395fca0ddfb10a9b6caa28e091d5df709b1d6b6579afb7dece852cad89b94f3"
-url = "https://github.com/vale-cli/vale/releases/download/v3.15.1/vale_3.15.1_Windows_64-bit.zip"
-url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/446051001"
+checksum = "sha256:60b6fd5f6250ea92819298e1bbde7876b1ee0f70d815c4039675f50773c01720"
+url = "https://github.com/vale-cli/vale/releases/download/v3.16.0/vale_3.16.0_Windows_64-bit.zip"
+url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/494247162"
 
 [[tools.zizmor]]
 version = "1.28.0"
