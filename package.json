@@ -3,8 +3,5 @@
   "private": true,
   "scripts": {
     "deploy": "uv run pywrangler deploy"
-  },
-  "devDependencies": {
-    "@fission-ai/openspec": "^1.6.0"
   }
 }
