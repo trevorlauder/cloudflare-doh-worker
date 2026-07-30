@@ -10,7 +10,7 @@ or plain domain-per-line format, deduplicates across all sources, and writes
 sharded BinaryFuse32 filters of unique exact domains merged from all sources.
 
 Usage:
-    uv run python scripts/build_blocklist.py [options]
+    uv run scripts/build_blocklist.py [options]
 
 Options:
     --verify          Re-check every unique domain against the filter after building.
