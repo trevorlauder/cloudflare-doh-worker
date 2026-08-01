@@ -607,7 +607,8 @@ async def send_doh_requests_fanout(
     safety_timeout_ms (int): Overall deadline in milliseconds for the whole
         fanout. When positive it is used instead of _TIMEOUT_MS. Providers
         still in flight at the deadline are reported as timed out.
-    ctx (object | None): Worker execution context for draining stragglers.
+    ctx (object | None): Worker execution context for draining providers still
+        in flight past the deadline.
 
     Returns:
     list[ProviderResult]: One result per queried provider.
@@ -696,7 +697,7 @@ async def send_doh_requests_fanout(
 
 def _schedule_fanout_drain(ctx: object, tasks: set) -> None:
     """
-    Keep the request context alive until straggler tasks settle.
+    Keep the request context alive until the unfinished provider tasks finish.
 
     Parameters:
     ctx (object): Worker execution context.
@@ -708,7 +709,18 @@ def _schedule_fanout_drain(ctx: object, tasks: set) -> None:
     import asyncio
 
     async def _drain() -> None:
-        await asyncio.wait(tasks, timeout=_FANOUT_DRAIN_TIMEOUT_MS / 1000)
+        _done, pending = await asyncio.wait(
+            tasks,
+            timeout=_FANOUT_DRAIN_TIMEOUT_MS / 1000,
+        )
+
+        if pending:
+            logger.warning(
+                "Fanout drain hit %sms cap with %d of %d providers still pending",
+                _FANOUT_DRAIN_TIMEOUT_MS,
+                len(pending),
+                len(tasks),
+            )
 
     try:
         ctx.waitUntil(_drain())
