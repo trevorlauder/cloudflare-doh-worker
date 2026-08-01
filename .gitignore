@@ -11,3 +11,4 @@ __pycache__/
 blocklist/*.txt
 public/
 tools/filter-build/target/
+node_modules/

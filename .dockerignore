@@ -8,6 +8,8 @@ src/config.py
 !mise-gpg-key.pub
 !pyproject.toml
 !uv.lock
+!package.json
+!package-lock.json
 !wrangler.toml
 !tests/
 !Makefile
