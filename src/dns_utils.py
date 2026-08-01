@@ -711,9 +711,6 @@ def _schedule_fanout_drain(ctx: object, tasks: set) -> None:
         await asyncio.wait(tasks, timeout=_FANOUT_DRAIN_TIMEOUT_MS / 1000)
 
     try:
-        # Deferred import: only available in the Pyodide/Workers runtime.
-        from js import Promise
-
-        ctx.waitUntil(Promise.resolve(asyncio.ensure_future(_drain())))
+        ctx.waitUntil(_drain())
     except Exception:
         logger.debug("Failed to schedule fanout drain", exc_info=True)
