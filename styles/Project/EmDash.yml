@@ -1,6 +1,0 @@
-extends: existence
-message: "Use EmDash judiciously. Prefer clear, natural sentences over them."
-nonword: true
-level: suggestion
-tokens:
-  - "\u2014"
