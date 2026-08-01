@@ -12,12 +12,12 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends build-essential curl make tini mise && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN useradd --create-home --shell /bin/bash app
+RUN useradd --create-home --shell /bin/bash --uid 1000 app
 
 WORKDIR /usr/src/app
 RUN chown app:app /usr/src/app
 
-USER app
+USER 1000
 
 COPY --chown=app:app mise.toml rust-toolchain.toml package.json package-lock.json ./
 RUN mise trust && mise install python node uv rust
