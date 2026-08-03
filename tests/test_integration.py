@@ -17,7 +17,7 @@ import urllib.request
 
 from conftest import BASE_URL, IS_HTTPS, IS_LOCAL, SKIP_TLS, resolve_env
 from curl_cffi import requests as cffi_requests
-from curl_cffi.const import CurlHttpVersion
+from curl_cffi.const import CurlHttpVersion, CurlOpt, CurlSslVersion
 import dns.edns
 import dns.message
 import dns.rcode
@@ -105,6 +105,14 @@ def _assert_worker_headers(headers: object) -> None:
     assert (
         headers.get("cloudflare-doh-worker-connection-error-providers") is not None
     ), "missing CLOUDFLARE-DOH-WORKER-CONNECTION-ERROR-PROVIDERS header"
+
+
+def _unique_name() -> str:
+    """Return a name no earlier query used, so the worker can't serve it from cache."""
+
+    suffix = "".join(random.choices(string.ascii_lowercase, k=16))
+
+    return f"miss-{suffix}.trevorlauder.dev"
 
 
 def _build_dns_wire(name: str, rdtype: int = dns.rdatatype.A) -> bytes:
@@ -274,6 +282,9 @@ def test_http3_udp():
     resp = cffi_requests.get(
         f"{BASE_URL}{TEST_ENDPOINTS[0]}?name=apple.com&type=A",
         http_version=CurlHttpVersion.V3ONLY,
+        curl_options={
+            CurlOpt.SSLVERSION: CurlSslVersion.TLSv1_3 | CurlSslVersion.MAX_DEFAULT,
+        },
         headers={"Accept": "application/dns-json", **DEFAULT_HEADERS},
         timeout=TIMEOUT,
         verify=not SKIP_TLS,
@@ -746,8 +757,12 @@ def test_provider_stat_headers_present_on_dns_json():
 
 
 def test_provider_stat_headers_present_on_dns_wire():
-    status, headers, _ = _post_wire(_build_dns_wire("cloudflare.com"))
+    # Unique name so the query can't be a cache hit, which would skip the
+    # provider-stat headers.
+    suffix = "".join(random.choices(string.ascii_lowercase, k=16))
+    status, headers, _ = _post_wire(_build_dns_wire(f"miss-{suffix}.trevorlauder.dev"))
     assert status == 200
+    assert headers.get(_HEADER_CACHE) != "HIT"
     _assert_provider_stat_headers(headers)
 
 
@@ -987,7 +1002,7 @@ def _mock_doh_last_ecs() -> dict | None:
 @pytest.mark.skipif(not MOCK_DOH_ENABLED, reason="MOCK_DOH_ENABLED is False")
 def test_mock_doh_ipv4_ecs_truncated_to_configured_prefix():
     _mock_doh_reset()
-    wire = _build_dns_wire_with_ecs("example.com", address="203.0.113.1", srclen=32)
+    wire = _build_dns_wire_with_ecs(_unique_name(), address="203.0.113.1", srclen=32)
     assert _post_wire(wire)[0] == 200
     ecs = _mock_doh_last_ecs()
     assert ecs is not None, "mock-doh server recorded no ECS option"
@@ -1002,7 +1017,7 @@ def test_mock_doh_ipv4_ecs_at_configured_prefix_not_modified():
     _mock_doh_reset()
 
     wire = _build_dns_wire_with_ecs(
-        "example.com",
+        _unique_name(),
         address="203.0.113.0",
         srclen=_ECS_IPV4_PREFIX,
     )
@@ -1019,7 +1034,7 @@ def test_mock_doh_ipv4_ecs_at_configured_prefix_not_modified():
 @pytest.mark.skipif(not MOCK_DOH_ENABLED, reason="MOCK_DOH_ENABLED is False")
 def test_mock_doh_ipv6_ecs_truncated_to_configured_prefix():
     _mock_doh_reset()
-    wire = _build_dns_wire_with_ecs("example.com", address="2001:db8::1", srclen=128)
+    wire = _build_dns_wire_with_ecs(_unique_name(), address="2001:db8::1", srclen=128)
     assert _post_wire(wire)[0] == 200
     ecs = _mock_doh_last_ecs()
     assert ecs is not None, "mock-doh server recorded no ECS option"
@@ -1034,7 +1049,7 @@ def test_mock_doh_ipv6_ecs_at_configured_prefix_not_modified():
     _mock_doh_reset()
 
     wire = _build_dns_wire_with_ecs(
-        "example.com",
+        _unique_name(),
         address="2001:db8::",
         srclen=_ECS_IPV6_PREFIX,
     )
@@ -1051,7 +1066,7 @@ def test_mock_doh_ipv6_ecs_at_configured_prefix_not_modified():
 @pytest.mark.skipif(not MOCK_DOH_ENABLED, reason="MOCK_DOH_ENABLED is False")
 def test_mock_doh_no_ecs_forwarded_clean():
     _mock_doh_reset()
-    wire = _build_dns_wire("example.com")
+    wire = _build_dns_wire(_unique_name())
     assert _post_wire(wire)[0] == 200
     ecs = _mock_doh_last_ecs()
     assert ecs is None, f"expected no ECS option forwarded, got {ecs}"
@@ -1061,7 +1076,7 @@ def test_mock_doh_no_ecs_forwarded_clean():
 def test_mock_doh_ipv4_ecs_below_configured_prefix_not_modified():
     _mock_doh_reset()
     below = max(1, _ECS_IPV4_PREFIX - 8)
-    wire = _build_dns_wire_with_ecs("example.com", address="203.0.113.0", srclen=below)
+    wire = _build_dns_wire_with_ecs(_unique_name(), address="203.0.113.0", srclen=below)
     assert _post_wire(wire)[0] == 200
     ecs = _mock_doh_last_ecs()
     assert ecs is not None, "mock-doh server recorded no ECS option"
@@ -1074,7 +1089,7 @@ def test_mock_doh_ipv4_ecs_below_configured_prefix_not_modified():
 def test_mock_doh_ipv6_ecs_below_configured_prefix_not_modified():
     _mock_doh_reset()
     below = max(1, _ECS_IPV6_PREFIX - 16)
-    wire = _build_dns_wire_with_ecs("example.com", address="2001:db8::", srclen=below)
+    wire = _build_dns_wire_with_ecs(_unique_name(), address="2001:db8::", srclen=below)
     assert _post_wire(wire)[0] == 200
     ecs = _mock_doh_last_ecs()
     assert ecs is not None, "mock-doh server recorded no ECS option"
@@ -1086,7 +1101,7 @@ def test_mock_doh_ipv6_ecs_below_configured_prefix_not_modified():
 @pytest.mark.skipif(not MOCK_DOH_ENABLED, reason="MOCK_DOH_ENABLED is False")
 def test_mock_doh_ipv4_ecs_truncated_via_get():
     _mock_doh_reset()
-    wire = _build_dns_wire_with_ecs("example.com", address="203.0.113.1", srclen=32)
+    wire = _build_dns_wire_with_ecs(_unique_name(), address="203.0.113.1", srclen=32)
     assert _get_wire(wire)[0] == 200
     ecs = _mock_doh_last_ecs()
     assert ecs is not None, "mock-doh server recorded no ECS option"
@@ -1098,7 +1113,7 @@ def test_mock_doh_ipv4_ecs_truncated_via_get():
 @pytest.mark.skipif(not MOCK_DOH_ENABLED, reason="MOCK_DOH_ENABLED is False")
 def test_mock_doh_ipv6_ecs_truncated_via_get():
     _mock_doh_reset()
-    wire = _build_dns_wire_with_ecs("example.com", address="2001:db8::1", srclen=128)
+    wire = _build_dns_wire_with_ecs(_unique_name(), address="2001:db8::1", srclen=128)
     assert _get_wire(wire)[0] == 200
     ecs = _mock_doh_last_ecs()
     assert ecs is not None, "mock-doh server recorded no ECS option"
@@ -1111,7 +1126,7 @@ def test_mock_doh_ipv6_ecs_truncated_via_get():
 def test_mock_doh_ipv4_ecs_at_configured_prefix_not_modified_via_get():
     _mock_doh_reset()
     wire = _build_dns_wire_with_ecs(
-        "example.com",
+        _unique_name(),
         address="203.0.113.0",
         srclen=_ECS_IPV4_PREFIX,
     )
@@ -1128,7 +1143,7 @@ def test_mock_doh_ipv4_ecs_at_configured_prefix_not_modified_via_get():
 def test_mock_doh_ipv6_ecs_at_configured_prefix_not_modified_via_get():
     _mock_doh_reset()
     wire = _build_dns_wire_with_ecs(
-        "example.com",
+        _unique_name(),
         address="2001:db8::",
         srclen=_ECS_IPV6_PREFIX,
     )
@@ -1144,7 +1159,7 @@ def test_mock_doh_ipv6_ecs_at_configured_prefix_not_modified_via_get():
 @pytest.mark.skipif(not MOCK_DOH_ENABLED, reason="MOCK_DOH_ENABLED is False")
 def test_mock_doh_no_ecs_forwarded_clean_via_get():
     _mock_doh_reset()
-    wire = _build_dns_wire("example.com")
+    wire = _build_dns_wire(_unique_name())
     assert _get_wire(wire)[0] == 200
     ecs = _mock_doh_last_ecs()
     assert ecs is None, f"expected no ECS option forwarded, got {ecs}"
@@ -1171,6 +1186,27 @@ def test_cache_hit_on_repeated_get_json_query():
     time.sleep(1)
     _, headers, _ = _get_json("google.com", "A")
     assert headers.get(_HEADER_CACHE) == "HIT"
+
+
+@pytest.mark.skipif(not CACHE_DNS, reason="CACHE_DNS is disabled")
+@pytest.mark.skipif(IS_LOCAL, reason="Cache API not available in local dev")
+def test_cache_hit_on_repeated_wire_query_restores_transaction_id():
+    query = dns.message.make_query("cloudflare.com", dns.rdatatype.A)
+
+    query.id = 0x1111
+    assert _post_wire(query.to_wire())[0] == 200
+
+    time.sleep(1)
+
+    query.id = 0x7A7A
+    status, headers, body = _post_wire(query.to_wire())
+
+    assert status == 200
+    assert headers.get(_HEADER_CACHE) == "HIT"
+
+    response = dns.message.from_wire(body)
+    assert response.id == 0x7A7A
+    assert response.rcode() == dns.rcode.NOERROR
 
 
 @pytest.mark.skipif(not CACHE_DNS, reason="CACHE_DNS is disabled")
