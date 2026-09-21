@@ -19,7 +19,7 @@ concurrency:
 jobs:
   prek:
     name: prek
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -39,7 +39,7 @@ jobs:
 
   build-image:
     name: Build image
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     permissions:
       contents: read
@@ -71,7 +71,7 @@ jobs:
 
   unit-tests:
     name: Unit Tests
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -88,7 +88,7 @@ jobs:
 
   integration-tests:
     name: Integration Tests
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs:
       - build-image
     if: always() && (needs.build-image.result == 'success' || needs.build-image.result == 'skipped')
