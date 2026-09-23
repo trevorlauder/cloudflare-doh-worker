@@ -47,43 +47,43 @@ url_api = "https://api.github.com/repos/rhysd/actionlint/releases/assets/3849249
 provenance = "github-attestations"
 
 [[tools.buildifier]]
-version = "8.5.1"
+version = "10.1.0"
 backend = "aqua:bazelbuild/buildtools/buildifier"
 
 [tools.buildifier."platforms.linux-arm64"]
-checksum = "sha256:947bf6700d708026b2057b09bea09abbc3cafc15d9ecea35bb3885c4b09ccd04"
-url = "https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-linux-arm64"
-url_api = "https://api.github.com/repos/bazelbuild/buildtools/releases/assets/348132205"
+checksum = "sha256:38d2ed845f560b4a16ddee41de906508a95f8dc85b04e0851b0a71e3a70d3890"
+url = "https://github.com/bazel-contrib/buildtools/releases/download/v10.1.0/buildifier-linux-arm64"
+url_api = "https://api.github.com/repos/bazel-contrib/buildtools/releases/assets/582390420"
 
 [tools.buildifier."platforms.linux-arm64-musl"]
-checksum = "sha256:947bf6700d708026b2057b09bea09abbc3cafc15d9ecea35bb3885c4b09ccd04"
-url = "https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-linux-arm64"
-url_api = "https://api.github.com/repos/bazelbuild/buildtools/releases/assets/348132205"
+checksum = "sha256:38d2ed845f560b4a16ddee41de906508a95f8dc85b04e0851b0a71e3a70d3890"
+url = "https://github.com/bazel-contrib/buildtools/releases/download/v10.1.0/buildifier-linux-arm64"
+url_api = "https://api.github.com/repos/bazel-contrib/buildtools/releases/assets/582390420"
 
 [tools.buildifier."platforms.linux-x64"]
-checksum = "sha256:887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7"
-url = "https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-linux-amd64"
-url_api = "https://api.github.com/repos/bazelbuild/buildtools/releases/assets/348132197"
+checksum = "sha256:31b6a8aa1e5c746696788f428729701770ad91925873d8256cb885c60e12c77e"
+url = "https://github.com/bazel-contrib/buildtools/releases/download/v10.1.0/buildifier-linux-amd64"
+url_api = "https://api.github.com/repos/bazel-contrib/buildtools/releases/assets/582390416"
 
 [tools.buildifier."platforms.linux-x64-musl"]
-checksum = "sha256:887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7"
-url = "https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-linux-amd64"
-url_api = "https://api.github.com/repos/bazelbuild/buildtools/releases/assets/348132197"
+checksum = "sha256:31b6a8aa1e5c746696788f428729701770ad91925873d8256cb885c60e12c77e"
+url = "https://github.com/bazel-contrib/buildtools/releases/download/v10.1.0/buildifier-linux-amd64"
+url_api = "https://api.github.com/repos/bazel-contrib/buildtools/releases/assets/582390416"
 
 [tools.buildifier."platforms.macos-arm64"]
-checksum = "sha256:62836a9667fa0db309b0d91e840f0a3f2813a9c8ea3e44b9cd58187c90bc88ba"
-url = "https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-darwin-arm64"
-url_api = "https://api.github.com/repos/bazelbuild/buildtools/releases/assets/348132225"
+checksum = "sha256:e9804864c407f920f5ecbf03a5e056a8145e11a6ae6b90d2438a3fd106d34473"
+url = "https://github.com/bazel-contrib/buildtools/releases/download/v10.1.0/buildifier-darwin-arm64"
+url_api = "https://api.github.com/repos/bazel-contrib/buildtools/releases/assets/582390422"
 
 [tools.buildifier."platforms.macos-x64"]
-checksum = "sha256:31de189e1a3fe53aa9e8c8f74a0309c325274ad19793393919e1ca65163ca1a4"
-url = "https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-darwin-amd64"
-url_api = "https://api.github.com/repos/bazelbuild/buildtools/releases/assets/348132219"
+checksum = "sha256:e9e10ff52ec8786fcabccd251c8109ebf31ef7be1f667e27c6e069b96dbdc1f6"
+url = "https://github.com/bazel-contrib/buildtools/releases/download/v10.1.0/buildifier-darwin-amd64"
+url_api = "https://api.github.com/repos/bazel-contrib/buildtools/releases/assets/582390417"
 
 [tools.buildifier."platforms.windows-x64"]
-checksum = "sha256:f4ecb9c73de2bc38b845d4ee27668f6248c4813a6647db4b4931a7556052e4e1"
-url = "https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-windows-amd64.exe"
-url_api = "https://api.github.com/repos/bazelbuild/buildtools/releases/assets/348132233"
+checksum = "sha256:931a6e9c3844b90ccdb1467ccacd8dd72457e308d2709d624a3c5880d835ac3c"
+url = "https://github.com/bazel-contrib/buildtools/releases/download/v10.1.0/buildifier-windows-amd64.exe"
+url_api = "https://api.github.com/repos/bazel-contrib/buildtools/releases/assets/582390451"
 
 [[tools.dprint]]
 version = "0.55.2"
