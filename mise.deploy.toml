@@ -1,4 +1,5 @@
 [settings]
+python.precompiled_flavor = "install_only_stripped"
 experimental = true
 lockfile = true
 minimum_release_age = "7d"
