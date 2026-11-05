@@ -44,7 +44,7 @@ jobs:
           rm -f /tmp/deploy/src/filter_meta.py.default
           cp -r scripts/ /tmp/deploy/scripts/
           cp wrangler.toml pyproject.toml package.json uv.lock LICENSE .gitignore .gitattributes rust-toolchain.toml /tmp/deploy/
-          cp mise.deploy.toml /tmp/deploy/mise.toml
+          cp mise.deploy.* /tmp/deploy/
           cp blocklist_sources_deploy.yaml /tmp/deploy/blocklist_sources.yaml
           touch /tmp/deploy/blocklist/.gitkeep
 
