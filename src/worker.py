@@ -1348,7 +1348,7 @@ _BYPASS_PROVIDER_LIST = (
     [_with_provider_id({**_BYPASS_PROVIDER, "main": True})] if _ALLOWED_DOMAINS else []
 )
 
-_resolved_config_cache: "_ResolvedConfig | None" = None
+_resolved_config_cache: _ResolvedConfig | None = None
 _loki_enabled_cache: bool | None = None
 
 _HEADER_PREFIX = "CLOUDFLARE-DOH-WORKER"
