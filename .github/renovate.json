@@ -32,9 +32,18 @@
         "mise"
       ],
       "matchPackageNames": [
-        "python"
+        "python/cpython"
       ],
       "allowedVersions": "<3.15"
+    },
+    {
+      "matchDatasources": [
+        "github-runners"
+      ],
+      "matchDepNames": [
+        "ubuntu"
+      ],
+      "allowedVersions": "<26"
     },
     {
       "matchManagers": [
