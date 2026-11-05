@@ -36,17 +36,19 @@ def _build_cache_key(
     endpoint: str,
     body_bytes: bytes | None,
     question: Question,
+    extra_query: dict[str, str] | None = None,
 ) -> str | None:
     """
     Build a synthetic cache URL for a DNS request.
 
-    Wire requests use ?dns=<base64url>, JSON GET requests use ?name=&type=.
-    The endpoint path is included so different device endpoints stay distinct.
+    Wire requests use ?dns=<base64url> with the transaction ID zeroed.
+    JSON GET requests use ?name=&type= plus any extra_query params.
 
     Parameters:
     endpoint (str): Worker endpoint path.
     body_bytes (bytes | None): ECS-truncated DNS wire bytes, or None for JSON GET.
     question (Question): Parsed DNS question.
+    extra_query (dict[str, str] | None): Extra JSON GET query parameters.
 
     Returns:
     str | None: Cache URL, or None if one cannot be built.
@@ -54,28 +56,44 @@ def _build_cache_key(
     cache_key_base = "https://doh-cache.internal"
 
     if body_bytes is not None:
-        encoded: str = base64.urlsafe_b64encode(body_bytes).rstrip(b"=").decode("ascii")
+        canonical: bytes = (
+            b"\x00\x00" + body_bytes[2:] if len(body_bytes) >= 2 else body_bytes
+        )
+        encoded: str = base64.urlsafe_b64encode(canonical).rstrip(b"=").decode("ascii")
         return f"{cache_key_base}{endpoint}?dns={encoded}"
 
     if question.name:
         params: dict[str, str] = {"name": question.name}
         if question.type:
             params["type"] = question.type
+        if extra_query:
+            params.update(extra_query)
 
-        return f"{cache_key_base}{endpoint}?" + urllib.parse.urlencode(params)
+        return f"{cache_key_base}{endpoint}?" + urllib.parse.urlencode(
+            sorted(params.items()),
+        )
 
     return None
 
 
-async def _try_cache_get(cache_key: str) -> Response | None:
+async def _try_cache_get(
+    cache_key: str,
+    request_id: bytes | None = None,
+    ecs_truncated: str = "",
+) -> Response | None:
     """
     Look up a DNS response in the Cloudflare Cache API.
 
-    Adjusts Cache-Control max-age by the Age header so clients see the
-    remaining TTL. Cache errors are non-fatal.
+    Adjusts Cache-Control max-age by the Age header. Cache errors are
+    non-fatal.
 
     Parameters:
     cache_key (str): Cache URL from _build_cache_key.
+    request_id (bytes | None): First 2 bytes of the request's wire message,
+        restored into the cached body. Only set for wire requests.
+    ecs_truncated (str): This request's ECS truncation description. Keys are
+        built from truncated bytes, so one entry is shared across requests that
+        truncated differently and this can't come from the entry.
 
     Returns:
     Response | None: Cached response with a HIT header, or None on miss/error.
@@ -88,16 +106,18 @@ async def _try_cache_get(cache_key: str) -> Response | None:
         if cached is None:
             return None
 
-        body: bytes = await cached.bytes()
+        body: bytes = (await cached.bytes()).to_bytes()
 
         content_type = str(
             cached.headers.get("content-type") or "application/dns-message",
         )
 
+        if request_id is not None and len(request_id) >= 2 and len(body) >= 2:
+            body = request_id[:2] + body[2:]
+
         passthrough_headers = (
             "CLOUDFLARE-DOH-WORKER-CONFIG-ALLOWED",
             "CLOUDFLARE-DOH-WORKER-CONFIG-BLOCKED",
-            "CLOUDFLARE-DOH-WORKER-ECS-TRUNCATED",
             "CLOUDFLARE-DOH-WORKER-REBIND-PROTECTED",
         )
 
@@ -105,6 +125,9 @@ async def _try_cache_get(cache_key: str) -> Response | None:
             "content-type": content_type,
             "CLOUDFLARE-DOH-WORKER-CACHE": "HIT",
         }
+
+        if ecs_truncated:
+            response_headers["CLOUDFLARE-DOH-WORKER-ECS-TRUNCATED"] = ecs_truncated
 
         for header in passthrough_headers:
             value: str | None = cached.headers.get(header)

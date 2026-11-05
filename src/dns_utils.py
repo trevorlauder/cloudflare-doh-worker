@@ -18,15 +18,15 @@ import dns.name
 import dns.rcode
 import dns.rdatatype
 
-import config
+import config_defaults
 
 logger = logging.getLogger(__name__)
 
-_ECS_TRUNCATION: dict = getattr(config, "ECS_TRUNCATION", {"enabled": False})
-_REBIND_PROTECTION: bool = getattr(config, "REBIND_PROTECTION", True)
-_TIMEOUT_MS: int = getattr(config, "TIMEOUT_MS", 5000)
-_RETRY_MAX_ATTEMPTS: int = getattr(config, "RETRY_MAX_ATTEMPTS", 2)
-_FANOUT_DRAIN_TIMEOUT_MS: int = getattr(config, "FANOUT_DRAIN_TIMEOUT_MS", 10000)
+_ECS_TRUNCATION: dict = config_defaults.ECS_TRUNCATION
+_REBIND_PROTECTION: bool = config_defaults.REBIND_PROTECTION
+_TIMEOUT_MS: int = config_defaults.TIMEOUT_MS
+_RETRY_MAX_ATTEMPTS: int = config_defaults.RETRY_MAX_ATTEMPTS
+_FANOUT_DRAIN_TIMEOUT_MS: int = config_defaults.FANOUT_DRAIN_TIMEOUT_MS
 
 
 SUPPORTED_ACCEPT_HEADERS = frozenset(
