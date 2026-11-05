@@ -29,6 +29,15 @@
     },
     {
       "matchManagers": [
+        "mise"
+      ],
+      "matchPackageNames": [
+        "python"
+      ],
+      "allowedVersions": "<3.15"
+    },
+    {
+      "matchManagers": [
         "dprint"
       ],
       "groupName": "dprint"

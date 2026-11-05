@@ -1,7 +1,7 @@
 [project]
 name = "doh"
 version = "2.1.0"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
   "dnspython>=2.8.0",
   "typedload>=2.40",
@@ -11,7 +11,7 @@ dependencies = [
 deploy = [
   "pyyaml>=6.0.3",
   "rich>=14.3.3",
-  "workers-py>=1.9.0",
+  "workers-py>=1.17.9",
   "workers-runtime-sdk>=1.1.0",
 ]
 dev = [
