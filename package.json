@@ -1,0 +1,7 @@
+{
+  "name": "doh",
+  "private": true,
+  "scripts": {
+    "deploy": "uv run pywrangler deploy"
+  }
+}
