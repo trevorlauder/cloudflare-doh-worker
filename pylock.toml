@@ -1,12 +1,13 @@
 lock-version = "1.0"
 created-by = "uv"
-requires-python = ">=3.13.2"
+requires-python = ">=3.14.2"
 
 [[packages]]
 name = "dnspython"
 version = "2.8.0"
 wheels = [
-  { url = "https://files.pythonhosted.org/packages/ba/5a/18ad964b0086c6e62e2e7500f7edc89e3faa45033c71c1893d34eed2b2de/dnspython-2.8.0-py3-none-any.whl", upload-time = 2025-09-07T18:57:58Z, size = 331094, hashes = { sha256 = "01d9bbc4a2d76bf0db7c1f729812ded6d912bd318d3b1cf81d30c0f845dbf3af" } },
+  { url = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/dnspython-2.8.0-py3-none-any.whl", hashes = { sha256 = "3f00404c101f22526ae56bc1a7510cc9306c8ace1ec615865bff399471522249" } },
+  { url = "https://files.pythonhosted.org/packages/ba/5a/18ad964b0086c6e62e2e7500f7edc89e3faa45033c71c1893d34eed2b2de/dnspython-2.8.0-py3-none-any.whl", hashes = { sha256 = "01d9bbc4a2d76bf0db7c1f729812ded6d912bd318d3b1cf81d30c0f845dbf3af" } },
 ]
 
 [[packages]]
