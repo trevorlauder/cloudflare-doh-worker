@@ -21,7 +21,7 @@ tilt = "0.37.8"
 trufflehog = "v3.99.8"
 zizmor = "1.32.0"
 node = { version = "26.13.0", postinstall = "npm install --include dev" }
-python = "3.14.6"
+python = "3.14.10"
 uv = "0.13.7"
 buildifier = "10.2.0"
 k6 = "2.3.0"
