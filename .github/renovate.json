@@ -4,6 +4,9 @@
     "config:recommended",
     "schedule:weekly"
   ],
+  "constraints": {
+    "mise": "2026.11.1"
+  },
   "mise": {
     "managerFilePatterns": [
       "/(^|/)mise\\.toml$/",
