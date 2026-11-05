@@ -20,10 +20,10 @@ shellcheck = "0.11.0"
 tilt = "0.37.8"
 trufflehog = "v3.99.8"
 zizmor = "1.32.0"
-node = { version = "24.22.2", postinstall = "npm install --include dev" }
+node = { version = "26.13.0", postinstall = "npm install --include dev" }
 python = "3.14.6"
 uv = "0.13.7"
-buildifier = "8.5.1"
+buildifier = "10.2.0"
 k6 = "2.3.0"
 prek = "0.5.10"
 vale = "3.26.0"
