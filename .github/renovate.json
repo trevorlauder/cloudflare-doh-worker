@@ -5,7 +5,7 @@
     "schedule:weekly"
   ],
   "constraints": {
-    "mise": "2026.11.1"
+    "mise": "v2026.11.8"
   },
   "mise": {
     "managerFilePatterns": [
